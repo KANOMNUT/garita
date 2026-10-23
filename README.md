@@ -4,6 +4,8 @@ Garita (gah-REE-tah) is the Spanish word for a fortress sentry box.
 
 A cross-platform desktop GUI for managing Kubernetes clusters, built with Tauri v2, React 18 and Rust. Every Kubernetes call goes from the Rust backend through kube-rs; there is no `kubectl` binary dependency.
 
+![Garita Pods view on a kind cluster](site/demo.png)
+
 **Your kubeconfig is read-only to Garita.** It reads your default kubeconfig plus any kubeconfig files you import in-app, by file picker or by pasting YAML, both behind a preview of the contexts the file defines. Imported files are registered by path, never merged into `~/.kube/config`, and removing one deletes nothing from disk. Selecting a cluster in Garita does not change your `kubectl` default.
 
 ## Installation

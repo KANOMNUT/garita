@@ -4,7 +4,7 @@ Status: spec for L1 (frontend-engineer). Branch `feat/landing-redesign`. Author:
 
 Decisions already taken by the user: style is a mix of modern product (Linear/Vercel), "match the app" (tokens, cluster chips, panels, map motif) and terminal flavour (mono accents, real CLI). Hero visual is a stylised HTML/CSS/SVG illustration, not a screenshot. Theme follows the system, light and dark, both AA.
 
-Frozen constraints (ledger): one static self-contained file; no external fonts, scripts, images or trackers; the set of unique `https://github.com/KANOMNUT/garita/releases/latest/download/…` URLs is exactly the 5 assets (`pages.yml:73-74`); Scoop line `scoop install https://kanomnut.github.io/garita/scoop/garita.json`; Homebrew lines `brew tap KANOMNUT/garita https://github.com/KANOMNUT/garita` and `brew install --cask kanomnut/garita/garita`; the macOS `xattr` note stays next to the macOS download; works with JS off; reduced motion; 44 px targets.
+Frozen constraints (ledger): one static self-contained file; no external fonts, scripts, images or trackers (one same-folder image, `site/demo.png`, is allowed since the LX batch); the set of unique `https://github.com/KANOMNUT/garita/releases/latest/download/…` URLs is exactly the 5 assets (`pages.yml:73-74`); Scoop line `scoop install https://kanomnut.github.io/garita/scoop/garita.json`; Homebrew lines `brew tap KANOMNUT/garita https://github.com/KANOMNUT/garita` and `brew install --cask kanomnut/garita/garita`; the macOS `xattr` note stays next to the macOS download; works with JS off; reduced motion; 44 px targets.
 
 ## 1. Goals and audience
 
@@ -64,20 +64,23 @@ Brand `Garita`. Nav: `Features`, `Safety`, `Install`, `GitHub` (external, `https
 Cards (h3 + body):
 
 1. **See how it connects** (wide, 2 columns at 960 px and up). `Open a namespace as a graph: owners, Service and Ingress routes, volumes and environment references. Lines run at right angles between the boxes; dashed and dotted lines, not colour, tell the relations apart.` Mono tag in the corner: `Health → Map`.
-2. **Logs, shells, debug containers.** `Stream and filter logs across up to 20 pods of a workload. Open a shell in a container, or attach a debug container to an image that has none.`
-3. **Edit with a preview.** `Change YAML or Helm values and see a server-side dry run and a diff before anything is written. Edits are JSON merge patches, so fields the form does not model are left alone.`
-4. **History from your own monitoring.** `Point a cluster at its Prometheus and Loki or VictoriaLogs services. Garita reads them only through the API server's service proxy: metric charts up to 7 days, log history, and right-sizing hints from the 24 h 95th percentile when the data allows.`
-5. **Health at a glance.** `Problems, node capacity, deprecated APIs and possibly unused objects, from fixed rules with the evidence shown. No scores or grades.`
+2. **Logs, shells, debug containers** `Stream and filter logs across up to 20 pods of a workload. Open a shell in a container, or attach a debug container to an image that has none.`
+3. **Edit with a preview** `Change YAML or Helm values and see a server-side dry run and a diff before anything is written. Guided edit forms and merge-from-file send JSON merge patches, so fields the form does not model are left alone. YAML Save replaces the object after the dry run and diff.`
+4. **History from your own monitoring** `Point a cluster at its Prometheus and Loki or VictoriaLogs services. Garita reads them only through the API server's service proxy: metric charts up to 7 days, log history, and right-sizing hints from the 24 h 95th percentile when the data allows.`
+5. **Health at a glance** `Problems, node capacity, deprecated APIs and possibly unused objects, from fixed rules with the evidence shown. No scores or grades.`
 6. **Open it from your shell** (terminal card, mono block): `Jump straight to a context, namespace and kind.` then the snippet `garita --context staging -n web po` with a copy button, and the caption `po, deploy, svc and other kubectl short names work. garita --help lists them.`
 
 "Also included" row (chips, not links): `Helm`, `ArgoCD`, `Flux`, `Who can…`, `Action journal`, `Network policies (approximation)`, `⌘K palette`. Label before it: `Also included:`.
 
+### See it for real (`#demo`, added in the LX batch)
+- h2: `See it for real`. A `<figure>` with the user's real screenshot `site/demo.png` (1906x1012, Pods view of a local kind cluster) and the caption `A real Garita window on a local kind test cluster.` Not in the nav.
+
 ### Safety (`#safety`)
 - h2: `Built to avoid surprises`
-- Card A, with a live cluster chip pair (`production` red, `staging` green, as illustration): **A colour and label per cluster.** `So production looks like production. The identity shows in the sidebar, the top bar and every destructive confirmation.`
-- Card B: **Read-only mode.** `Turns off the app's write actions for a cluster, and every write shows a confirmation. It is a guardrail in the app, not a security boundary.`
-- Card C: **Secrets stay hidden.** `Secret values stay hidden until you click Reveal, and are never shown in diffs or previews.`
-- Panel (solid, not glass): h3 `What it deliberately does not do`. List: `No kubectl binary dependency.` / `Never writes to your kubeconfig.` / `No server-side apply; edits are JSON merge patches.` / `No node shell, no privileged pods.` / `No in-cluster agent.` / `No AI, telemetry, analytics or crash upload.` Then: `Garita checks GitHub once a day for a new version and never sends cluster data. You can turn the check off in Settings.`
+- Card A, with a live cluster chip pair (`production` red, `staging` green, as illustration): **A colour and label per cluster** `So production looks like production. The identity shows in the sidebar, the top bar and every destructive confirmation.`
+- Card B: **Read-only mode** `Turns off the app's write controls for a cluster. Other guardrails ask you to type the cluster label before a write, or cap bulk actions. A guardrail in the app, not a security boundary.`
+- Card C: **Secrets stay hidden** `Secret values stay hidden until you click Reveal, and are never shown in diffs or previews.`
+- Panel (solid, not glass): h3 `What it deliberately does not do`. List: `No kubectl binary dependency.` / `Never writes to your kubeconfig.` / `No server-side apply; guided edits and merge-from-file are JSON merge patches.` / `No node shell, no privileged pods.` / `No in-cluster agent.` / `No AI, telemetry, analytics or crash upload.` Then: `Garita checks GitHub once a day for a new version and never sends cluster data. You can turn the check off in Settings.`
 
 ### Install (`#install`)
 - h2: `Install`
@@ -85,7 +88,8 @@ Cards (h3 + body):
 - `details` **macOS (Apple Silicon)**, open by default on macOS and unknown platforms: `Download Garita-macOS-arm64.dmg and drag it to Applications. The app is ad-hoc signed, not notarized, so macOS blocks the first launch. Run once:` then `xattr -rd com.apple.quarantine /Applications/Garita.app`. `Or with Homebrew (the cask does this for you):` then the two brew lines as one copy block (tap line, install line).
 - `details` **Linux (x86_64)**: `Debian/Ubuntu:` link `Garita-linux-amd64.deb`; `Fedora/RHEL:` link `Garita-linux-amd64.rpm`; `The garita command is on your PATH after installing.`
 - `details` **Windows (x86_64)**: `Download Garita-windows-amd64-setup.exe (per user) or Garita-windows-amd64.msi (all users).` `Unsigned: Windows SmartScreen will warn. Choose "More info", then "Run anyway".` `After installing, open a new terminal window to use the garita command.` `Or with Scoop:` then `scoop install https://kanomnut.github.io/garita/scoop/garita.json`.
-- After the details: `Then, in any terminal:` `garita --help`. And `Verify downloads: see SECURITY.md.` (link kept).
+- macOS details also say: `With the DMG, use Settings → Command line → Install to add the garita command.` (the Homebrew line reads `the cask does this for you and adds the garita command`).
+- After the details: `Once the garita command is installed, in any terminal:` `garita --help`. And `Verify downloads: see SECURITY.md.` (link kept).
 
 ### Open source (`#open`)
 - h2: `Open source`
@@ -111,7 +115,7 @@ Cards (h3 + body):
 | Logs across up to 20 pods | `README.md` l.87 (Pods and logs) |
 | Shell, debug containers for images without a shell | `README.md` l.88 |
 | Server-side dry-run and diff before YAML Save and Helm upgrade | `README.md` l.96-97; `CLAUDE.md` PREVIEW-GATE |
-| Edits are JSON merge patches; unmodelled fields untouched | `README.md` l.96, l.123; `CLAUDE.md` Guided edit |
+| Guided edit forms and merge-from-file send JSON merge patches; unmodelled fields untouched; YAML Save replaces the object after a dry run | `docs/claude/writes.md` (guided edit, one replace path); `src-tauri/src/commands/pods.rs` `replace_resource_yaml` |
 | Prometheus, Loki, VictoriaLogs only through the service proxy; charts to 7 d; log history | `CHANGELOG.md` 2.3.0 Added (Observability, Metric history, Log history) |
 | Right-sizing hint from the 24 h 95th percentile "when the data allows" | `CHANGELOG.md` 2.3.0 ("at least 18 of the last 24 hours"); `docs/claude/health.md` (hints) |
 | Problems, capacity, deprecated APIs, possibly unused; fixed rules, no scores | `README.md` l.105-110; `CLAUDE.md` Health rule |
@@ -266,7 +270,7 @@ Size: `width: min(100%, 960px)`, centred, `margin-top: 48px`. At 960 px the body
 | [production]| NAME               STATUS          RESTART AGE | [ map card 320 ]|
 |  red rule   | web-7d9f4-x2k4   . Running            0   2d  |                 |
 | staging     | web-7d9f4-m8q1   . Running            0   2d  | [Ingress]->[Svc]|
-|             | web-7d9f4-r5t7   ! CrashLoopBackOff   6  14m  |   ->[Pod x3]    |
+|             | web-7d9f4-r5t7   ! CrashLoopBackOff   6  14m  |   ->[Pod   ]    |
 | NAMESPACES  | worker-5c6b8-k3p9 ~ Pending           0   3m  | [CM]->[Deploy]  |
 |  default    +-------------------------------------------+                 |
 |  web  <-    | Logs · web-7d9f4-r5t7                      |                 |
@@ -288,7 +292,7 @@ Zones and tokens:
 
 ```
  x=8          x=118         x=228
- [Ingress ]--[Service ]---[Pod x3  ]    y=18..52
+ [Ingress ]--[Service ]---[Pod     ]    y=18..52
  [ web    ]  [ web     ]  [ web    ]
                           +-- (tracks at x=210/215)
  [ConfigMap]..[Deployment]-+            y=100..134
@@ -452,7 +456,7 @@ Performance budget (the page is the only request):
 
 Checkable by reading `site/index.html`:
 
-1. One file; no `<link href=http…>`, `<script src>`, `<img>`, `@import`, `url(http…)`, web fonts or trackers. Only the inline favicon data URI and inline SVG.
+1. One file; no `<link href=http…>`, `<script src>`, `<img>` other than the one `demo.png` figure, `@import`, `url(http…)`, web fonts or trackers. Only the inline favicon data URI and inline SVG.
 2. `grep -o 'https://github.com/KANOMNUT/garita/releases/latest/download/[^"]*' site/index.html | sort -u` returns exactly: `Garita-linux-amd64.deb`, `Garita-linux-amd64.rpm`, `Garita-macOS-arm64.dmg`, `Garita-windows-amd64-setup.exe`, `Garita-windows-amd64.msi` (5 lines). The Scoop line and both Homebrew lines match the frozen text.
 3. The `xattr -rd com.apple.quarantine /Applications/Garita.app` command appears in the hero note and in Install, next to the macOS dmg link.
 4. No "43" and no unsourced number; every claim in Section 3's table is present only as written there. Banned words absent: "smart", "auto-fix", "protected", "secured", "score(s)" except in "No scores or grades", "Apply" for a write (use "Merge" if a write is ever named).
