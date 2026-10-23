@@ -43,7 +43,7 @@ macOS is **ad-hoc signed only**; Developer ID/notarization was removed on purpos
 ## Architecture
 
 - **Rust** (`src-tauri/`): every Kubernetes call via kube-rs 0.95 / k8s-openapi 0.23. No kubectl binary. Helm is shell-out only.
-- **React** (`src/`): UI only; all data via `invoke()`. The app's HTML entry is `app.html` (Vite `build.rollupOptions.input`, Tauri window `url`); the root `index.html` is the GitHub Pages landing page (Pages builds from `main` `/`), never the app.
+- **React** (`src/`): UI only; all data via `invoke()`. The app's HTML entry is `app.html` (Vite `build.rollupOptions.input`, Tauri window `url`); the root `index.html` is the GitHub Pages landing page (`pages.yml` deploys it with the files it loads), never the app.
 - **State**: React Query v5 only (no Redux/Zustand); `refetchInterval` on resource queries. All hooks in `src/hooks/useResources.ts`; components never call `invoke`.
 - **Design tokens** are role-named CSS variables in `src/index.css`, mapped in `tailwind.config.js`; components never use colour literals (`ui.md` → Appearance). Use Tailwind classes; inline `style` only for computed values (widths, positions, runtime colours). `dim` fails WCAG AA as text colour; use `mute` for secondary text.
 

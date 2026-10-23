@@ -1,6 +1,6 @@
-# 21. Landing page redesign (`site/index.html`)
+# 21. Landing page redesign (now the root `index.html`)
 
-Status: spec for L1 (frontend-engineer). Branch `feat/landing-redesign`. Author: senior-ux-specialist, 2026-10-23. Baseline: v2.3.0 page of 12.8 KB.
+Status: superseded in part. The user moved the page to the root `index.html` and replaced the hero illustration with a real screenshot; see "Re-check (root page)" at the end. Original: spec for L1 (frontend-engineer). Branch `feat/landing-redesign`. Author: senior-ux-specialist, 2026-10-23. Baseline: v2.3.0 page of 12.8 KB.
 
 Decisions already taken by the user: style is a mix of modern product (Linear/Vercel), "match the app" (tokens, cluster chips, panels, map motif) and terminal flavour (mono accents, real CLI). Hero visual is a stylised HTML/CSS/SVG illustration, not a screenshot. Theme follows the system, light and dark, both AA.
 

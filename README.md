@@ -186,7 +186,7 @@ make clean            # wipe dist/ and Rust build artifacts
 | `src/` | React frontend. UI only; all data comes from Tauri commands via `invoke()` |
 | `src-tauri/` | Rust backend. Tauri commands in `src/commands/`, Kubernetes access via kube-rs |
 | `docs/` | Architecture overview, auth, build and release guides; per-feature contracts in `docs/claude/`; release plans and UX specs |
-| `site/index.html` | Download landing page (GitHub Pages) |
+| `index.html` | Download landing page (GitHub Pages; the app entry is `app.html`) |
 
 ### Tech stack
 
