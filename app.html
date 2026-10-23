@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/src/assets/garita-mark.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <title>Garita</title>
+    <!-- First paint: set data-theme/data-accent before React mounts. Mirrors src/utils/appearance.ts
+         (storage key, allowed values, system -> matchMedia, unreadable -> dark). No CSP is set; if one is, hash this. -->
+    <script>
+      (function () {
+        var d = document.documentElement, t = "system", a = "blue";
+        try {
+          var o = JSON.parse(localStorage.getItem("appearance"));
+          if (o && ["system", "light", "dark"].indexOf(o.theme) >= 0) t = o.theme;
+          if (o && ["blue", "teal", "violet", "amber", "rose", "slate"].indexOf(o.accent) >= 0) a = o.accent;
+        } catch (e) {}
+        var dark = true;
+        if (t === "system") { try { dark = matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) {} } else { dark = t === "dark"; }
+        d.setAttribute("data-theme", dark ? "dark" : "light");
+        d.setAttribute("data-accent", a);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,5 +1,5 @@
 // Appearance preference (v1.4.2): theme + accent, stored per viewer in localStorage.
-// The inline <script> in index.html repeats ONLY the storage key, the allowed values and the
+// The inline <script> in app.html repeats ONLY the storage key, the allowed values and the
 // resolve rule (system -> matchMedia, unreadable -> dark); keep the two in step.
 import { useSyncExternalStore } from "react";
 
