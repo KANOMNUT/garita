@@ -15,7 +15,7 @@
 --ok:#036748;--ok-rgb:3 103 72;--warn:#705600;--bad:#ad0017;--bad-rgb:173 0 23;--purple:#6d33d1;--purple-rgb:109 51 209;
 --term-fg:#1f2937;
 --sh:0 1px 0 rgb(255 255 255 / .8) inset,0 8px 24px -12px rgb(15 23 42 / .18);
---shw:0 1px 0 rgb(255 255 255 / .8) inset,0 24px 64px -24px rgb(15 23 42 / .35)}
+}
 @media (prefers-color-scheme:dark){:root{
 --base:#0b0d12;--base-rgb:11 13 18;--panel:#12151d;--card:#1a1e29;--card-rgb:26 30 41;--sunken:#070a10;
 --ink:#e6e9ef;--mute:#8a93a6;--accent:#4ea1ff;--accent-rgb:78 161 255;--on-accent:#0b0d12;
@@ -23,7 +23,7 @@
 --ok:#34d399;--ok-rgb:52 211 153;--warn:#fbbf24;--bad:#f87171;--bad-rgb:248 113 113;--purple:#a78bfa;--purple-rgb:167 139 250;
 --term-fg:#c9d1d9;
 --sh:0 1px 0 rgb(255 255 255 / .05) inset,0 12px 32px -16px rgb(0 0 0 / .6);
---shw:0 1px 0 rgb(255 255 255 / .05) inset,0 30px 80px -30px rgb(0 0 0 / .8)}}
+}}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--base);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -56,9 +56,7 @@ h3{font-size:1.05rem;line-height:1.3;font-weight:600;margin:0 0 .5rem}
 .ok{--c:var(--ok);--cr:var(--ok-rgb)}
 .bad{--c:var(--bad);--cr:var(--bad-rgb)}
 .pur{--c:var(--purple);--cr:var(--purple-rgb)}
-.warn{--c:var(--warn)}
 .neu{color:var(--mute);background:none;box-shadow:0 0 0 1px var(--edge2)}
-.rule{border-left:3px solid var(--bad)}
 .btns{display:flex;flex-wrap:wrap;gap:12px;margin:1.5rem 0 .5rem}
 .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 20px;border-radius:8px;font-weight:600;text-decoration:none;border:1px solid var(--edge2);color:var(--ink);background:var(--card);transition:box-shadow .15s ease-out,border-color .15s ease-out,transform .15s ease-out}
 .btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
@@ -121,46 +119,8 @@ details p{margin:.5rem 0}
 footer{border-top:1px solid var(--edge);padding:2rem 0;color:var(--mute);font-size:.875rem}
 footer p{margin:.25rem 0}
 .fl{display:flex;flex-wrap:wrap;align-items:center;gap:0 .5rem}
-/* hero illustration */
-.win{width:min(100%,960px);margin:32px auto 0;border:1px solid var(--edge2);border-radius:16px;overflow:hidden;box-shadow:var(--shw);text-align:left;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.tb{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--edge);color:var(--mute);white-space:nowrap}
-.tb .crumb{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.tb .ro{display:none}
-.dots{display:flex;gap:6px}
-.dots i{width:10px;height:10px;border-radius:50%;background:var(--edge2)}
-.wb{display:grid;grid-template-columns:minmax(0,1fr)}
-.sb{display:none;background:var(--panel);border-right:1px solid var(--edge);padding:12px;color:var(--mute)}
-.sb .it{padding:4px 8px;border-radius:6px}
-.sb .on{background:rgb(var(--accent-rgb) / .12);color:var(--accent)}
-.sb .lb{font-size:10px;letter-spacing:.08em;margin:16px 8px 4px}
-.sw{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--ok);margin-right:8px}
-.mid{background:var(--card);min-width:0;display:flex;flex-direction:column}
-.tr{display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:8px;height:32px;padding:0 12px;color:var(--ink)}
-.th{height:28px;font-size:11px;text-transform:uppercase;color:var(--mute)}
-.sel{background:rgb(var(--accent-rgb) / .10)}
-.x{display:none}
-.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.st{display:flex;align-items:center;gap:6px;color:var(--c)}
-.st i{width:6px;height:6px;border-radius:50%;background:var(--c);flex:none}
-.lg{flex:1;background:var(--sunken);border-top:1px solid var(--edge);padding:8px 12px;color:var(--term-fg);font-size:12px}
-.lg div{white-space:nowrap;overflow:hidden}
-.lg .h{color:var(--mute);margin-bottom:4px}
-.lg b{font-weight:500;color:var(--mute)}
-.lg .wn{color:var(--warn)}
-.lg .er{color:var(--bad)}
-.car{display:inline-block;width:7px;height:12px;vertical-align:-2px;background:var(--term-fg);animation:bl 1.6s ease-in-out 3}
-.mp{background:var(--panel);border-top:1px solid var(--edge);padding:8px 8px 4px;color:var(--mute);font-size:11px}
-.mp div{padding:0 4px 4px}
-.mp svg{display:block;width:100%;max-width:420px;margin:0 auto;height:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.bx{fill:var(--card);stroke:var(--edge2)}
-.ln{fill:none;stroke:var(--mute);stroke-width:1.5}
-.k{fill:var(--mute);font-size:10px}
-.nn{fill:var(--ink);font-size:11px}
-.cap{color:var(--mute);line-height:1.5;text-align:center;font-size:.75rem;margin:12px auto 0}
 @keyframes up{from{opacity:0;transform:translateY(12px)}}
-@keyframes bl{50%{opacity:0}}
 .in{animation:up .5s cubic-bezier(.2,.7,.2,1) both}
-.win.in{animation-delay:.12s}
 @media (min-width:640px){
 header{position:sticky;top:0}
 .hero{text-align:center}
@@ -168,25 +128,17 @@ header{position:sticky;top:0}
 .btns,.dls{justify-content:center}
 .hero .small{margin-left:auto;margin-right:auto}
 .mobile-note{display:none}
-.win{margin-top:48px}
-.tb .ro{display:inline-flex}
-.x{display:block}
-.tr{grid-template-columns:1.7fr 1.5fr .6fr .6fr}
-.tr.x{display:grid}
 .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .w2,.w3{grid-column:span 2}
 }
 @media (min-width:960px){
 .grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
 .w3{grid-column:span 3}
-.wb{grid-template-columns:188px minmax(0,1fr) 320px}
-.sb{display:block}
-.mp{border-top:0;border-left:1px solid var(--edge)}
 }
 @media (hover:hover){.card.glass:hover{border-color:var(--edge2);transform:translateY(-2px)}.btn:hover{transform:translateY(-1px)}}
 @media (prefers-reduced-motion:reduce){
 html{scroll-behavior:auto}
-.in,.car{animation:none}
+.in{animation:none}
 .card.glass:hover,.btn:hover{transform:none}
 }
 </style>
@@ -222,7 +174,7 @@ html{scroll-behavior:auto}
     <a href="https://github.com/KANOMNUT/garita/releases/latest/download/Garita-windows-amd64.msi">Windows .msi</a>
   </div>
   <p class="small" id="dl-note">macOS builds are not notarized: on first launch run <code>xattr -rd com.apple.quarantine /Applications/Garita.app</code>. Windows installers are unsigned, so SmartScreen will warn.</p>
-  <figure class="shot"><img src="site/demo.png" width="1906" height="1012" loading="lazy" decoding="async" alt="Garita showing the Pods view of a local kind cluster: node cards, a pod table with CPU and memory bars, and the sidebar of resource kinds."><figcaption class="small">A real Garita window on a local kind test cluster.</figcaption></figure>
+  <figure class="shot"><img src="site/demo.png" width="1906" height="1012" decoding="async" fetchpriority="high" alt="Garita showing the Pods view of a local kind cluster: node cards, a pod table with CPU and memory bars, and the sidebar of resource kinds."><figcaption class="small">A real Garita window on a local kind test cluster.</figcaption></figure>
 </div></div>
 
 <section id="features"><div class="wrap">
