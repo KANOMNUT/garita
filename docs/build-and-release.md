@@ -123,7 +123,7 @@ This produces a significantly smaller binary at the cost of longer compile times
 
 The Makefile invokes `npm ci` before each build to ensure a clean, locked dependency install. Tauri orchestrates the Vite build automatically as part of `cargo tauri build`.
 
-In development, Vite runs on port `1420` (`strictPort: true`). Tauri connects to this dev server. The `watch.ignored: ["**/src-tauri/**"]` setting prevents Vite from restarting when Rust files change.
+The app's HTML entry is `app.html` (`build.rollupOptions.input` in `vite.config.ts`, window `url` in `tauri.conf.json`), so `dist/` holds `app.html` and no `index.html`; the root `index.html` is the landing page. In development, Vite runs on port `1420` (`strictPort: true`). Tauri connects to this dev server. The `watch.ignored: ["**/src-tauri/**"]` setting prevents Vite from restarting when Rust files change.
 
 ---
 
@@ -157,7 +157,7 @@ For GKE/EKS/AKS integration testing in CI, ensure the appropriate auth plugin bi
 | `pr-title.yml` | Pull request | Conventional Commits title |
 | `labeler.yml` | Pull request | Area labels from `.github/labeler.yml` |
 | `release.yml` | `vX.Y.Z` tag, manual | Installers, updater tarball and signatures, `latest.json`, `SHA256SUMS.txt`, SPDX SBOM, build provenance, draft release (publish job runs in Environment `release`) |
-| `pages.yml` | Release published, manual | Landing page `site/` to GitHub Pages. First renders `site/scoop/garita.json` from the latest release (see Scoop below), then a 1-byte GET check of the 5 unique `releases/latest/download/` links (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
+| `pages.yml` | Release published, push to `main` touching `index.html` or `site/**`, manual | Landing page to GitHub Pages. The artifact is the root `index.html`, exactly the same-site files it loads (today `site/demo.png`; a missing one fails the job) and `scoop/garita.json` rendered from the latest release (see Scoop below); nothing else in the repository is published. Then a 1-byte GET check of the 5 unique `releases/latest/download/` links in `index.html` (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
 
 What blocks and what only reports:
 
@@ -169,9 +169,11 @@ What blocks and what only reports:
 ### Releasing from GitHub
 
 1. Bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, and rename `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`. Merge to `main`.
-2. Tag and push: `git tag -s vX.Y.Z -m "Garita vX.Y.Z" && git push origin vX.Y.Z`.
+2. Tag the merged `main` commit and push the tag: `git tag -s vX.Y.Z -m "Garita vX.Y.Z" && git push origin vX.Y.Z`. If that commit's message carries `[skip ci]`, GitHub may start no run; then dispatch it from the tag ref (Rules below).
 3. `release.yml` checks that the three versions match the tag and that the changelog section exists, then builds on macOS 14 (arm64 `.dmg`, ad-hoc signed and DMG rebuilt as in `make mac`; plus the updater tarball) and Ubuntu 22.04 (`.deb`, `.rpm`; no AppImage, see `docs/claude/open-items.md`; the oldest runner, for the widest glibc range). Windows x64 on `windows-2022` (`.msi` and NSIS `-setup.exe`). Files get the README names (`Garita-macOS-arm64.dmg`, `Garita-windows-amd64.msi`, `Garita-windows-amd64-setup.exe`, ...).
-4. The workflow creates a **draft** release with the changelog section as notes, the installers, the updater files, `SHA256SUMS.txt` and `Garita-sbom.spdx.json` (14 assets, see In-app updater). Review it and publish it by hand, with "Set as the latest release" ticked. Re-running for the same tag replaces the files of a draft, never of a published release.
+4. The publish job waits for approval in Environment `release`. It creates a **draft** release with the changelog section as notes, the installers, the updater files, `SHA256SUMS.txt` and `Garita-sbom.spdx.json` (14 assets, see In-app updater). Before publishing, check the asset list and the provenance of one installer: `gh release download vX.Y.Z -R KANOMNUT/garita -p Garita-linux-amd64.deb && gh attestation verify Garita-linux-amd64.deb -R KANOMNUT/garita`. Publish it by hand, with "Set as the latest release" ticked. Re-running for the same tag replaces the files of a draft, never of a published release.
+5. Publishing starts `pages.yml`: it renders the Scoop manifest from the new release and checks the five download links before it deploys. A failed run leaves the previous site in place; fix the cause and run it again (`gh workflow run pages.yml -R KANOMNUT/garita`).
+6. Bump the Homebrew cask (Homebrew Distribution below), and check that `https://github.com/KANOMNUT/garita/releases/latest/download/latest.json` names the new version.
 
 Release jobs use no caches, so nothing a pull request writes to the Actions cache can reach a shipped binary.
 
@@ -179,10 +181,10 @@ Release jobs use no caches, so nothing a pull request writes to the Actions cach
 
 The workflows assume these settings; none can be set from a file:
 
-- Branch protection or a ruleset on `main`: require pull requests, require the `CI OK` status check (add `Security` jobs as wanted), block force pushes. Do not require `Build` jobs: that workflow is path-filtered, so a pull request that does not touch those paths would wait for them forever.
+- Branch protection or a ruleset on `main`: require pull requests, require the `CI OK` status check (add `Security` jobs as wanted), block force pushes. Do not require `Build` jobs: that workflow is path-filtered, so a pull request that does not touch those paths would wait for them forever. While commits carry `[skip ci]`, require no status check at all: a skipped run never reports, so the pull request would wait forever.
 - Settings > Code security: enable Dependabot alerts and security updates, secret scanning and push protection, and private vulnerability reporting (`SECURITY.md` points reporters there).
 - Settings > Actions > General: workflow permissions "Read repository contents", and require approval for workflows from outside collaborators.
-- Settings > Pages: source "GitHub Actions". `pages.yml` deploys from the release's tag ref, so if Settings > Environments > `github-pages` limits deployments to `main`, add a tag rule `v*`.
+- Settings > Pages: source "GitHub Actions". "Deploy from a branch" would publish every file of the branch (run through Jekyll) and skip the `pages.yml` checks, and its root would not serve `/scoop/garita.json`. `pages.yml` deploys a release-published run from the release's tag ref, so Settings > Environments > `github-pages` needs the tag rule `v*` next to `main`.
 - A new repository starts from defaults: re-create the Environment `release` with its rules and both secrets (Key custody below) before the first tag.
 
 ### In-app updater
@@ -209,7 +211,7 @@ The draft has 14 assets: `Garita-macOS-arm64.dmg`, `Garita-macOS-arm64.app.tar.g
 - Store both as **Environment** secrets of `release` (not repository secrets), from **Git Bash**:
   `gh secret set TAURI_SIGNING_PRIVATE_KEY --env release -R KANOMNUT/garita < ~/.tauri/garita-updater.key`
   A PowerShell pipe appends CRLF and breaks the key. The password goes only through the interactive prompt of `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --env release -R KANOMNUT/garita`, never `-b` or a file.
-- Environment `release`: required reviewer KANOMNUT, admin bypass off, deployment tag rule `v*`. Once the repo is public also add a tag ruleset on `refs/tags/v*` and turn on immutable releases.
+- Environment `release`: required reviewer KANOMNUT, admin bypass off, deployment tag rule `v*`. Also a tag ruleset on `refs/tags/v*` (block update and deletion) and immutable releases.
 - Account hygiene: hardware 2FA on every account that can write to the repo, and no classic PAT with `repo` scope.
 - **Losing the key or its password strands every installed copy:** none can ever auto-update again, and the only recovery is a manual install of a build with a new pubkey.
 - **Rotation:** ship a bridge release signed with the OLD key that carries the NEW pubkey in `tauri.conf.json`, and keep it the latest release for at least 30 days so installs can reach it. Only then sign with the new key.
@@ -229,7 +231,7 @@ The draft has 14 assets: `Garita-macOS-arm64.dmg`, `Garita-macOS-arm64.app.tar.g
 
 - `make windows` builds both bundles locally (`src-tauri/target/x86_64-pc-windows-msvc/release/bundle/{msi,nsis}/`); CI runs `tauri build --bundles msi,nsis` on `windows-2022`. Both are **unsigned**: Windows SmartScreen warns, and the site and README say so ("More info", then "Run anyway"). Authenticode signing is not planned.
 - PATH entries for the `garita` command come from `src-tauri/windows/hooks.nsh` (NSIS, user PATH, never writes a PATH it did not read in full) and `src-tauri/windows/path.wxs` (MSI, system PATH); details and limits in `docs/claude/launcher.md`.
-- **Scoop:** `site/scoop/garita.json` is a template with placeholder version and hash. `pages.yml` → "Render Scoop manifest" fills it from the **latest published release**: tag from `gh release view`, URL `releases/download/<tag>/Garita-windows-amd64.msi` (versioned, never `latest`), SHA-256 from that release's `SHA256SUMS.txt`, a 1-byte GET on the URL, then a `jq -e` check. Any failure fails the job, so a page with a dead Scoop line is never deployed. `gh` gets its token through `env:`; the job's `contents: read` is enough. The install line hard-codes `https://kanomnut.github.io/garita/scoop/garita.json` in `site/index.html`; change it (and the README) if a custom Pages domain is ever set. Scoop extracts the MSI (default `msiexec /a` extraction), so no installer or PATH hook runs; `extract_dir` is `PFiles\Garita`, read from the built MSI's Directory table and an admin extraction (`garita.exe` landed in `PFiles/Garita`).
+- **Scoop:** `site/scoop/garita.json` is a template with placeholder version and hash; it is never published as is. `pages.yml` → "Render Scoop manifest" fills it into the artifact's `scoop/garita.json` from the **latest published release**: tag from `gh release view`, URL `releases/download/<tag>/Garita-windows-amd64.msi` (versioned, never `latest`), SHA-256 from that release's `SHA256SUMS.txt`, a 1-byte GET on the URL, then a `jq -e` check. Any failure fails the job, so a page with a dead Scoop line is never deployed. `gh` gets its token through `env:`; the job's `contents: read` is enough. The install line hard-codes `https://kanomnut.github.io/garita/scoop/garita.json` in `index.html`; change it (and the README) if a custom Pages domain is ever set. Scoop extracts the MSI (default `msiexec /a` extraction), so no installer or PATH hook runs; `extract_dir` is `PFiles\Garita`, read from the built MSI's Directory table and an admin extraction (`garita.exe` landed in `PFiles/Garita`).
 - winget and AUR are not built.
 
 ## Homebrew Distribution

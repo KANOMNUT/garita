@@ -1,6 +1,6 @@
-# 21. Landing page redesign (`site/index.html`)
+# 21. Landing page redesign (now the root `index.html`)
 
-Status: spec for L1 (frontend-engineer). Branch `feat/landing-redesign`. Author: senior-ux-specialist, 2026-10-23. Baseline: v2.3.0 page of 12.8 KB.
+Status: superseded in part. The user moved the page to the root `index.html` and replaced the hero illustration with a real screenshot; see "Re-check (root page)" at the end. Original: spec for L1 (frontend-engineer). Branch `feat/landing-redesign`. Author: senior-ux-specialist, 2026-10-23. Baseline: v2.3.0 page of 12.8 KB.
 
 Decisions already taken by the user: style is a mix of modern product (Linear/Vercel), "match the app" (tokens, cluster chips, panels, map motif) and terminal flavour (mono accents, real CLI). Hero visual is a stylised HTML/CSS/SVG illustration, not a screenshot. Theme follows the system, light and dark, both AA.
 
@@ -548,3 +548,27 @@ Needs-eyes list A to H
 | F screen reader | Still needs the user. |
 | G motion | Pass in renders (entrance finishes; one 5 s virtual-time dark capture caught the hero mid-fade, a capture timing artefact, not a defect). Real-time feel needs the user. |
 | H copy tone | Pass: reads plainly, no banned wording. |
+
+## Re-check (root page), branch chore/site-followups, HEAD eeb8f36
+
+Scope: the landing page now lives at the repo root `index.html` (23,264 bytes raw, 7,748 gzip; within budget). The hero shows the real screenshot `site/demo.png` instead of the illustration, install and open-source sections are centred, lists use check marks. These are the user's layout choices and stand. Method: headless Chrome at 1280 and 768 directly and at 360 and 320 in an iframe, dark and light. Screenshots are in the session scratchpad `shots-U6\rt\`: `r1280-dark.png`, `r1280-light.png`, `r768-dark.png`, `r768-light.png`, `r360-dark.png`, `r360-light.png`, `r320-dark.png`, `r320-light.png`, plus `hero1280-dark.png` and `hero1280-light2.png`. Note: some light captures showed an empty screenshot frame; that was a headless capture artefact (the image decodes late with a reused profile). A light render with a fresh profile shows the image (`hero1280-light2.png`).
+
+Verdict: **accepted**. No must-fix.
+
+Checked and passing
+- No horizontal scroll at 360 or 320 px in either theme (the earlier grid overflow is closed). The nav wraps to a second row; the highlights, safety and install blocks stack cleanly.
+- Hero: the download button stays the strongest element. The screenshot sits below the note, with a 1 px border and 12 px radius; text around it keeps the contrast from the Section 4 table. In light theme a dark screenshot on a light page reads as an image, not as part of the page, which suits a real screenshot.
+- Centred install and open-source sections, the check-mark list in "does not do", and the copy buttons render without broken spacing in both themes. The five release URLs are unchanged.
+
+Should-fix (polish, at most three)
+1. The hero OS note wraps with a lone word ("anyway".) at 1280 px. Add `text-wrap: balance` or a wider `max-width` to the note.
+2. At 320 and 360 px the screenshot is too small to read (the app text is about 3 px). Wrap it in a link to `site/demo.png` (it is not a release URL) so a tap opens it full size, with the link name taken from the alt text.
+3. In the narrow install and CLI snippets the Copy button sits on the end of a long line (`scoop install https://kan…`). Give `pre` a right padding of at least 56 px so text never hides under the button.
+
+Needs the user's eyes (cannot be shown by a render)
+- A. Taste of the final hero, and whether a dark screenshot on the light theme is what the user wants.
+- B. Safari and Firefox: `backdrop-filter`, `background-clip: text`, `text-wrap: balance` fall back cleanly.
+- C. A real phone at 360 px: tap targets, nothing clipped, forced-colors (high contrast) mode.
+- D. Screen reader pass: the screenshot alt text, the copy buttons' "Copied" announcement, the skip link.
+- E. Motion feel in real time, and reduced-motion on a real OS setting.
+- F. The live Pages URL after deploy (image path `site/demo.png` resolves from the root page there).
