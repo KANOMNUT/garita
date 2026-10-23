@@ -48,7 +48,7 @@ No workflow updates the cask. After the draft release is **published**:
 
    Without a Mac, bump only `version` and `sha256`. The legacy `postflight` block still works; Homebrew 7 prints a deprecation warning for it until 2027-12-11.
 
-4. Push the branch and merge it to `main` (through a pull request when a ruleset requires one).
+4. Push the branch and merge it to `main` through a pull request (the `main` ruleset requires one).
 
 Check after every release that the bump landed: compare the cask `version` with the
 newest tag.
