@@ -11,6 +11,7 @@ frontend:
   - changed-files:
       - any-glob-to-any-file:
           - "src/**"
+          - "app.html"
           - "index.html"
           - "site/**"
           - "*.config.js"

@@ -46,7 +46,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/components/HelmInstallModal.tsx` | `helm install`; Helm is not a `CreatableKind` |
 | `src/utils/clusterIdentity.ts` | `localStorage["cluster-identity"]`: colour (`IdentityRole`, legacy names via `LEGACY_IDENTITY_ALIAS`), label, guardrails; `getGuardrailSettings` for the backstop |
 | `src/index.css` / `tailwind.config.js` | Colour roles as `--c-*` / `--a-*` variables (dark on `:root`, light and accent blocks) and their Tailwind keys. See `ui.md` Appearance |
-| `src/utils/appearance.ts` | `localStorage["appearance"]`, `useAppearance`, `setAppearance`, `initAppearance`; mirrored by the inline script in `index.html` |
+| `src/utils/appearance.ts` | `localStorage["appearance"]`, `useAppearance`, `setAppearance`, `initAppearance`; mirrored by the inline script in `app.html` |
 | `src/utils/terminalTheme.ts` | xterm theme from the `--c-*` variables (`XTERM_ROLES`); the only file allowed colour literals |
 | `src/utils/themeTokens.test.ts` | Reads `index.css` and `tailwind.config.js`: dark parity table, accepted deltas, totality, alpha forms, accent isolation |
 | `src/utils/guardrails.ts` | `READ_ONLY_BLOCKS_SHELL`, `assertWritable`, `checkBulk`, `pickDisabledReason`, `disabledAttrs` |
