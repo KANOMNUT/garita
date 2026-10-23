@@ -491,3 +491,56 @@ Needs the user's eyes (cannot be proven by reading the HTML):
 1. Keep the h1 (`Browse, debug and change Kubernetes clusters without leaving one window.`) or reword it? It is grounded and unchanged from the rebrand; the redesign only adds the gradient on "one window".
 2. A social preview image (`og:image`) needs a second file or an external URL, which breaks the one-self-contained-file rule. Skip it, or relax the rule for one PNG?
 3. Is it fine to drop the "43 resource kinds" number, or should the project add a counted, documented figure first?
+
+## Acceptance result (commit 7ed2458, 2026-10-23)
+
+Method: headless Chrome renders (1280, 768 and 360 px, dark and light; reduced motion once at 1280) plus reading `site/index.html`. Chrome headless on Windows will not make a window narrower than about 500 px, so the 360 px view was rendered in a 360 px iframe. A JS-off render did not produce a file; JS-off was judged by reading (no `.js` gating, the entrance animation is CSS only, copy buttons are the only JS-inserted content). Screenshots are in the session scratchpad `shots-U6\`: `w1280-dark.png`, `w1280-light.png`, `w768-dark.png`, `w768-light.png`, `f360-dark.png`, `f360-light.png` (also `hero1280-dark.png`, `hero1280-light.png`, `w1280-reduced.png`).
+
+Verdict: **not accepted yet**. One must-fix. Everything else passes or is polish.
+
+Must-fix
+- **Highlights grid overflows at 360 px** (WCAG 1.4.10 Reflow). Below 640 px `.grid` has no `grid-template-columns`, so the single implicit column sizes to its widest content and the cards run past the viewport edge (clipped at the right in both themes, "Health → Map" tag and body text cut off). Fix: `.grid{grid-template-columns:minmax(0,1fr)}` as the base rule, and check `.chips`, `.safe` and `pre` for the same. Re-render at 360 px (iframe) and confirm no horizontal scroll at 320 px.
+
+Should-fix (polish)
+- At 768 px the map is stretched to the full window width, so its boxes look about 2.5 times larger than at 1280. Cap it (for example `max-width:420px` and centre) or let it sit beside the table.
+- At 1280 px the illustration has empty space below the log strip (about 40 px in the table column) and below the map (about 90 px in the map column). Not a defect, but tighter: give the log strip `flex:1`/`min-height` so the table column fills, and top-align the map as now.
+
+Checklist 1 to 22
+
+| # | Result | Note |
+|---|---|---|
+| 1 | pass | One file, inline favicon only, no external requests. |
+| 2 | pass | Exactly the 5 asset URLs. |
+| 3 | pass | `xattr` in hero note, Install and the JS macOS note. |
+| 4 | pass | No "43", no banned words. |
+| 5 | pass by reading | JS-off render failed to produce a file; no JS dependence found. |
+| 6 | pass | Tokens in `:root`, dark in the media query, `color-scheme` meta. |
+| 7 | pass | No `--dim`. |
+| 8 | pass | Glass inside `@supports`, solid fallback. |
+| 9 | pass | Glow looks within .10 and .06; text over it readable in both themes. |
+| 10 | pass | No `infinite`; caret runs 3 times; reduced-motion block present. Reduced-motion render matches the final state. |
+| 11 | pass | `role="img"` and aria-label on the window; internals `aria-hidden`; caption visible. |
+| 12 | pass | Map edges are right-angle only, the elbow runs on its own track, no line through a box (all renders). |
+| 13 | pass | Only the neutral names. |
+| 14 | pass | `min-height:44px` on nav, buttons, platform links, summary, copy. |
+| 15 | pass | One h1, h2 per section, h3 per card. |
+| 16 | pass | Skip link present (first in DOM). |
+| 17 | pass | Copy buttons are JS-inserted, labelled, one `role="status"` region, `$ ` prompt is CSS. Renders show the Copy buttons. |
+| 18 | pass | 360: sidebar hidden, 2 columns, 3 rows, 2 log lines; 768: sidebar hidden, map stacked. |
+| 19 | pass | 27,322 bytes raw, 8,696 gzip (budget 40,000 / 12,000). |
+| 20 | pass | h1, lede, buttons, headings and card titles match Section 3. |
+| 21 | pass | Five links with the Section 3 labels. |
+| 22 | pass | `pages.yml` URL assertion holds (item 2). |
+
+Needs-eyes list A to H
+
+| Item | Result |
+|---|---|
+| A feel | Pass from renders: confident hero, glow reads as light in dark, restrained in light. The user still decides taste. |
+| B illustration | Pass: reads as the app (chips, rows, map) and clearly an illustration. |
+| C light theme | Pass: no wash-out, glass cards keep an edge, primary button reads as primary. |
+| D Safari and Firefox fallbacks | Still needs the user (cannot be rendered here). |
+| E real devices, high contrast | 360 px reflow fails until the grid fix (above); real phone and forced-colors check still need the user. |
+| F screen reader | Still needs the user. |
+| G motion | Pass in renders (entrance finishes; one 5 s virtual-time dark capture caught the hero mid-fade, a capture timing artefact, not a defect). Real-time feel needs the user. |
+| H copy tone | Pass: reads plainly, no banned wording. |
