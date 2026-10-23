@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a new feature or a change to an existing one.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Some things Garita does not do on purpose (no kubectl dependency, no kubeconfig writes, no server-side apply, no telemetry, ...).
+        Check "What Garita deliberately does not do" in the README first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What Garita should do. Mockups or screenshots welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways to solve it, or how you work around it now (kubectl, another tool, ...).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Resource browsing
+        - Pods, logs, shell
+        - Editing and writes
+        - Helm
+        - ArgoCD / Flux
+        - Health
+        - Cluster access and kubeconfig
+        - RBAC
+        - Other

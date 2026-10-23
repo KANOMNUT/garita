@@ -1,0 +1,28 @@
+{
+  "env": {
+    "RTK_SUPPRESS_HOOK_WARNING": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/rtk-hook.mjs\""
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PROJECT_DIR}/.claude/hooks/checkpoint-snapshot.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

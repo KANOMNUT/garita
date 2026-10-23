@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adds the install folder to the SYSTEM PATH (v2.1.3 K4). Merged into Tauri's main.wxs via
+     bundle.windows.wix.fragmentPaths + componentRefs. Windows Installer removes the entry on
+     uninstall (Permanent="no"). The Win64 define in main.wxs is file-local, so it is repeated. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <?if $(sys.BUILDARCH)="x86"?>
+    <?define GaritaWin64 = "no" ?>
+  <?else?>
+    <?define GaritaWin64 = "yes" ?>
+  <?endif?>
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="GaritaPathEnv" Guid="FADCAA3B-7A85-435B-89B2-25439CE1BB53" Win64="$(var.GaritaWin64)">
+        <RegistryValue Root="HKLM" Key="Software\Garita" Name="PathEntry" Type="integer" Value="1" KeyPath="yes" />
+        <Environment Id="GaritaPath" Name="PATH" Value="[INSTALLDIR]" Part="last" Action="set" System="yes" Permanent="no" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Garita</title>
+  <rect x="96" y="132" width="832" height="832" rx="189" fill="#000" opacity="0.14"/>
+  <rect x="100" y="124" width="824" height="824" rx="185" fill="#000" opacity="0.28"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#f8f9fc"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#0f172a" stroke-opacity="0.22" stroke-width="8"/>
+  <path fill="#0f172a" d="M324.5 437 A187.5 187.5 0 0 1 699.5 437 H734.5 V487 H664.5 V662 H682 L622 775 H402 L342 662 H359.5 V487 H289.5 V437 Z"/>
+  <path fill="#fbbf24" d="M462 628 V568 a50 50 0 0 1 100 0 V628 Z"/>
+</svg>

@@ -1,0 +1,85 @@
+# cargo-deny policy for the Rust backend. CI runs `cargo deny check` (see
+# .github/workflows/security.yml); run it locally from src-tauri/ with
+# `cargo deny check` (install: `cargo install cargo-deny --locked`).
+
+[graph]
+# The platforms the app ships on. Advisories and licenses for crates that
+# only build on other targets are ignored.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+# Every vulnerability advisory fails the check. `unsound = "all"` makes an
+# unsoundness advisory fail in any crate of the graph, transitive ones included
+# (cargo-deny's default, "workspace", checks direct dependencies only). The
+# entries in `ignore` are the only exceptions. "unmaintained" is limited to
+# crates the app depends on directly: the transitive ones (kube-client's
+# `rustls-pemfile`, gtk-rs's `proc-macro-error`, ...) can only be fixed upstream.
+unmaintained = "workspace"
+unsound = "all"
+yanked = "deny"
+# Each ignore needs a reason and a way out. cargo-deny warns when an ignored
+# advisory no longer matches any crate: delete the entry then.
+ignore = [
+  # glib 0.18.5 VariantStrIter (GHSA-wrw7-89jp-8q8g, Dependabot #10).
+  # Linux only: tauri, wry, tao and muda require gtk ^0.18, which pins glib
+  # 0.18; macOS and Windows builds do not contain glib. No crate in the graph
+  # and nothing in src/ calls VariantStrIter or Variant::array_iter_str, and
+  # the bug is a NULL-pointer crash, not memory corruption. No Tauri 2 release
+  # accepts glib >= 0.20. Revisit when wry/tao/muda move to gtk-rs >= 0.20 or
+  # gtk4, and at the 2027-01-10 dependency review
+  # (docs/impl/security-dependency-fix-plan.md §4, §10).
+  { id = "RUSTSEC-2024-0429", reason = "Linux-only glib 0.18 via Tauri's gtk ^0.18 stack; VariantStrIter has no caller; no Tauri 2 release accepts glib >= 0.20. Drop when wry/tao/muda leave gtk 0.18." },
+]
+
+[licenses]
+# Permissive licenses, plus MPL-2.0 (file-level copyleft). MPL-2.0 crates are
+# used unmodified, and THIRD_PARTY_LICENSES points to their source, as MPL-2.0
+# section 3.2 requires. Add a license here, not as a per-crate exception,
+# only after checking it is compatible with how the app is distributed.
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+confidence-threshold = 0.9
+
+# jsonpath-rust (via kube-client) declares no `license` field; its LICENSE file
+# is MIT. The hash pins that file: if it changes, the clarification is ignored
+# and the crate is checked normally again.
+[[licenses.clarify]]
+crate = "jsonpath-rust"
+expression = "MIT"
+license-files = [{ path = "LICENSE", hash = 0xcb90f5db }]
+
+[licenses.private]
+# This crate itself is not published.
+ignore = true
+
+[bans]
+# Tauri and the GTK stack pull several majors of the same crates; report them,
+# do not fail.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

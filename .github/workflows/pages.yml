@@ -1,0 +1,84 @@
+# Publishes the landing page (site/) to GitHub Pages when a release is
+# published, or by hand. Fails before deploying if any download link on the
+# page does not resolve, so the page never points at a missing installer.
+#
+# Repository settings: Pages > Source = GitHub Actions. The link check passes
+# only once the repository is public and a release is published.
+name: Pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy landing page
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write # deploy to Pages
+      id-token: write # deploy-pages OIDC
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Fills site/scoop/garita.json from the latest published release. Fails closed: a page
+      # with a dead Scoop line is never deployed. The MSI is extracted by Scoop (no installer
+      # runs), so the install-folder PATH hooks do not fire; Scoop's `bin` shim provides `garita`.
+      - name: Render Scoop manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          file=Garita-windows-amd64.msi
+          tag=$(gh release view --json tagName --jq .tagName)
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::latest release tag '$tag' is not vX.Y.Z"
+            exit 1
+          fi
+          tmp=$(mktemp -d)
+          gh release download "$tag" --pattern SHA256SUMS.txt --dir "$tmp"
+          hash=$(awk -v f="$file" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUMS.txt")
+          if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::no SHA-256 for $file in SHA256SUMS.txt of $tag"
+            exit 1
+          fi
+          url="https://github.com/KANOMNUT/garita/releases/download/$tag/$file"
+          curl -fsL -r 0-0 -o /dev/null "$url" || { echo "::error::unreachable: $url"; exit 1; }
+          jq --arg v "${tag#v}" --arg u "$url" --arg h "$hash" '
+            .version = $v | .architecture["64bit"].url = $u | .architecture["64bit"].hash = $h
+          ' site/scoop/garita.json > "$tmp/garita.json"
+          jq -e --arg v "${tag#v}" --arg u "$url" --arg h "$hash" '
+            .version == $v and .architecture["64bit"].url == $u and .architecture["64bit"].hash == $h
+            and .bin == "garita.exe" and (.extract_dir | length > 0)' "$tmp/garita.json" > /dev/null
+          cp "$tmp/garita.json" site/scoop/garita.json
+
+      - name: Check download links
+        run: |
+          set -euo pipefail
+          urls=$(grep -o 'https://github.com/KANOMNUT/garita/releases/latest/download/[^"]*' site/index.html | sort -u)
+          test "$(printf '%s\n' "$urls" | wc -l)" -eq 5
+          while IFS= read -r u; do
+            curl -fsL -r 0-0 -o /dev/null "$u" || { echo "::error::unreachable: $u"; exit 1; }
+          done <<< "$urls"
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

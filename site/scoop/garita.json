@@ -1,0 +1,15 @@
+{
+  "version": "0.0.0",
+  "description": "Kubernetes desktop client that talks to the Kubernetes API directly",
+  "homepage": "https://github.com/KANOMNUT/garita",
+  "license": "Apache-2.0",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/KANOMNUT/garita/releases/download/v0.0.0/Garita-windows-amd64.msi",
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "extract_dir": "PFiles\\Garita",
+  "bin": "garita.exe",
+  "shortcuts": [["garita.exe", "Garita"]]
+}

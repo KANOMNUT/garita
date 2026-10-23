@@ -1,0 +1,56 @@
+# Path rules for .github/workflows/labeler.yml (actions/labeler v5+ syntax).
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src-tauri/src/**"
+          - "src-tauri/Cargo.toml"
+          - "src-tauri/build.rs"
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/**"
+          - "index.html"
+          - "site/**"
+          - "*.config.js"
+          - "*.config.ts"
+          - "tsconfig.json"
+
+tauri:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src-tauri/tauri.conf.json"
+          - "src-tauri/capabilities/**"
+          - "src-tauri/icons/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "package.json"
+          - "package-lock.json"
+          - "src-tauri/Cargo.lock"
+          - "src-tauri/deny.toml"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "*.md"
+          - ".github/*.md"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
+          - ".github/dependabot.yml"
+          - ".github/labeler.yml"
+          - "Makefile"
+          - "scripts/**"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.test.ts"
+          - "**/*.test.tsx"
+          - "scripts/check-emit.ts"

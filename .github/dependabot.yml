@@ -1,0 +1,84 @@
+# Weekly version updates; security updates arrive as soon as an advisory is
+# published (enable them under Settings > Code security). Minor and patch
+# bumps are grouped into one pull request per ecosystem; majors come alone.
+# npm security updates from one run are grouped too (npm-security).
+# Tauri: the npm group (@tauri-apps/*) and the cargo group (tauri*) land as a
+# pair; `tauri build` fails when crate and npm minors differ. Merge one,
+# `@dependabot rebase` the other, merge it once Build is green.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+      # Security PRs for the same run land as one PR instead of one per package.
+      npm-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      # Planned migrations, not drive-by bumps: React 19, Vite 8 + plugin-react 6
+      # (Node >= 22.12, esbuild override, build.target).
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      # vitest 5 needs Node >= 22.12 and moves with Vite 8. Security updates
+      # still arrive (update-types ignores are version-only).
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # kube-rs and k8s-openapi move together, as a planned upgrade (0.95 -> 4.x,
+      # not yet written; docs/kube-upgrade-plan.md is the finished 0.88 -> 0.95
+      # move). update-types limits the ignore to version updates; a name-only
+      # ignore would block their security updates too.
+      - dependency-name: "kube*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: k8s-openapi
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      # sha2 0.11 adds a second digest stack beside tauri/wry's 0.10 and needs
+      # Rust 1.85. Revisit when tauri moves to digest 0.11.
+      - dependency-name: sha2
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,0 +1,61 @@
+# ─── Node / npm ───────────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─── TypeScript ───────────────────────────────────────────────────────────────
+*.tsbuildinfo
+
+# ─── Rust / Cargo ─────────────────────────────────────────────────────────────
+# Keep Cargo.lock for binaries (intentionally not ignored)
+src-tauri/target/
+
+# ─── Tauri build outputs ──────────────────────────────────────────────────────
+src-tauri/target/*/release/bundle/
+src-tauri/target/universal-apple-darwin/
+
+# ─── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ─── Editor / IDE ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# ─── Environment / secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Testing ──────────────────────────────────────────────────────────────────
+coverage/
+TODOLIST.md
+
+# ─── Claude Code run checkpoints (docs/claude/agent-checkpoints.md) ──────────
+.claude/checkpoints/
+
+# ─── Claude Code personal settings and agent memory (stay local) ─────────────
+.claude/settings.local.json
+.claude/agent-memory/

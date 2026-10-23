@@ -1,0 +1,84 @@
+{
+  "productName": "Garita",
+  "version": "2.3.0",
+  "identifier": "io.github.kanomnut.garita",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Garita",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "macOSPrivateApi": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI1Q0Y4QjE3NDk3OEE4OEMKUldTTXFIaEpGNHZQSlZ0K1drb0ZVMVhaWUhDQ0ZCU0hLYnZSMzM4VTNmYWhoOUJWWkpyak82TmMK",
+      "endpoints": ["https://github.com/KANOMNUT/garita/releases/latest/download/latest.json"],
+      "requireSignedVersion": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "license": "Apache-2.0",
+    "licenseFile": "../LICENSE",
+    "copyright": "Copyright 2026 the Garita contributors",
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../NOTICE": "NOTICE",
+      "../THIRD_PARTY_LICENSES": "THIRD_PARTY_LICENSES"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "provides": ["watchtower"],
+        "conflicts": ["watchtower"],
+        "replaces": ["watchtower"]
+      },
+      "rpm": {
+        "provides": ["watchtower"],
+        "conflicts": ["watchtower"],
+        "obsoletes": ["watchtower"]
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks.nsh"
+      },
+      "wix": {
+        "fragmentPaths": ["windows/path.wxs"],
+        "componentRefs": ["GaritaPathEnv"]
+      }
+    },
+    "macOS": {
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": "-"
+    }
+  }
+}

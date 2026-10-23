@@ -1,0 +1,106 @@
+# Fast checks on every pull request and every push to main: the same commands
+# a contributor runs locally (see CONTRIBUTING.md). Make "CI OK" the required
+# status check in branch protection; it fails when any job above it fails.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Type check and build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Emit checks
+        run: node --experimental-strip-types scripts/check-emit.ts
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy --no-self-update
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # tauri::generate_context! fails to compile when frontendDist (../dist)
+      # does not exist. The tests never load the frontend, so an empty dir is
+      # enough.
+      - name: Stub frontend bundle
+        run: mkdir -p ../dist
+
+      # Warnings are reported, not fatal, until the existing ones are fixed.
+      # Then add `-- -D warnings`.
+      - name: Clippy
+        run: cargo clippy --all-targets --locked
+
+      - name: Unit tests
+        run: cargo test --lib --locked
+
+      # CLAUDE.md hard rule: start_debug_container is the only strategic merge patch.
+      - name: One Patch::Strategic
+        run: test "$(grep -rn 'Patch::Strategic' src | wc -l)" -eq 1
+
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [frontend, rust]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

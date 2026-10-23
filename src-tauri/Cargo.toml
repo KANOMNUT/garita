@@ -1,0 +1,55 @@
+[package]
+name = "garita"
+version = "2.3.0"
+description = "Garita - Kubernetes desktop GUI"
+authors = ["The Garita contributors"]
+license = "Apache-2.0"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-updater = "~2.13"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "~2.4"
+tauri-plugin-single-instance = "~2.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+futures = "0.3"
+kube = { version = "0.95", features = ["derive", "ws", "client", "http-proxy", "socks5"] }
+k8s-openapi = { version = "0.23", features = ["v1_31"] }
+chrono = "0.4"
+http = "1"
+zeroize = "1"
+tempfile = "3"
+base64 = "0.23"
+flate2 = "1"
+x509-parser = "0.18"
+sha2 = "0.10"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_System_Registry"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"

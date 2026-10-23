@@ -1,0 +1,5 @@
+# Default reviewers for every path. Add path rules below as maintainers join;
+# later rules override earlier ones.
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @KANOMNUT

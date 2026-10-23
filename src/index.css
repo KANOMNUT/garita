@@ -1,0 +1,326 @@
+@import "tailwindcss" source(none);
+@config "../tailwind.config.js";
+
+/* Tailwind 4 preflight changed these defaults (border colour, button cursor, placeholder colour); keep the v3 behaviour. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::placeholder {
+    color: var(--color-gray-400);
+  }
+}
+
+@layer base {
+  :root {
+    --c-surface-base: 11 13 18;
+    --c-surface-panel: 18 21 29;
+    --c-surface-card: 26 30 41;
+    --c-surface-overlay: 31 41 55;
+    --c-surface-input: 17 24 39;
+    --c-surface-sunken: 7 10 16;
+    --c-surface-tint: 255 255 255;
+    --c-scrim: 0 0 0;
+    --c-edge: 255 255 255;
+    --a-edge: 0.06;
+    --c-edge-strong: 255 255 255;
+    --a-edge-strong: 0.1;
+    --c-ink: 230 233 239;
+    --c-mute: 138 147 166;
+    --c-dim: 91 99 119;
+    --c-accent: 78 161 255;
+    --c-on-accent: 255 255 255;
+    --c-status-ok: 52 211 153;
+    --c-status-warn: 251 191 36;
+    --c-status-bad: 248 113 113;
+    --c-status-info: 96 165 250;
+    --c-status-progress: 78 161 255;
+    --c-status-orange: 251 146 60;
+    --c-status-purple: 167 139 250;
+    --c-identity-blue: 78 161 255;
+    --c-identity-green: 52 211 153;
+    --c-identity-yellow: 251 191 36;
+    --c-identity-orange: 251 146 60;
+    --c-identity-red: 248 113 113;
+    --c-identity-purple: 167 139 250;
+    --c-metric-cpu: 78 161 255;
+    --c-metric-mem: 167 139 250;
+    --c-bar-low: 96 165 250;
+    --c-bar-mid: 251 191 36;
+    --c-bar-high: 248 113 113;
+    --c-log-debug: 91 99 119;
+    --c-log-match: 78 161 255;
+    --a-log-match: 0.28;
+    --c-log-highlight: 251 191 36;
+    --a-log-highlight: 0.38;
+    --c-series-1: 244 114 182;
+    --c-series-2: 163 230 53;
+    --c-series-3: 34 211 238;
+    --c-series-4: 217 70 239;
+    --c-series-5: 45 212 191;
+    --c-series-6: 203 213 225;
+    --c-hairline: 255 255 255;
+    --a-hairline: 0.04;
+    --a-scrollbar: 0.08;
+    --a-scrollbar-hover: 0.14;
+    --c-term-fg: 201 209 217;
+    --c-term-cursor-accent: 0 0 0;
+    --c-term-selection: 255 255 255;
+    --a-term-selection: 0.3;
+    --c-term-black: 13 17 23;
+    --c-term-red: 248 113 113;
+    --c-term-green: 52 211 153;
+    --c-term-yellow: 251 191 36;
+    --c-term-blue: 78 161 255;
+    --c-term-magenta: 167 139 250;
+    --c-term-cyan: 34 211 238;
+    --c-term-white: 201 209 217;
+    --c-term-bright-black: 85 87 83;
+    --c-term-bright-red: 239 41 41;
+    --c-term-bright-green: 138 226 52;
+    --c-term-bright-yellow: 252 233 79;
+    --c-term-bright-blue: 114 159 207;
+    --c-term-bright-magenta: 173 127 168;
+    --c-term-bright-cyan: 52 226 226;
+    --c-term-bright-white: 238 238 236;
+    /* Appearance picker swatches: each accent's own value, independent of the chosen accent. */
+    --c-swatch-blue: 78 161 255;
+    --c-swatch-teal: 45 212 191;
+    --c-swatch-violet: 177 151 252;
+    --c-swatch-amber: 245 158 11;
+    --c-swatch-rose: 244 114 182;
+    --c-swatch-slate: 184 199 218;
+  }
+
+  :root[data-theme="light"] {
+    --c-surface-base: 241 243 248;
+    --c-surface-panel: 248 249 252;
+    --c-surface-card: 255 255 255;
+    --c-surface-overlay: 255 255 255;
+    --c-surface-input: 241 243 248;
+    --c-surface-sunken: 233 237 244;
+    --c-surface-tint: 15 23 42;
+    --c-scrim: 15 23 42;
+    --c-edge: 15 23 42;
+    --a-edge: 0.08;
+    --c-edge-strong: 15 23 42;
+    --a-edge-strong: 0.14;
+    --c-ink: 15 23 42;
+    --c-mute: 86 97 118;
+    --c-dim: 122 131 151;
+    --c-accent: 23 88 177;
+    --c-on-accent: 255 255 255;
+    --c-status-ok: 3 103 72;
+    --c-status-warn: 112 86 0;
+    --c-status-bad: 173 0 23;
+    --c-status-info: 31 82 195;
+    --c-status-progress: 23 88 177;
+    --c-status-orange: 153 61 0;
+    --c-status-purple: 109 51 209;
+    --c-identity-blue: 23 88 177;
+    --c-identity-green: 3 103 72;
+    --c-identity-yellow: 112 86 0;
+    --c-identity-orange: 153 61 0;
+    --c-identity-red: 173 0 23;
+    --c-identity-purple: 109 51 209;
+    --c-metric-cpu: 43 130 238;
+    --c-metric-mem: 151 103 233;
+    --c-bar-low: 57 127 239;
+    --c-bar-mid: 168 121 0;
+    --c-bar-high: 234 72 67;
+    --c-log-debug: 95 107 128;
+    --c-log-match: 84 133 212;
+    --a-log-match: 1;
+    --c-log-highlight: 170 127 19;
+    --a-log-highlight: 1;
+    --c-series-1: 203 16 110;
+    --c-series-2: 82 118 10;
+    --c-series-3: 11 116 137;
+    --c-series-4: 178 16 203;
+    --c-series-5: 10 118 105;
+    --c-series-6: 92 107 127;
+    --c-hairline: 255 255 255;
+    --a-hairline: 0.7;
+    --a-scrollbar: 0.22;
+    --a-scrollbar-hover: 0.34;
+    --c-term-fg: 31 41 55;
+    --c-term-cursor-accent: 255 255 255;
+    --c-term-selection: 23 88 177;
+    --a-term-selection: 0.25;
+    --c-term-black: 31 41 55;
+    --c-term-red: 179 9 24;
+    --c-term-green: 5 102 54;
+    --c-term-yellow: 111 85 6;
+    --c-term-blue: 10 82 184;
+    --c-term-magenta: 144 10 189;
+    --c-term-cyan: 6 94 111;
+    --c-term-white: 86 97 118;
+    --c-term-bright-black: 75 85 101;
+    --c-term-bright-red: 208 11 27;
+    --c-term-bright-green: 6 121 64;
+    --c-term-bright-yellow: 131 100 7;
+    --c-term-bright-blue: 11 98 218;
+    --c-term-bright-magenta: 170 12 223;
+    --c-term-bright-cyan: 7 114 136;
+    --c-term-bright-white: 59 69 87;
+    --c-swatch-blue: 23 88 177;
+    --c-swatch-teal: 3 99 96;
+    --c-swatch-violet: 105 36 224;
+    --c-swatch-amber: 128 81 0;
+    --c-swatch-rose: 165 18 87;
+    --c-swatch-slate: 51 65 85;
+  }
+
+  /* Accent blocks are theme-exclusive (no ties, file order irrelevant); blue lives in the theme blocks.
+     They set only --c-accent (+ --c-on-accent on dark, where white fails on the new fills). */
+  :root:not([data-theme="light"])[data-accent="teal"] {
+    --c-accent: 45 212 191;
+    --c-on-accent: 11 13 18;
+  }
+
+  :root[data-theme="light"][data-accent="teal"] {
+    --c-accent: 3 99 96;
+  }
+
+  :root:not([data-theme="light"])[data-accent="violet"] {
+    --c-accent: 177 151 252;
+    --c-on-accent: 11 13 18;
+  }
+
+  :root[data-theme="light"][data-accent="violet"] {
+    --c-accent: 105 36 224;
+  }
+
+  :root:not([data-theme="light"])[data-accent="amber"] {
+    --c-accent: 245 158 11;
+    --c-on-accent: 11 13 18;
+  }
+
+  :root[data-theme="light"][data-accent="amber"] {
+    --c-accent: 128 81 0;
+  }
+
+  :root:not([data-theme="light"])[data-accent="rose"] {
+    --c-accent: 244 114 182;
+    --c-on-accent: 11 13 18;
+  }
+
+  :root[data-theme="light"][data-accent="rose"] {
+    --c-accent: 165 18 87;
+  }
+
+  :root:not([data-theme="light"])[data-accent="slate"] {
+    --c-accent: 184 199 218;
+    --c-on-accent: 11 13 18;
+  }
+
+  :root[data-theme="light"][data-accent="slate"] {
+    --c-accent: 51 65 85;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  html,
+  body {
+    background: rgb(var(--c-surface-base));
+    color: rgb(var(--c-ink));
+  }
+
+  body {
+    font-family: "Inter", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--c-surface-tint) / var(--a-scrollbar));
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-surface-tint) / var(--a-scrollbar-hover));
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .mono {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-feature-settings: "ss01", "ss02", "cv01";
+  }
+
+  .grain {
+    background-image: radial-gradient(
+        circle at 20% 0%,
+        rgb(var(--c-accent) / 0.06),
+        transparent 40%
+      ),
+      radial-gradient(
+        circle at 100% 0%,
+        rgb(var(--c-status-purple) / 0.05),
+        transparent 35%
+      );
+  }
+
+  .hairline {
+    box-shadow: inset 0 1px 0 rgb(var(--c-hairline) / var(--a-hairline));
+  }
+
+  .row-hover:hover {
+    background: rgb(var(--c-accent) / 0.04);
+  }
+
+  .row-hover:hover .row-bar {
+    box-shadow: inset 2px 0 0 rgb(var(--c-accent));
+  }
+
+  .row-selected {
+    background: rgb(var(--c-accent) / 0.08);
+  }
+
+  .row-selected .row-bar {
+    box-shadow: inset 2px 0 0 rgb(var(--c-accent));
+  }
+
+  .slide-in {
+    animation: slide-in 0.2s ease-out;
+  }
+
+  .fade-in {
+    animation: fade-in 0.15s ease-out;
+  }
+}
+
+details[open] > summary .chev {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .slide-in,
+  .fade-in {
+    animation: none;
+  }
+}
