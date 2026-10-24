@@ -77,6 +77,13 @@ Each item carries its version tag.
   - Multi-tenant Loki (`auth_enabled: true`; record the chart's actual default): with no tenant the Test says `unreachable` and Why? shows "no org id"; with the tenant set, Test is `ok` and history loads. This proves the service proxy forwards `X-Scope-OrgID`; if it does not, log history is single-tenant only.
   - VictoriaLogs: the probe query and `"f":="v" … | sort by (_time) desc limit N` return lines; unix-second `start` / `end` are accepted. The query shapes are not live-verified.
   - An exec-plugin cluster (GKE, EKS, AKS): the service proxy works with exec auth.
+- **macOS standard (non-admin) account** (Makefile `mac-app` / `mac` / `mac-install`; source-read and `make -n` only, no Mac on the dev box):
+  - `make mac` on a desktop session finishes without `Resource busy` and without a Finder Automation prompt; the DMG holds only `Garita.app` and opens it.
+  - `make mac-install` asks for no password; `~/Applications/Garita.app` opens directly (no quarantine flag) and `codesign -dv` shows `Signature=adhoc`.
+  - Dragging the release DMG's app into `~/Applications` asks for no password; after `xattr -rd com.apple.quarantine ~/Applications/Garita.app` it opens.
+  - In-app update of a copy in `~/Applications` asks for no password; of a copy in `/Applications` on a standard account it asks for an administrator (tauri-plugin-updater 2.13.2 `with administrator privileges` fallback).
+  - `HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"`: the cask installs into `~/Applications`, `postflight` clears the flag there, and the `binary` link points into it.
+  - Settings → Command line → Install on a standard account: the `sudo ln -s … /usr/local/bin/garita` line it shows cannot work without an administrator (known gap, no per-user link target yet).
 - **Edit-form transforms:** `src/components/edit/transforms.ts` is tested through `mergePatch` (`transforms.test.ts`). Transforms still inline in `.tsx` handlers are inspection-only (`check-emit.ts` cannot strip JSX).
 - On Windows the Rust tests need the MSVC `PATH` recipe (`CLAUDE.md` Development).
 

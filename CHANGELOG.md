@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **macOS: install without an administrator password.** On a standard account Garita can live in the `Applications` folder inside your home folder (`~/Applications`), and in-app updates there need no password either; in `/Applications` they ask for an administrator's. The README and the website show the per-user steps, including Homebrew's `HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"`. From a source checkout, `make mac-install` builds the app and copies it there, and `make mac-app` builds only the signed `.app`.
+
+### Changed
+
+- **macOS builds from source (`make mac`, `make mac-universal`) name the DMG like the release file:** `Garita-macOS-arm64.dmg` and `Garita-macOS-universal.dmg`.
+
+### Fixed
+
+- **`make mac` no longer fails with `hdiutil: couldn't unmount "diskN" - Resource busy`.** Local builds now bundle only the `.app` and make the DMG from it, so Tauri's Finder-scripted DMG step no longer runs on your Mac.
+
 ## [2.3.0] - 2026-10-23
 
 ### Added

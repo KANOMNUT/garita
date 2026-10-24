@@ -18,6 +18,17 @@ brew upgrade --cask garita        # later releases
 
 Since Homebrew 6.0.0, a non-official tap needs explicit trust. Installing the fully qualified name (`kanomnut/garita/garita`) trusts that one cask, so the lines above work as they are. A first install by the short name (`brew install --cask garita`) needs `brew trust --cask kanomnut/garita/garita` first.
 
+**Standard (non-admin) account.** `/Applications` is writable only by administrators. Install into your home folder instead: `--appdir` is a cask option (default `/Applications`), and `HOMEBREW_CASK_OPTS` appends it to every cask command ([Homebrew manpage](https://docs.brew.sh/Manpage)):
+
+```bash
+mkdir -p ~/Applications
+echo 'export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"' >> ~/.zshenv
+export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"
+brew install --cask kanomnut/garita/garita
+```
+
+The cask needs no change for this: `app`, `binary` and `postflight` all go through `#{appdir}`. Homebrew itself needs a prefix the account can write; on a standard account an administrator provisions it once ([Homebrew: Installation](https://docs.brew.sh/Installation)). In `~/Applications` the in-app updater replaces the app without a password; in `/Applications` on a standard account it asks for an administrator's.
+
 The cask also has a `binary` stanza (`#{appdir}/Garita.app/Contents/MacOS/garita`), so Homebrew links a `garita` command into its own prefix (`/opt/homebrew/bin` on Apple Silicon); Settings → Command line reads that link as installed. The stanza has no `target:` because the binary is already named `garita`, and it needs no change on a version bump.
 
 The cask sets `auto_updates true`: the app updates itself (Settings → Updates). A bare `brew upgrade` still upgrades it when the installed app is older than the cask, and `brew upgrade --cask garita` names it explicitly. The cask `version` and `sha256` are bumped by hand, as described below.

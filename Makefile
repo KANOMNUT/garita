@@ -168,13 +168,15 @@ endif
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
 
-.PHONY: help deps dev build mac mac-universal windows \
+.PHONY: help deps dev build mac mac-app mac-install mac-universal windows \
         linux linux-deb linux-rpm linux-appimage linux-pacman live clean
 
 help:
 	@echo "Garita v$(VERSION) — build targets"
 	@echo ""
 	@echo "  make mac              macOS ARM64 .dmg              (run on macOS)"
+	@echo "  make mac-app          macOS ARM64 .app only          (run on macOS)"
+	@echo "  make mac-install      mac-app, copied to ~/Applications, no admin password"
 	@echo "  make mac-universal    macOS Universal .dmg           (run on macOS)"
 	@echo "  make windows          Windows x64 .msi + .exe        (run on Windows)"
 	@echo "  make linux            Linux x64 .deb + .rpm + .AppImage  (run on Linux)"
@@ -189,8 +191,10 @@ help:
 	@echo ""
 	$(if $(IS_WINDOWS),@echo "Windows: run make from PowerShell / cmd / Git Bash. Recipes run under"; echo "  $(SHELL)$(if $(_NATIVE_WIN_MAKE), (override: GIT_BASH=<Git>/usr/bin/bash.exe))."; echo "  dev / windows / deps run Rust under the MSVC toolchain ($(WIN_TOOLCHAIN))"; echo "  automatically. Override with WIN_TOOLCHAIN=...."; echo "")
 	@echo "Output paths:"
-	@echo "  mac            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/"
-	@echo "  mac-universal  src-tauri/target/universal-apple-darwin/release/bundle/dmg/"
+	@echo "  mac            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Garita-macOS-arm64.dmg"
+	@echo "  mac-app        src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Garita.app"
+	@echo "  mac-install    ~/Applications/Garita.app"
+	@echo "  mac-universal  src-tauri/target/universal-apple-darwin/release/bundle/dmg/Garita-macOS-universal.dmg"
 	@echo "  windows        src-tauri/target/x86_64-pc-windows-msvc/release/bundle/{msi,nsis}/"
 	@echo "  linux          src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/{deb,rpm,appimage}/"
 	@echo "  linux-pacman   src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/pacman/"
@@ -278,32 +282,50 @@ endif
 
 # Garita ships ad-hoc signed only (no Apple Developer account, no notarization).
 # Developer ID signing + notarization was removed on 2026-05-27; do not re-add it.
+#
+# Local builds bundle only the .app (`--bundles app`) and make the DMG here, from the
+# signed app. Tauri's own DMG step (bundle_dmg.sh) mounts a scratch image under /Volumes
+# and drives Finder through AppleScript to lay out the window, which it leaves open; on a
+# desktop session the detach then fails with `hdiutil: couldn't unmount "diskN" -
+# Resource busy`. That DMG was deleted and rebuilt here anyway. Nothing below needs sudo
+# or an admin password.
 
-# $(call mac_sign,<app-path>,<dmg-path>) — ad-hoc sign the .app and recreate the DMG from it.
+MAC_ARM = src-tauri/target/aarch64-apple-darwin/release/bundle
+MAC_UNI = src-tauri/target/universal-apple-darwin/release/bundle
+
+# $(call mac_sign,<app-path>) — ad-hoc sign the .app.
 # NEVER pass --options runtime here: it is valid only with a Developer ID cert and
 # Apple rejects it for ad-hoc "-".
-define mac_sign
-	APP="$(1)"; DMG="$(2)"; \
-	echo "→ Ad-hoc signing .app and recreating DMG…"; \
-	if [ -n "$$APP" ]; then codesign --sign - --deep --force "$$APP"; fi; \
-	if [ -n "$$APP" ] && [ -n "$$DMG" ]; then \
-	  rm -f "$$DMG"; \
-	  hdiutil create -volname "Garita" -srcfolder "$$APP" -ov -format UDZO "$$DMG"; \
-	fi
+mac_sign = codesign --sign - --deep --force "$(1)"
+
+# $(call mac_dmg,<app-path>,<dmg-path>) — a plain DMG made from the signed .app.
+define mac_dmg
+	mkdir -p "$(dir $(2))"
+	hdiutil create -volname "Garita" -srcfolder "$(1)" -ov -format UDZO "$(2)"
 endef
 
-mac:
+mac-app:
 ifneq ($(UNAME), Darwin)
 	$(error macOS builds must run on macOS)
 endif
-	@echo "→ Building macOS ARM64 .dmg…"
+	@echo "→ Building macOS ARM64 .app…"
 	npm ci
-	cargo tauri build --target aarch64-apple-darwin
-	@APP=$$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ -maxdepth 1 -name "*.app" | head -1); \
-	 DMG=$$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/ -name "*.dmg" | head -1); \
-	 $(call mac_sign,$$APP,$$DMG)
+	cargo tauri build --target aarch64-apple-darwin --bundles app
+	$(call mac_sign,$(MAC_ARM)/macos/Garita.app)
+
+mac: mac-app
+	$(call mac_dmg,$(MAC_ARM)/macos/Garita.app,$(MAC_ARM)/dmg/Garita-macOS-arm64.dmg)
 	@echo ""
-	@echo "✓ Output: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/"
+	@echo "✓ Output: $(MAC_ARM)/dmg/"
+
+# Per-user install: ~/Applications needs no admin password, unlike /Applications on a
+# standard account, and the in-app updater can then replace the app without one either.
+# A local build carries no quarantine flag, so there is no xattr step.
+mac-install: mac-app
+	mkdir -p "$$HOME/Applications"
+	rm -rf "$${HOME:?}/Applications/Garita.app"
+	ditto "$(MAC_ARM)/macos/Garita.app" "$$HOME/Applications/Garita.app"
+	@echo "✓ Installed: $$HOME/Applications/Garita.app"
 
 mac-universal:
 ifneq ($(UNAME), Darwin)
@@ -312,12 +334,11 @@ endif
 	@echo "→ Building macOS Universal (ARM64 + x86_64) .dmg…"
 	rustup target add aarch64-apple-darwin x86_64-apple-darwin
 	npm ci
-	cargo tauri build --target universal-apple-darwin
-	@APP=$$(find src-tauri/target/universal-apple-darwin/release/bundle/macos/ -maxdepth 1 -name "*.app" | head -1); \
-	 DMG=$$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg/ -name "*.dmg" | head -1); \
-	 $(call mac_sign,$$APP,$$DMG)
+	cargo tauri build --target universal-apple-darwin --bundles app
+	$(call mac_sign,$(MAC_UNI)/macos/Garita.app)
+	$(call mac_dmg,$(MAC_UNI)/macos/Garita.app,$(MAC_UNI)/dmg/Garita-macOS-universal.dmg)
 	@echo ""
-	@echo "✓ Output: src-tauri/target/universal-apple-darwin/release/bundle/dmg/"
+	@echo "✓ Output: $(MAC_UNI)/dmg/"
 
 # ─── Windows ──────────────────────────────────────────────────────────────────
 
