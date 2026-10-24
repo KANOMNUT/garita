@@ -25,10 +25,17 @@ export function cliView(s: CliStatus, afterInstall: boolean): CliView {
       if (s.on_path) return view("ok", `✓ ${CMD} is installed at ${path}.`, { helper: `To remove it, delete ${path}.` });
       // A different resolved_path is an earlier garita shadowing ours on PATH, not a write failure (N10).
       if (afterInstall && s.manual_command && (!path || path === "/usr/local/bin/garita")) {
-        return view("plain", "Garita can't write to /usr/local/bin. Run this in a terminal:", { copy: s.manual_command });
+        return view("plain", "Garita can't write to /usr/local/bin. Run this in a terminal:", {
+          copy: s.manual_command,
+          // The app never edits a shell profile; it only shows the line (standard accounts).
+          helper: s.path_hint ? `Then add this line to ~/.zprofile, open a new terminal window and reopen Garita: ${s.path_hint}` : null,
+        });
       }
       if (path) return view("warn", `▲ ${path} doesn't point to this copy of Garita.`, { action: `Reinstall the "${CMD}" command` });
-      return view("plain", `The ${CMD} command isn't installed.`, { helper: `Creates a link at /usr/local/bin/${CMD} to the app.`, action: `Install the "${CMD}" command` });
+      return view("plain", `The ${CMD} command isn't installed.`, {
+        helper: `Creates a link to the app at /usr/local/bin/${CMD}, or in ~/.local/bin or ~/bin when Garita can't write there and that folder is on your PATH.`,
+        action: `Install the "${CMD}" command`,
+      });
     }
     case "package":
       return s.on_path

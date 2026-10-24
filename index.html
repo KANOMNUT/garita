@@ -175,7 +175,7 @@ html{scroll-behavior:auto}
     <a id="p-exe" href="https://github.com/KANOMNUT/garita/releases/latest/download/Garita-windows-amd64-setup.exe">Windows .exe</a>
     <a href="https://github.com/KANOMNUT/garita/releases/latest/download/Garita-windows-amd64.msi">Windows .msi</a>
   </div>
-  <p class="small" id="dl-note">macOS builds are not notarized: on first launch run <code>xattr -rd com.apple.quarantine /Applications/Garita.app</code>. Windows installers are unsigned, so SmartScreen will warn.</p>
+  <p class="small" id="dl-note">macOS builds are not notarized: on first launch run <code>xattr -rd com.apple.quarantine /Applications/Garita.app</code> (or <code>~/Applications/Garita.app</code>). Windows installers are unsigned, so SmartScreen will warn.</p>
   <figure class="shot"><a href="site/demo.png"><img src="site/demo.png" width="1906" height="1012" decoding="async" fetchpriority="high" alt="Garita showing the Pods view of a local kind cluster: node cards, a pod table with CPU and memory bars, and the sidebar of resource kinds."></a><figcaption class="small">A real Garita window on a local kind test cluster.</figcaption></figure>
 </div></div>
 
@@ -222,9 +222,9 @@ html{scroll-behavior:auto}
   <h2>Install</h2>
   <p class="small sec">Needs a current system webview: macOS 13.3 or later, Ubuntu 22.04 or later, Fedora/RHEL with current webkit2gtk, Windows 10 or later.</p>
   <details class="card" id="d-mac" open><summary>macOS (Apple Silicon)</summary><div>
-    <p>Download <a href="https://github.com/KANOMNUT/garita/releases/latest/download/Garita-macOS-arm64.dmg"><code>Garita-macOS-arm64.dmg</code></a> and drag it to Applications. The app is ad-hoc signed, not notarized, so macOS blocks the first launch. Run once:</p>
+    <p>Download <a href="https://github.com/KANOMNUT/garita/releases/latest/download/Garita-macOS-arm64.dmg"><code>Garita-macOS-arm64.dmg</code></a> and drag it to Applications. On a standard account, which needs an administrator password for that folder, drag it to the Applications folder in your home folder instead (<code>mkdir -p ~/Applications</code> if it is missing). The app is ad-hoc signed, not notarized, so macOS blocks the first launch. Run once (with <code>~/Applications/Garita.app</code> for the copy in your home folder):</p>
     <div class="snip"><pre data-copy="macOS quarantine command" tabindex="0" role="group" aria-label="macOS quarantine command"><code>xattr -rd com.apple.quarantine /Applications/Garita.app</code></pre></div>
-    <p>Or with Homebrew (the cask does this for you and adds the <code>garita</code> command):</p>
+    <p>Or with Homebrew (the cask does this for you and adds the <code>garita</code> command). On a standard account, first add <code>export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"</code> to <code>~/.zshenv</code>:</p>
     <div class="snip"><pre data-copy="Homebrew install commands" tabindex="0" role="group" aria-label="Homebrew install commands"><code>brew tap KANOMNUT/garita https://github.com/KANOMNUT/garita</code>
 <code>brew install --cask kanomnut/garita/garita</code></pre></div>
     <p>With the DMG, use Settings &rarr; Command line &rarr; Install to add the <code>garita</code> command.</p>
@@ -268,7 +268,7 @@ html{scroll-behavior:auto}
   var os = /linux/i.test(p) && !/android/i.test(ua) ? "l" : /^win|windows/i.test(p) ? "w" : "m";
   var dl = $("dl"), code = "<code>xattr -rd com.apple.quarantine /Applications/Garita.app</code>";
   var notes = {
-    m: "Apple Silicon only. Not notarized: on first launch run " + code + " (the Homebrew cask does this for you). Intel Mac? <a href=\"https://github.com/KANOMNUT/garita#development\">Build from source</a>.",
+    m: "Apple Silicon only. Not notarized: on first launch run " + code + " (or <code>~/Applications/Garita.app</code>; the Homebrew cask does this for you). Intel Mac? <a href=\"https://github.com/KANOMNUT/garita#development\">Build from source</a>.",
     l: "x86_64. The <code>garita</code> command is on your PATH after installing.",
     w: "x86_64. Unsigned: SmartScreen will warn. Choose \"More info\", then \"Run anyway\"."
   };

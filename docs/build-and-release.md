@@ -20,8 +20,10 @@ Platform-specific requirements are listed in the sections below.
 | `make dev` | any | `cargo tauri dev` — hot-reload dev server | — |
 | `make deps` | any | Installs Rust targets + Linux system packages + `npm ci` | — |
 | `make build` | any | Auto-detects OS, delegates to `mac` / `linux` / `windows` | platform native |
-| `make mac` | macOS only | ARM64 `.dmg` + ad-hoc sign + recreate DMG | `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/` |
-| `make mac-universal` | macOS only | Universal binary (ARM64 + x86_64) `.dmg` | `src-tauri/target/universal-apple-darwin/release/bundle/dmg/` |
+| `make mac` | macOS only | `mac-app`, then a plain DMG from the signed `.app` | `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Garita-macOS-arm64.dmg` |
+| `make mac-app` | macOS only | ARM64 `.app` only (`--bundles app`) + ad-hoc sign | `src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Garita.app` |
+| `make mac-install` | macOS only | `mac-app`, then copies it to `~/Applications` (no `sudo`, no administrator password) | `~/Applications/Garita.app` |
+| `make mac-universal` | macOS only | Universal binary (ARM64 + x86_64) `.app` + ad-hoc sign + plain DMG | `src-tauri/target/universal-apple-darwin/release/bundle/dmg/Garita-macOS-universal.dmg` |
 | `make windows` | Windows only | x86_64 `.msi` + NSIS `.exe` | `src-tauri/target/x86_64-pc-windows-msvc/release/bundle/{msi,nsis}/` |
 | `make linux` | Linux only | x86_64 `.deb` + `.rpm` + `.AppImage` | `src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/{deb,rpm,appimage}/` |
 | `make linux-deb` | Linux only | `.deb` only (Debian/Ubuntu) | `.../bundle/deb/` |
@@ -36,6 +38,7 @@ Platform-specific requirements are listed in the sections below.
 - **First setup on a new machine:** `make deps` then `make dev`
 - **Produce an installer for your current OS:** `make build`
 - **Apple Silicon distribution:** `make mac` — produces an ARM64-only DMG, faster build
+- **Run your own build on your Mac, standard account included:** `make mac-install`, then open `~/Applications/Garita.app`
 - **Wide macOS distribution:** `make mac-universal` — fat binary works on both Intel and Apple Silicon
 - **CI on each platform:** run the appropriate single-platform target
 
@@ -48,6 +51,7 @@ Platform-specific requirements are listed in the sections below.
 - Xcode Command Line Tools: `xcode-select --install`
 - For universal builds, both Rust targets must be installed. `make deps` handles this, or manually: `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
 - By default `tauri.conf.json` sets `"signingIdentity": "-"` for ad-hoc signing; no Apple Developer account is required. See [macOS Code Signing](#macos-code-signing) below.
+- **Standard (non-admin) account:** installing the Command Line Tools needs an administrator once; rustup, `cargo install tauri-cli`, `npm ci` and the `make mac*` targets need no `sudo`. `/Applications` is writable only by administrators, so `make mac-install` copies the app to `~/Applications`, and a DMG user drags it there. A locally built app carries no quarantine flag, so it opens without the `xattr` step.
 
 ### Windows
 
@@ -73,27 +77,46 @@ The `APPIMAGE_EXTRACT_AND_RUN=1` env var is set for AppImage builds to avoid req
 ## macOS Code Signing
 
 Garita ships **ad-hoc signed only**: no Apple Developer account, no Developer ID
-certificate, no notarization. Both the Makefile (`mac` / `mac-universal`) and `release.yml`
+certificate, no notarization. Both the Makefile (`mac-app` / `mac-universal`) and `release.yml`
 run the same `codesign --sign -` step. Developer ID signing and
 notarization were removed on 2026-05-27 and are not planned.
 
-The app runs and can be distributed, but macOS shows a Gatekeeper warning on first launch
-unless the user right-clicks and selects Open (see the install notes in the README).
+The app runs and can be distributed, but macOS blocks a downloaded copy on first launch.
+On macOS 15 and later, Control-click → Open no longer gets past that block: clear the
+quarantine flag with `xattr -rd com.apple.quarantine <folder>/Garita.app` (see the install
+notes in the README; the Homebrew cask does it in `postflight`), or approve the app in
+System Settings → Privacy & Security → Open Anyway, which asks for a password. A locally
+built app carries no quarantine flag and opens directly.
+
+The Makefile's steps, by hand:
 
 ```bash
-# 1. Find the built .app inside the writable bundle/macos/ directory
-APP=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ -maxdepth 1 -name "*.app" | head -1)
+# 1. Build only the .app (no Tauri DMG step, see below)
+cargo tauri build --target aarch64-apple-darwin --bundles app
+APP=src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Garita.app
 # 2. Sign with --deep so nested binaries (helper processes) are also signed
 codesign --sign - --deep --force "$APP"
-# 3. Recreate the DMG from the signed .app (the original was built before signing)
-DMG=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/ -name "*.dmg" | head -1)
-rm -f "$DMG"
-hdiutil create -volname "Garita" -srcfolder "$APP" -ov -format UDZO "$DMG"
+# 3. Make the DMG from the signed .app
+mkdir -p src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+hdiutil create -volname "Garita" -srcfolder "$APP" -ov -format UDZO \
+  src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Garita-macOS-arm64.dmg
 ```
 
-**Why the DMG must be recreated (not signed in-place):** Tauri builds a read-only HFS+
+**Why the DMG is made from the signed app (not signed in-place):** Tauri builds a read-only HFS+
 DMG. You cannot sign the `.app` inside a mounted DMG (the volume is read-only), and
 signing the DMG itself doesn't make the nested `.app` signed in Gatekeeper's eyes.
+`release.yml` still builds `app,dmg` and replaces Tauri's DMG after signing.
+
+**Why local builds skip Tauri's DMG step:** its `bundle_dmg.sh` (tauri-bundler 2.10.1)
+mounts a scratch image under `/Volumes`, drives Finder through AppleScript to lay out the
+window, leaves that window open, and gives up after three detach attempts. On a desktop
+session that fails as `hdiutil: couldn't unmount "diskN" - Resource busy`, and it needs
+Terminal's Automation permission over Finder. The bundler passes `--skip-jenkins` (no
+AppleScript) only when `CI=true`, which GitHub Actions sets. A failed run can leave a
+`/Volumes/dmg.*` volume mounted and a `rw.*.dmg` file in `bundle/macos/`, and a build from
+before this change leaves Tauri's `Garita_<version>_<arch>.dmg` in `bundle/dmg/`. Clean up with
+`hdiutil detach /Volumes/dmg.*`, `rm -f src-tauri/target/*/release/bundle/macos/rw.*.dmg` and
+`rm -rf src-tauri/target/*/release/bundle/dmg src-tauri/target/*/release/bundle/share`.
 
 **Do not:**
 - Use `hdiutil attach` to mount the original DMG and sign inside it — the volume is read-only.
@@ -223,7 +246,7 @@ The draft has 14 assets: `Garita-macOS-arm64.dmg`, `Garita-macOS-arm64.app.tar.g
 - The tagged commit's message must not carry `[skip ci]` (or `[ci skip]`, `[no ci]`, `[skip actions]`, `[actions skip]`): GitHub may then skip the tag-push run. If no Release run appears, dispatch it from the tag ref: `gh workflow run release.yml --ref vX.Y.Z -f tag=vX.Y.Z`.
 - Publishing a release that is not the newest version must untick "Set as the latest release". `latest.json` is served from GitHub's latest release, and `make_latest` defaults to true on publish.
 - The repo must be public for anonymous update checks. 2.3.0 is the first published release, so the in-app update path can first be observed at the release after it.
-- macOS installs in-app (capabilities in `updater-macos.json`). Linux checks and notifies; "Download" opens the release page (`open_release_page`). AppImage is not shipped.
+- macOS installs in-app (capabilities in `updater-macos.json`). tauri-plugin-updater swaps the `.app` in place; when the user cannot write the folder that holds it (a standard account with Garita in `/Applications`), it asks for an administrator password through AppleScript (`with administrator privileges`). In `~/Applications` no password is asked. Linux checks and notifies; "Download" opens the release page (`open_release_page`). AppImage is not shipped.
 
 ---
 

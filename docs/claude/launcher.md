@@ -48,18 +48,22 @@ Read from `tauri-plugin-single-instance` 2.4.5 (`~/.cargo/registry`), not fixabl
 
 App-local commands (no `context`): `get_cli_status`, `install_cli_command` (macOS only, otherwise `Err("Failed to install command: not supported on this platform")`). `install_cli_command` is a local symlink, not a cluster write: a raw `invoke` with an `EXEMPT` entry in `writeBackstop.test.ts`. Decisions are pure (`decide_status`, `plan_install`) over a `Probe`; the filesystem/registry reads are thin shims, and `get_cli_status` runs them in `spawn_blocking`.
 
-`CliStatus` (`method`, `on_path`, `resolved_path`, `manual_command`):
+`CliStatus` (`method`, `on_path`, `resolved_path`, `manual_command`, `path_hint`):
 
 | OS | `method` | `on_path` is true when | `manual_command` |
 |---|---|---|---|
-| macOS | `symlink` | `garita` on PATH (after `fix_path`) or in `/usr/local/bin` canonicalises to this app's binary | always set: `sudo ln -s '<exe>' /usr/local/bin/garita`; `ln -sfh` only over an existing symlink; prefixed `sudo mkdir -p /usr/local/bin && ` when the directory is absent. Paths are single-quoted (`sh_quote`). |
+| macOS | `symlink` | `garita` on PATH (after `fix_path`) or in `/usr/local/bin` canonicalises to this app's binary | always set. **Administrator** (`/Applications` writable, i.e. the admin group; `mac_admin`): `sudo ln -s '<exe>' /usr/local/bin/garita`; `ln -sfh` only over an existing symlink; prefixed `sudo mkdir -p /usr/local/bin && ` when the directory is absent. **Standard account**: `mkdir -p ~/.local/bin && ln -s '<exe>' ~/.local/bin/garita`, no `sudo`, plus `path_hint` `export PATH="$HOME/.local/bin:$PATH"` unless `~/.local/bin` is already on PATH. Paths are single-quoted (`sh_quote`). |
 | Linux package | `package` | `garita` on PATH canonicalises to `current_exe()` | none |
 | Linux with `$APPIMAGE` | `manual` | `garita` on PATH canonicalises to the canonical `$APPIMAGE` | `ln -s '<APPIMAGE>' ~/.local/bin/garita` (no AppImage is published; this is for self-built ones) |
 | Windows | `installer` | `garita.exe` is in a directory of the HKCU `Environment` Path, the HKLM `Session Manager\Environment` Path or the process PATH (`%VAR%` expanded, quotes trimmed) | the exe's folder when not on PATH |
 
 `resolved_path` is what was found, even when stale (`on_path=false` with `Some` means a stale or foreign link). The UI prints it and never a hard-coded path (a Homebrew `binary` stanza links elsewhere).
 
-macOS `install_cli_command` (`plan_install`, never escalates, never shells out): refuses a temporary location (path under `/AppTranslocation/` or a read-only volume via `statfs`) with an `Err`; a regular file or a live link to anything other than `…/Contents/MacOS/garita` returns `Err("Failed to install command: /usr/local/bin/garita already exists and is not Garita's link")`; a dangling or Garita-shaped link is replaced; permission denied or a missing directory returns `Ok` with `on_path: false` and the `manual_command`.
+`path_hint` is a line for the user's shell profile, shown under the copy line; it is `None` on every row except the macOS standard-account one. **The app never writes a shell profile.**
+
+macOS `install_cli_command` (`plan_install`, never escalates, never shells out) tries the links of `install_links` in order: `/usr/local/bin/garita`, then `<user_bin>/garita`. `user_bin` is the first of `$HOME/.local/bin` and `$HOME/bin` that is a directory and is on PATH (after `fix_path`); install never creates a folder, since a new one would not be on PATH. `/usr/local/bin` goes first so an install that worked before keeps landing there, and so a new link is not shadowed by an older one in `/usr/local/bin`. Per link: a temporary location (path under `/AppTranslocation/` or a read-only volume via `statfs`) is an `Err`; a regular file or a live link to anything other than `…/Contents/MacOS/garita` is `Err("Failed to install command: <link> already exists and is not Garita's link")` and stops the install; a dangling or Garita-shaped link is replaced; permission denied or a missing directory moves on to the next link. When none is writable it returns `Ok` with `on_path: false`, the `manual_command` and the `path_hint`.
+
+Known ceiling: when `fix_path` falls back to its static list (no login shell answered), that list contains `~/.local/bin` and `~/bin`, so a link there can read as installed although the user's terminal does not have that folder on PATH.
 
 ## Per-OS install (K2–K5)
 
@@ -79,6 +83,6 @@ Installers are unsigned (no Authenticode). The updater `.sig` files are a differ
 
 ## Tests
 
-Rust: `launch::tests` (parser, help names, namespace validation, caps), `commands::launcher::tests` (take rule), `commands::cli::tests` (every `CliStatus` row, `plan_install`, quoting, `expand_env`). TS: `launchArgs.test.ts`, `cliStatus.test.ts`, `writeBackstop.test.ts`.
+Rust: `launch::tests` (parser, help names, namespace validation, caps), `commands::launcher::tests` (take rule), `commands::cli::tests` (every `CliStatus` row including the standard-account line and `path_hint`, `plan_install`, `install_links`, `user_bin`, quoting, `expand_env`). TS: `launchArgs.test.ts`, `cliStatus.test.ts`, `writeBackstop.test.ts`.
 
-The `cfg(unix)` code (detach, stderr gating, macOS `install_cli_command` and its `statfs` shim, the Linux status path) does not compile on a Windows box; it needs `cargo check` and `cargo test --lib` on macOS and Linux (`open-items.md`).
+The `cfg(unix)` code (detach, stderr gating, macOS `install_cli_command` and its `statfs` and `access` (`mac_admin`) shims, the Linux status path) does not compile on a Windows box; it needs `cargo check` and `cargo test --lib` on macOS and Linux (`open-items.md`).

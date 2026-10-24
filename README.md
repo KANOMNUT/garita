@@ -38,14 +38,16 @@ brew install --cask kanomnut/garita/garita
 
 `brew upgrade` also updates Garita: Homebrew upgrades a self-updating cask when the installed app is older than the cask.
 
+**macOS without an administrator password:** on a standard account, copying into `/Applications` asks for an administrator. Put Garita in the `Applications` folder inside your home folder instead (`mkdir -p ~/Applications` if it is missing, then drag `Garita.app` from the DMG there); in-app updates then need no password either. With Homebrew, add `export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"` to `~/.zshenv` before installing. Homebrew itself needs a prefix your account can write, which an administrator sets up once ([Homebrew: Installation](https://docs.brew.sh/Installation)).
+
 **macOS first launch:** Garita is ad-hoc signed, not notarized, so Gatekeeper blocks a downloaded copy until you run (the Homebrew cask does this for you):
 
 ```bash
-xattr -rd com.apple.quarantine /Applications/Garita.app
+xattr -rd com.apple.quarantine /Applications/Garita.app      # or ~/Applications/Garita.app
 ```
 
 **The `garita` command.** `garita [--context <name>] [-n <namespace>] [kind]` opens the app (`garita --help` lists the options).
-- macOS: the Homebrew cask adds it; otherwise use Settings → Command line → Install.
+- macOS: the Homebrew cask adds it; otherwise use Settings → Command line → Install. It links the command into `/usr/local/bin`, or into `~/.local/bin` or `~/bin` when Garita can't write `/usr/local/bin` and that folder is on your `PATH`. If neither works it shows a command to run: with `sudo` for an administrator, and without `sudo` (into `~/.local/bin`, plus the `PATH` line for your `~/.zprofile`) on a standard account.
 - Linux `.deb`/`.rpm`: it is on your `PATH` after installing.
 - Windows: the installer adds its folder to your `PATH` (the `.exe` for your user, the `.msi` for all users); open a new terminal window. If your user `PATH` is too long to extend safely, Settings → Command line shows the folder to add.
 - A self-built AppImage adds no command; Settings → Command line shows a link command to copy.
@@ -152,7 +154,7 @@ Plugins are found on the shell `PATH` and in common install locations (Homebrew,
 | Node.js (npm >= 9) | >= 22.6 |
 | tauri-cli | `cargo install tauri-cli --version "^2.0"` |
 
-- **macOS:** Xcode Command Line Tools (`xcode-select --install`).
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`; installing them needs an administrator once). The build itself needs no administrator password.
 - **Linux:** WebKit2GTK and related packages; `make deps` installs them.
 - **Windows:** the MSVC Rust toolchain (`rustup toolchain install stable-x86_64-pc-windows-msvc`) and Visual Studio Build Tools with "Desktop development with C++". `make` runs from PowerShell, cmd or Git Bash and needs Git for Windows.
 
@@ -172,6 +174,7 @@ Tauri cannot cross-compile, so each platform builds on its own OS. `make help` l
 ```bash
 make build            # current OS, auto-detected
 make mac              # macOS ARM64 .dmg
+make mac-install      # macOS ARM64 .app, copied to ~/Applications (no administrator password)
 make mac-universal    # macOS Universal .dmg (ARM64 + x86_64)
 make windows          # Windows x86_64 .msi + NSIS .exe
 make linux            # Linux x86_64 .deb + .rpm + .AppImage
