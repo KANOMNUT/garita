@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CliStatus } from "../types/k8s";
 import { cliView } from "./cliStatus";
 
-const s = (p: Partial<CliStatus>): CliStatus => ({ method: "symlink", on_path: false, resolved_path: null, manual_command: null, ...p });
+const s = (p: Partial<CliStatus>): CliStatus => ({ method: "symlink", on_path: false, resolved_path: null, manual_command: null, path_hint: null, ...p });
 
 describe("cliView", () => {
   it("mac installed prints resolved_path, not a hard-coded one", () => {
@@ -19,7 +19,23 @@ describe("cliView", () => {
   });
   it("mac install denied (Ok, on_path false, manual_command) shows the copy line", () => {
     expect(cliView(s({ manual_command: "sudo ln -s a b" }), true))
-      .toMatchObject({ text: "Garita can't write to /usr/local/bin. Run this in a terminal:", copy: "sudo ln -s a b", action: null });
+      .toMatchObject({ text: "Garita can't write to /usr/local/bin. Run this in a terminal:", copy: "sudo ln -s a b", action: null, helper: null });
+  });
+  it("standard account: per-user line plus the profile line to add, never a sudo line", () => {
+    const line = "mkdir -p ~/.local/bin && ln -s 'x' ~/.local/bin/garita";
+    const hint = 'export PATH="$HOME/.local/bin:$PATH"';
+    expect(cliView(s({ manual_command: line, path_hint: hint }), true)).toMatchObject({
+      copy: line,
+      helper: `Then add this line to ~/.zprofile, open a new terminal window and reopen Garita: ${hint}`,
+      action: null,
+    });
+    // ~/.local/bin already on PATH: no profile line
+    expect(cliView(s({ manual_command: line }), true).helper).toBeNull();
+  });
+  it("not installed: the helper names both link folders", () => {
+    expect(cliView(s({}), false).helper).toBe(
+      "Creates a link to the app at /usr/local/bin/garita, or in ~/.local/bin or ~/bin when Garita can't write there and that folder is on your PATH.",
+    );
   });
   it("denied install with a different resolved_path (shadowing garita) is stale, not 'can't write'", () => {
     expect(cliView(s({ resolved_path: "/opt/homebrew/bin/garita", manual_command: "x" }), true))

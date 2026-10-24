@@ -1092,7 +1092,7 @@ export interface DeprecationReport {
 // ─── CLI launcher (mirrors Rust LaunchArgs / CliStatus, snake_case serde) ─────
 
 export interface LaunchArgs { context: string | null; namespace: string | null; kind: string | null; ignored: string[]; }
-export interface CliStatus { method: "symlink" | "package" | "installer" | "manual"; on_path: boolean; resolved_path: string | null; manual_command: string | null; }
+export interface CliStatus { method: "symlink" | "package" | "installer" | "manual"; on_path: boolean; resolved_path: string | null; manual_command: string | null; path_hint: string | null; }
 
 // ─── Resource map (mirrors Rust commands/map.rs, snake_case serde; docs/impl/v2.2.0-tasks.md A3) ───
 

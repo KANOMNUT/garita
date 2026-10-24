@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`make mac` no longer fails with `hdiutil: couldn't unmount "diskN" - Resource busy`.** Local builds now bundle only the `.app` and make the DMG from it, so Tauri's Finder-scripted DMG step no longer runs on your Mac.
+- **Settings → Command line → Install works on a macOS standard account.** When Garita can't write `/usr/local/bin`, it links the `garita` command into `~/.local/bin` or `~/bin` if that folder is on your `PATH`. Otherwise a standard account now gets a command without `sudo` (into `~/.local/bin`) plus the `PATH` line to add to `~/.zprofile`, instead of a `sudo` line it cannot run. Garita never edits your shell profile. The "temporary location" message now says to move Garita to `/Applications` or `~/Applications`.
 
 ## [2.3.0] - 2026-10-23
 

@@ -24,6 +24,8 @@ Tauri cannot cross-compile; build each platform natively.
 make deps             # Rust targets + npm deps for current OS
 make build            # current OS
 make mac              # macOS ARM64 .dmg
+make mac-app          # macOS ARM64 .app only (ad-hoc signed)
+make mac-install      # mac-app, copied to ~/Applications (no admin password)
 make mac-universal    # macOS Universal .dmg
 make windows          # .msi + NSIS .exe
 make linux            # .deb + .rpm + .AppImage (also linux-deb, linux-rpm, linux-appimage, linux-pacman)

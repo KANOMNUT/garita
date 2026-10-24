@@ -83,7 +83,11 @@ Each item carries its version tag.
   - Dragging the release DMG's app into `~/Applications` asks for no password; after `xattr -rd com.apple.quarantine ~/Applications/Garita.app` it opens.
   - In-app update of a copy in `~/Applications` asks for no password; of a copy in `/Applications` on a standard account it asks for an administrator (tauri-plugin-updater 2.13.2 `with administrator privileges` fallback).
   - `HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"`: the cask installs into `~/Applications`, `postflight` clears the flag there, and the `binary` link points into it.
-  - Settings → Command line → Install on a standard account: the `sudo ln -s … /usr/local/bin/garita` line it shows cannot work without an administrator (known gap, no per-user link target yet).
+  - Settings → Command line → Install (per-user link target, `commands/cli.rs`; unit-tested on Windows only, never run on a Mac):
+    - Standard account with `~/.local/bin` (or `~/bin`) existing and on the login-shell PATH: Install creates `~/.local/bin/garita` with no prompt, Settings reads "installed at …", and `garita --version` works in a new terminal.
+    - Standard account with neither on PATH: Install shows `mkdir -p ~/.local/bin && ln -s '<exe>' ~/.local/bin/garita` and the `export PATH="$HOME/.local/bin:$PATH"` line; after running both, `garita` works in a new terminal, and Settings reads installed only after Garita is relaunched (`fix_path` reads PATH once, at startup).
+    - Administrator on Apple Silicon (`/usr/local/bin` root-owned, nothing per-user on PATH): the `sudo ln -s … /usr/local/bin/garita` line as before; `mac_admin` reads true. `mac_admin` stands in for admin-group membership by testing write access to `/Applications`; a standard account must read false.
+    - Administrator with a writable `/usr/local/bin` (Intel Homebrew): the link still lands in `/usr/local/bin`.
 - **Edit-form transforms:** `src/components/edit/transforms.ts` is tested through `mergePatch` (`transforms.test.ts`). Transforms still inline in `.tsx` handlers are inspection-only (`check-emit.ts` cannot strip JSX).
 - On Windows the Rust tests need the MSVC `PATH` recipe (`CLAUDE.md` Development).
 
@@ -96,7 +100,7 @@ Nothing below has been observed in an installed bundle yet; every row is open un
 - **Linux (Docker, 04eb88a):** `cargo clippy --all-targets` exit 0 and 264 tests pass; the one warning (`expand_env` unused off Windows) is fixed by a `cfg_attr` allow. This covers Linux only; the macOS compile row below stays open.
 
 **Open**
-- **cfg(unix) compile (M2):** `cargo check` and `cargo test --lib` on macOS and on Linux (WSL Ubuntu with the Linux build deps is enough). Covers the detach, the stderr gating, the macOS `install_cli_command` and its `statfs` shim, and the Linux status path. Closes before the tag.
+- **cfg(unix) compile (M2):** `cargo check` and `cargo test --lib` on macOS and on Linux (WSL Ubuntu with the Linux build deps is enough). Covers the detach, the stderr gating, the macOS `install_cli_command` (now a loop over `install_links`) with its `statfs` and `access` (`mac_admin`) shims, the `user_bin` probe in `current_probe`, and the Linux status path (including the Linux `mac_admin` stub). Closes before the tag.
 - **cfg(unix) runtime:** `garita` from a terminal opens the app detached and closing the terminal leaves it running; stderr lines for an ignored token appear only on a terminal.
 - **`.deb`/`.rpm`:** `dpkg -c` / `rpm -qlp` list `/usr/bin/garita`; Settings reads "on your PATH, installed by the package".
 - **macOS:** `Garita.app/Contents/MacOS/garita` exists; the Settings install creates `/usr/local/bin/garita` and `garita` launches past Gatekeeper; a non-writable or absent `/usr/local/bin` shows the `sudo` line (with `mkdir -p` when absent); the cask `binary` stanza links into the Homebrew prefix and Settings reads that as installed.

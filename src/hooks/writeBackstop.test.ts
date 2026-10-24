@@ -13,7 +13,7 @@ const EXEMPT: Record<string, string> = {
   remove_kubeconfig: "app-local registry",
   set_kubeconfig_enabled: "app-local registry",
   set_log_level: "app-local diagnostics; Settings must stay reachable under read-only",
-  install_cli_command: "local symlink in /usr/local/bin, not a cluster write; works read-only",
+  install_cli_command: "local symlink in /usr/local/bin, ~/.local/bin or ~/bin, not a cluster write; works read-only",
   start_pod_port_forward: "opens a local listener, changes no cluster object",
   start_service_port_forward: "opens a local listener, changes no cluster object",
   stop_port_forward: "local listener",

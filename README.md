@@ -47,7 +47,7 @@ xattr -rd com.apple.quarantine /Applications/Garita.app      # or ~/Applications
 ```
 
 **The `garita` command.** `garita [--context <name>] [-n <namespace>] [kind]` opens the app (`garita --help` lists the options).
-- macOS: the Homebrew cask adds it; otherwise use Settings → Command line → Install. That links it into `/usr/local/bin` with `sudo`; on a standard account, link `~/Applications/Garita.app/Contents/MacOS/garita` into a folder on your `PATH` that you own instead.
+- macOS: the Homebrew cask adds it; otherwise use Settings → Command line → Install. It links the command into `/usr/local/bin`, or into `~/.local/bin` or `~/bin` when Garita can't write `/usr/local/bin` and that folder is on your `PATH`. If neither works it shows a command to run: with `sudo` for an administrator, and without `sudo` (into `~/.local/bin`, plus the `PATH` line for your `~/.zprofile`) on a standard account.
 - Linux `.deb`/`.rpm`: it is on your `PATH` after installing.
 - Windows: the installer adds its folder to your `PATH` (the `.exe` for your user, the `.msi` for all users); open a new terminal window. If your user `PATH` is too long to extend safely, Settings → Command line shows the folder to add.
 - A self-built AppImage adds no command; Settings → Command line shows a link command to copy.

@@ -13,6 +13,9 @@ pub struct CliStatus {
     pub on_path: bool,
     pub resolved_path: Option<String>,
     pub manual_command: Option<String>,
+    /// A line for the user's shell profile that puts the folder of `manual_command` on PATH.
+    /// Shown, never written.
+    pub path_hint: Option<String>,
 }
 
 // Variants are built per-OS; the decision logic is compiled (and tested) everywhere.
@@ -39,6 +42,10 @@ pub struct Probe {
     pub local_bin_exists: bool,
     /// macOS: the existing `/usr/local/bin/garita` is a symlink.
     pub link_is_symlink: bool,
+    /// macOS: a per-user bin folder that exists and is on PATH (`user_bin`).
+    pub user_bin: Option<String>,
+    /// macOS: the user can write `/Applications` (admin group), so a `sudo` line can work.
+    pub admin: bool,
 }
 
 /// Single-quote for a copyable shell line (no `!` history expansion, `$` or backtick surprises).
@@ -46,7 +53,10 @@ pub fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
+const MAC_BIN: &str = "/usr/local/bin";
 const MAC_LINK: &str = "/usr/local/bin/garita";
+/// The profile line that puts `~/.local/bin` on PATH (zsh and bash).
+const LOCAL_BIN_PATH_LINE: &str = r#"export PATH="$HOME/.local/bin:$PATH""#;
 
 pub fn decide_status(p: &Probe) -> CliStatus {
     let n = CLI_COMMAND_NAME;
@@ -54,13 +64,27 @@ pub fn decide_status(p: &Probe) -> CliStatus {
     match p.os {
         Os::Mac => {
             let on_path = p.found_target.as_deref() == Some(p.exe.as_str());
-            let ln = if p.link_is_symlink { "ln -sfh" } else { "ln -s" };
-            let mkdir = if p.local_bin_exists { "" } else { "sudo mkdir -p /usr/local/bin && " };
+            let exe = sh_quote(&p.exe);
+            // An administrator can `sudo` into /usr/local/bin, which is on PATH by default. A
+            // standard account cannot: it gets a per-user link and, unless that folder is
+            // already on PATH, the profile line to add.
+            let (manual, path_hint) = if p.admin {
+                let ln = if p.link_is_symlink { "ln -sfh" } else { "ln -s" };
+                let mkdir = if p.local_bin_exists { String::new() } else { format!("sudo mkdir -p {MAC_BIN} && ") };
+                (format!("{mkdir}sudo {ln} {exe} {MAC_LINK}"), None)
+            } else {
+                let local_bin_on_path = p.user_bin.as_deref().is_some_and(|d| d.ends_with("/.local/bin"));
+                (
+                    format!("mkdir -p ~/.local/bin && ln -s {exe} ~/.local/bin/{n}"),
+                    (!local_bin_on_path).then(|| LOCAL_BIN_PATH_LINE.to_string()),
+                )
+            };
             CliStatus {
                 method: "symlink".into(),
                 on_path,
                 resolved_path,
-                manual_command: Some(format!("{mkdir}sudo {ln} {} {MAC_LINK}", sh_quote(&p.exe))),
+                manual_command: Some(manual),
+                path_hint,
             }
         }
         Os::Linux => match &p.appimage {
@@ -69,12 +93,14 @@ pub fn decide_status(p: &Probe) -> CliStatus {
                 on_path: p.found_target.as_deref() == Some(p.exe.as_str()),
                 resolved_path,
                 manual_command: None,
+                path_hint: None,
             },
             Some(img) => CliStatus {
                 method: "manual".into(),
                 on_path: p.found_target.as_deref() == Some(img.as_str()),
                 resolved_path,
                 manual_command: Some(format!("ln -s {} ~/.local/bin/{n}", sh_quote(img))),
+                path_hint: None,
             },
         },
         Os::Windows => {
@@ -84,9 +110,24 @@ pub fn decide_status(p: &Probe) -> CliStatus {
                 on_path,
                 resolved_path,
                 manual_command: if on_path { None } else { Some(parent_dir(&p.exe)) },
+                path_hint: None,
             }
         }
     }
+}
+
+/// The first per-user bin folder that exists and is on PATH: `$HOME/.local/bin`, then
+/// `$HOME/bin`. Never creates one: a new folder would not be on PATH.
+#[cfg_attr(windows, allow(dead_code))] // macOS probe only; tested everywhere
+pub fn user_bin(home: &str, path: &[String], is_dir: &dyn Fn(&str) -> bool) -> Option<String> {
+    let home = home.trim_end_matches('/');
+    if home.is_empty() {
+        return None;
+    }
+    [".local/bin", "bin"]
+        .iter()
+        .map(|d| format!("{home}/{d}"))
+        .find(|c| is_dir(c) && path.iter().any(|e| e.trim_end_matches('/') == c.as_str()))
 }
 
 /// Folder of a path, splitting on either separator (pure, host-independent).
@@ -152,16 +193,26 @@ pub enum InstallPlan {
     Replace,
 }
 
+/// Where install tries to link, in order: `/usr/local/bin` (on PATH by default; an older link
+/// there would shadow a newer one elsewhere), then the per-user folder from `user_bin`.
 #[cfg(any(target_os = "macos", test))]
-pub fn plan_install(exe: &str, read_only: bool, entry: &EntryState) -> Result<InstallPlan, String> {
+pub fn install_links(user_bin: Option<&str>) -> Vec<String> {
+    std::iter::once(MAC_BIN)
+        .chain(user_bin)
+        .map(|d| format!("{d}/{CLI_COMMAND_NAME}"))
+        .collect()
+}
+
+#[cfg(any(target_os = "macos", test))]
+pub fn plan_install(exe: &str, read_only: bool, entry: &EntryState, link: &str) -> Result<InstallPlan, String> {
     if read_only || exe.contains("/AppTranslocation/") {
         return Err("Failed to install command: Garita is running from a temporary location. \
-Move Garita to Applications, reopen it, and try again."
+Move Garita to an Applications folder (/Applications or ~/Applications), reopen it, and try again."
             .into());
     }
     let foreign = || {
         Err(format!(
-            "Failed to install command: {MAC_LINK} already exists and is not Garita's link"
+            "Failed to install command: {link} already exists and is not Garita's link"
         ))
     };
     match entry {
@@ -260,6 +311,8 @@ fn current_probe() -> Result<Probe, String> {
             found_target: None,
             local_bin_exists: false,
             link_is_symlink: false,
+            user_bin: None,
+            admin: false,
         })
     }
 
@@ -269,8 +322,15 @@ fn current_probe() -> Result<Probe, String> {
             .map(|p| std::env::split_paths(&p).collect())
             .unwrap_or_default();
         let mac = cfg!(target_os = "macos");
+        let path_dirs: Vec<String> = dirs.iter().map(|d| d.to_string_lossy().into_owned()).collect();
+        let home = std::env::var("HOME").unwrap_or_default();
+        let user_bin = if mac {
+            user_bin(&home, &path_dirs, &|d: &str| std::path::Path::new(d).is_dir())
+        } else {
+            None
+        };
         if mac {
-            dirs.push("/usr/local/bin".into());
+            dirs.push(MAC_BIN.into());
         }
         // An entry that exists even if dangling (stale link must still be reported).
         let found = dirs
@@ -284,12 +344,28 @@ fn current_probe() -> Result<Probe, String> {
             appimage: std::env::var_os("APPIMAGE").and_then(|a| canon(std::path::Path::new(&a))),
             found_target: found.as_deref().and_then(canon),
             found: found.map(|f| f.to_string_lossy().into_owned()),
-            local_bin_exists: std::path::Path::new("/usr/local/bin").is_dir(),
+            local_bin_exists: std::path::Path::new(MAC_BIN).is_dir(),
             link_is_symlink: std::fs::symlink_metadata(link)
                 .map(|m| m.file_type().is_symlink())
                 .unwrap_or(false),
+            user_bin,
+            admin: mac_admin(),
         })
     }
+}
+
+/// `/Applications` is `root:admin` mode 775 on stock macOS, so write access means the admin
+/// group, whose members can `sudo`.
+#[cfg(target_os = "macos")]
+fn mac_admin() -> bool {
+    let Ok(c) = std::ffi::CString::new("/Applications") else { return false };
+    // SAFETY: `c` is NUL-terminated and outlives the call; `access` only reads it.
+    unsafe { libc::access(c.as_ptr(), libc::W_OK) == 0 }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn mac_admin() -> bool {
+    false
 }
 
 #[tauri::command]
@@ -311,8 +387,8 @@ fn volume_read_only(p: &str) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn entry_state() -> EntryState {
-    let link = std::path::Path::new(MAC_LINK);
+fn entry_state(link: &str) -> EntryState {
+    let link = std::path::Path::new(link);
     match std::fs::symlink_metadata(link) {
         Err(_) => EntryState::Absent,
         Ok(m) if m.file_type().is_symlink() => EntryState::Symlink {
@@ -325,23 +401,30 @@ fn entry_state() -> EntryState {
     }
 }
 
-/// macOS only: symlink `/usr/local/bin/garita` to this app's binary. No privilege escalation.
+/// macOS only: symlink `garita` to this app's binary in the first writable folder of
+/// `install_links`. No privilege escalation.
 #[tauri::command]
 pub async fn install_cli_command() -> Result<CliStatus, String> {
     #[cfg(target_os = "macos")]
     {
         let probe = current_probe()?;
-        let plan = plan_install(&probe.exe, volume_read_only(&probe.exe), &entry_state())?;
-        let link = std::path::Path::new(MAC_LINK);
-        if plan == InstallPlan::Replace {
-            if let Err(e) = std::fs::remove_file(link) {
-                return denied_or_err(e, probe);
+        let read_only = volume_read_only(&probe.exe);
+        for link in install_links(probe.user_bin.as_deref()) {
+            let plan = plan_install(&probe.exe, read_only, &entry_state(&link), &link)?;
+            let path = std::path::Path::new(&link);
+            let made = match plan {
+                InstallPlan::Replace => std::fs::remove_file(path),
+                InstallPlan::Create => Ok(()),
+            }
+            .and_then(|()| std::os::unix::fs::symlink(&probe.exe, path));
+            match made {
+                Ok(()) => return current_probe().map(|p| decide_status(&p)),
+                Err(e) if denied(&e) => continue,
+                Err(e) => return Err(format!("Failed to install command: {}", e)),
             }
         }
-        match std::os::unix::fs::symlink(&probe.exe, link) {
-            Ok(()) => current_probe().map(|p| decide_status(&p)),
-            Err(e) => denied_or_err(e, probe),
-        }
+        // Nowhere writable: hand back the manual command.
+        Ok(decide_status(&probe))
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -349,14 +432,11 @@ pub async fn install_cli_command() -> Result<CliStatus, String> {
     }
 }
 
-/// Permission denied / missing directory is not a failure: hand back the manual command.
+/// Permission denied / missing directory is not a failure: try the next folder.
 #[cfg(target_os = "macos")]
-fn denied_or_err(e: std::io::Error, probe: Probe) -> Result<CliStatus, String> {
+fn denied(e: &std::io::Error) -> bool {
     use std::io::ErrorKind::{NotFound, PermissionDenied};
-    match e.kind() {
-        PermissionDenied | NotFound => Ok(decide_status(&probe)),
-        _ => Err(format!("Failed to install command: {}", e)),
-    }
+    matches!(e.kind(), PermissionDenied | NotFound)
 }
 
 #[cfg(test)]
@@ -365,6 +445,7 @@ mod tests {
 
     const EXE: &str = "/Applications/Garita.app/Contents/MacOS/garita";
 
+    /// An administrator's probe (the `sudo` rows); `standard` below flips it.
     fn mac(found: Option<&str>, target: Option<&str>, bin: bool, sym: bool) -> Probe {
         Probe {
             os: Os::Mac,
@@ -374,7 +455,61 @@ mod tests {
             found_target: target.map(Into::into),
             local_bin_exists: bin,
             link_is_symlink: sym,
+            user_bin: None,
+            admin: true,
         }
+    }
+
+    fn standard(user_bin: Option<&str>) -> Probe {
+        Probe { user_bin: user_bin.map(Into::into), admin: false, ..mac(None, None, false, false) }
+    }
+
+    #[test]
+    fn mac_admin_line_has_no_path_hint() {
+        assert!(decide_status(&mac(None, None, true, false)).path_hint.is_none());
+    }
+
+    #[test]
+    fn mac_standard_account_gets_a_per_user_line_without_sudo() {
+        let s = decide_status(&standard(None));
+        assert_eq!(
+            s.manual_command.as_deref(),
+            Some("mkdir -p ~/.local/bin && ln -s '/Applications/Garita.app/Contents/MacOS/garita' ~/.local/bin/garita")
+        );
+        assert_eq!(s.path_hint.as_deref(), Some(r#"export PATH="$HOME/.local/bin:$PATH""#));
+        // ~/.local/bin already on PATH: no profile line
+        assert!(decide_status(&standard(Some("/Users/u/.local/bin"))).path_hint.is_none());
+        // only ~/bin on PATH: the line still puts ~/.local/bin there
+        assert!(decide_status(&standard(Some("/Users/u/bin"))).path_hint.is_some());
+        // the app path is quoted in the per-user line too
+        let p = Probe { exe: "/Users/u/Applications/it's/Garita.app/Contents/MacOS/garita".into(), ..standard(None) };
+        assert!(decide_status(&p).manual_command.unwrap().contains(r"'/Users/u/Applications/it'\''s/Garita.app/Contents/MacOS/garita'"));
+    }
+
+    #[test]
+    fn user_bin_picks_an_existing_folder_on_path() {
+        let path = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let all = |_: &str| true;
+        let none = |_: &str| false;
+        let home = "/Users/u";
+        assert_eq!(user_bin(home, &path(&["/usr/bin", "/Users/u/.local/bin"]), &all).as_deref(), Some("/Users/u/.local/bin"));
+        // ~/.local/bin wins over ~/bin; a trailing slash on PATH still matches
+        assert_eq!(user_bin(home, &path(&["/Users/u/bin/", "/Users/u/.local/bin/"]), &all).as_deref(), Some("/Users/u/.local/bin"));
+        assert_eq!(user_bin("/Users/u/", &path(&["/Users/u/bin"]), &all).as_deref(), Some("/Users/u/bin"));
+        // on PATH but missing: not used (install never creates a folder)
+        assert_eq!(user_bin(home, &path(&["/Users/u/.local/bin"]), &none), None);
+        let only_bin = |d: &str| d == "/Users/u/bin";
+        assert_eq!(user_bin(home, &path(&["/Users/u/.local/bin", "/Users/u/bin"]), &only_bin).as_deref(), Some("/Users/u/bin"));
+        // exists but not on PATH, a literal `~`, or no HOME
+        assert_eq!(user_bin(home, &path(&["/usr/bin"]), &all), None);
+        assert_eq!(user_bin(home, &path(&["~/.local/bin"]), &all), None);
+        assert_eq!(user_bin("", &path(&["/.local/bin", "/bin"]), &all), None);
+    }
+
+    #[test]
+    fn install_links_try_usr_local_first() {
+        assert_eq!(install_links(None), ["/usr/local/bin/garita"]);
+        assert_eq!(install_links(Some("/Users/u/.local/bin")), ["/usr/local/bin/garita", "/Users/u/.local/bin/garita"]);
     }
 
     #[test]
@@ -428,6 +563,8 @@ mod tests {
             found_target: target.map(Into::into),
             local_bin_exists: false,
             link_is_symlink: false,
+            user_bin: None,
+            admin: false,
         }
     }
 
@@ -464,6 +601,8 @@ mod tests {
             found_target: None,
             local_bin_exists: false,
             link_is_symlink: false,
+            user_bin: None,
+            admin: false,
         };
         let s = decide_status(&p);
         assert_eq!((s.method.as_str(), s.on_path), ("installer", true));
@@ -491,23 +630,28 @@ mod tests {
 
     #[test]
     fn install_plan() {
+        let l = MAC_LINK;
         let live = |t: &str| EntryState::Symlink { target: t.into(), live: true };
-        assert_eq!(plan_install(EXE, false, &EntryState::Absent), Ok(InstallPlan::Create));
-        assert_eq!(plan_install(EXE, false, &live(EXE)), Ok(InstallPlan::Replace));
+        assert_eq!(plan_install(EXE, false, &EntryState::Absent, l), Ok(InstallPlan::Create));
+        assert_eq!(plan_install(EXE, false, &live(EXE), l), Ok(InstallPlan::Replace));
         // dangling, any target: replaced
         let dang = EntryState::Symlink { target: "/gone".into(), live: false };
-        assert_eq!(plan_install(EXE, false, &dang), Ok(InstallPlan::Replace));
+        assert_eq!(plan_install(EXE, false, &dang, l), Ok(InstallPlan::Replace));
         // live link elsewhere, and a regular file: foreign
         for e in [live("/usr/bin/other"), EntryState::Other] {
-            let err = plan_install(EXE, false, &e).unwrap_err();
+            let err = plan_install(EXE, false, &e, l).unwrap_err();
             assert_eq!(
                 err,
                 "Failed to install command: /usr/local/bin/garita already exists and is not Garita's link"
             );
         }
+        // the per-user link names its own path
+        let err = plan_install(EXE, false, &EntryState::Other, "/Users/u/.local/bin/garita").unwrap_err();
+        assert_eq!(err, "Failed to install command: /Users/u/.local/bin/garita already exists and is not Garita's link");
         // K12
         let t = "/private/var/folders/x/AppTranslocation/ABC/d/Garita.app/Contents/MacOS/garita";
-        assert!(plan_install(t, false, &EntryState::Absent).unwrap_err().contains("temporary location"));
-        assert!(plan_install(EXE, true, &EntryState::Absent).unwrap_err().contains("temporary location"));
+        let err = plan_install(t, false, &EntryState::Absent, l).unwrap_err();
+        assert!(err.contains("temporary location") && err.contains("/Applications or ~/Applications"));
+        assert!(plan_install(EXE, true, &EntryState::Absent, l).unwrap_err().contains("temporary location"));
     }
 }
