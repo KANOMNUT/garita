@@ -121,7 +121,7 @@ function KindFilter({ label, counts, hidden, skipped, onChange, scopeWord, class
           data-kinds-button
           aria-haspopup="dialog"
           aria-expanded={open}
-          aria-label={`Kinds to show, ${hiddenN === 0 ? "all shown" : `${hiddenN} hidden`}`}
+          aria-label={`Kinds, ${hiddenN === 0 ? "all shown" : `${hiddenN} hidden`}`}
           onClick={() => setOpen((v) => !v)}
           className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 bg-card/70 flex items-center gap-1.5 ${chipFocus} ${hiddenN > 0 ? "ring-accent/40 text-ink" : "ring-edge text-mute hover:text-ink"}`}
         >

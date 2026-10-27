@@ -3099,12 +3099,17 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
   const [helmEditIntent, setHelmEditIntent] = useState(false);
   // One polite line for reveal / hide, for Secrets and Helm values (the toggle keeps focus, so speech must carry it).
   const [revealNote, setRevealNote] = useState("");
+  // S-1 (FX-U2a): the Values find is keyed on the reveal flag (the Secret reset), which remounts the Reveal/Hide toggle the
+  // user just activated and drops focus to <body>. The click sets the flag, the effect below puts focus back.
+  const valuesBodyRef = useRef<HTMLDivElement>(null);
+  const helmToggleActivated = useRef(false);
   useEffect(() => () => {
     // Cleanup of the previous identity: close, selection change, context or namespace switch. Kind is in the
     // key so Secret `x` -> ConfigMap `x` still fires. Edit buffers go too (they hold Secret / Helm values).
     forgetSecret(qc, context, ns, name);
     forgetHelmValues(qc, context, ns, name);
     setEditMode(false); setEditContent(""); setValuesEditMode(false); setValuesEditContent(""); setHelmEditIntent(false); setRevealNote("");
+    helmToggleActivated.current = false;
     // Reveal is keyed to an identity string; without this, going x -> y -> x would find revealedFor === idKey again
     // and re-reveal (and un-gate the YAML tab) with no click.
     setRevealedFor(""); setHelmRevealedFor("");
@@ -3146,6 +3151,17 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
   const helmRevealQuery = useHelmValues(context, ns, name, helmRevealed, true);
   const helmRevealedNow = helmRevealed && helmRevealQuery.data !== undefined;
   const helmRevealing = helmRevealed && helmRevealQuery.isLoading;
+  const prevHelmRevealedNow = useRef(helmRevealedNow);
+  useEffect(() => {
+    if (prevHelmRevealedNow.current === helmRevealedNow) return;
+    prevHelmRevealedNow.current = helmRevealedNow;
+    const activated = helmToggleActivated.current;
+    helmToggleActivated.current = false;
+    // Only when focus really fell to the document: never steal it from a control the user moved to.
+    const ae = document.activeElement;
+    if (!activated || (ae && ae !== document.body)) return;
+    valuesBodyRef.current?.querySelector<HTMLElement>("[data-helm-reveal-toggle]")?.focus();
+  }, [helmRevealedNow]);
   // The Values tab shows the text view (read or edit) in this case; the error and the "No custom values" cards otherwise.
   const valuesFindable = valuesEditMode || (!(helmValuesError && !helmRevealedNow) && (helmRevealedNow || !!helmValues.trim()));
   const helmRevealError = helmRevealed && helmRevealQuery.isError ? ((helmRevealQuery.error as any)?.message ?? String(helmRevealQuery.error)) : "";
@@ -3475,7 +3491,7 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
         )}
 
         {tab === "Values" && resource.kind === "helm" && (
-          <div className="p-3 flex flex-col gap-2">
+          <div ref={valuesBodyRef} className="p-3 flex flex-col gap-2">
             {helmValuesLoading ? (
               <div className="flex flex-col gap-2 p-3">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -3549,12 +3565,14 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                         Values under credential-looking keys are redacted. Other values may still be sensitive. Comments aren't shown in this view.
                       </p>
                     )}
-                    {/* One toolbar for both states: the toggle keeps its place, so focus stays on it (04 6.2). */}
+                    {/* One toolbar for both states. The Values find remounts on reveal (S2 key), so the effect on helmRevealedNow puts focus back on this toggle (04 6.2, UX 23 S-1). */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       <button
+                        data-helm-reveal-toggle=""
                         aria-disabled={helmRevealing || undefined}
                         onClick={() => {
                           if (helmRevealing) return;
+                          helmToggleActivated.current = true;
                           if (helmRevealedNow) { hideHelmValues(); return; }
                           setHelmEditIntent(false); setHelmRevealedFor(idKey);
                         }}
