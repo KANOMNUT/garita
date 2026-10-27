@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-10-27
+
 ### Added
 
 - **Map: filter by kind.** A **Kinds** button beside the group chips on the Map page opens a checklist of every kind on the map, each with its object count, so you can hide or show one kind at a time (ConfigMaps and Secrets, or only ReplicaSets). The group chips stay as shortcuts and read "2 of 7" when only some of their kinds are shown. Nothing is hidden silently: a search says how many matches sit in hidden kinds, and an object's details and the List view say how many of its connections go to a hidden kind. Hiding ReplicaSets keeps large groups of pods collapsed instead of spreading them out. The same filter is offered when a namespace has too many objects to draw. The choice resets when you change cluster or namespace.

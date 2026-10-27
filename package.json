@@ -2,7 +2,7 @@
   "name": "garita",
   "private": true,
   "license": "Apache-2.0",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "type": "module",
   "scripts": {
     "predev": "node scripts/dev-preflight.mjs",
