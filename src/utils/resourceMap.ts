@@ -1,7 +1,7 @@
 import type { MapEdge, MapKind, MapNode, MapRelation, MapSource, MapStatus, ResourceMap, ResourceType } from "../types/k8s";
 
-// #18 Map: pure helpers (docs/impl/v2.2.0-tasks.md FZ2, FZ3, D1, D5, D6, O1, O5, O10, O11).
-// Frontend pipeline order, always: lineage (focus) -> hide kinds -> group pods -> count -> cap.
+// #18 Map: pure helpers (docs/impl/v2.2.0-tasks.md FZ2, FZ3, D1, D5, D6, O1, O5, O10, O11; v2.3.1: docs/impl/v2.3.1-tasks.md §3.2).
+// Frontend pipeline order, always: lineage (focus) -> group pods -> hide kinds -> count -> cap.
 
 export const DRAW_CAP = 400;
 export const GROUP_OVER = 8;
@@ -36,7 +36,10 @@ export const KIND_PLURAL: Record<MapKind, string> = {
 };
 
 export type KindGroupId = "workloads" | "routing" | "storage" | "config" | "scaling";
-/** O11: hiding is per group, not per kind. */
+/**
+ * The chips' grouping and the canvas/Kinds-list order. O11 (hiding is per group) is superseded by v2.3.1: the hidden
+ * state is a set of kinds, and a group chip is a shortcut over its kinds.
+ */
 export const KIND_GROUPS: { id: KindGroupId; label: string; kinds: MapKind[] }[] = [
   { id: "workloads", label: "Workloads", kinds: ["deploy", "sts", "ds", "rs", "jobs", "cron", "pods"] },
   { id: "routing", label: "Services & routing", kinds: ["svc", "ing", "gw", "httproute"] },
@@ -44,7 +47,17 @@ export const KIND_GROUPS: { id: KindGroupId; label: string; kinds: MapKind[] }[]
   { id: "config", label: "Config", kinds: ["cm", "sec"] },
   { id: "scaling", label: "Scaling & budgets", kinds: ["hpa", "pdb"] },
 ];
-const GROUP_OF = new Map<MapKind, KindGroupId>(KIND_GROUPS.flatMap((g) => g.kinds.map((k) => [k, g.id] as const)));
+const GROUP = new Map<KindGroupId, { id: KindGroupId; label: string; kinds: MapKind[] }>(KIND_GROUPS.map((g) => [g.id, g]));
+/** Every kind, in the Kinds list order. */
+export const ALL_KINDS: MapKind[] = KIND_GROUPS.flatMap((g) => g.kinds);
+
+/** D5: the source whose failure leaves a kind empty. `endpointslices` maps to no kind (it only affects Service status). */
+export const KIND_SOURCE: Record<MapKind, MapSource> = {
+  pods: "pods", rs: "replicasets", deploy: "deployments", sts: "statefulsets", ds: "daemonsets", jobs: "jobs", cron: "cronjobs",
+  svc: "services", ing: "ingresses", gw: "gateways", httproute: "httproutes",
+  pvc: "persistentvolumeclaims", pv: "persistentvolumes", cm: "configmaps", sec: "secrets",
+  hpa: "horizontalpodautoscalers", pdb: "poddisruptionbudgets",
+};
 
 /** Kinds the "Start from an object" picker offers (UX 3.6). */
 export const START_KINDS: MapKind[] = ["deploy", "sts", "ds", "svc", "ing"];
@@ -62,9 +75,9 @@ export interface MapViewNode extends MapNode {
 }
 export interface MapView { nodes: MapViewNode[]; edges: MapEdge[] }
 
-export function countByGroup(nodes: MapNode[]): Record<KindGroupId, number> {
-  const out: Record<KindGroupId, number> = { workloads: 0, routing: 0, storage: 0, config: 0, scaling: 0 };
-  for (const n of nodes) out[GROUP_OF.get(n.kind)!]++;
+export function countByKind(nodes: MapNode[]): Record<MapKind, number> {
+  const out = Object.fromEntries(ALL_KINDS.map((k) => [k, 0])) as Record<MapKind, number>;
+  for (const n of nodes) out[n.kind]++;
   return out;
 }
 
@@ -117,12 +130,122 @@ export function focusBanner(label: string, n: number, m: number): string {
   return `Showing the chain for ${label}. Everything connected to it is part of the chain.`;
 }
 
-/** Drop every node of a hidden group and the edges that touch one. */
-export function hideGroups(nodes: MapNode[], edges: MapEdge[], hidden: ReadonlySet<KindGroupId>): MapView {
+/**
+ * Drop every node of a hidden kind and the edges that touch one. Generic so a grouped view keeps its node type.
+ * A collapsed pod group has kind `pods`, so hiding Pods hides the groups.
+ */
+export function hideKinds<N extends MapNode>(nodes: N[], edges: MapEdge[], hidden: ReadonlySet<MapKind>): { nodes: N[]; edges: MapEdge[] } {
   if (hidden.size === 0) return { nodes, edges };
-  const keep = nodes.filter((n) => !hidden.has(GROUP_OF.get(n.kind)!));
+  const keep = nodes.filter((n) => !hidden.has(n.kind));
   const ids = new Set(keep.map((n) => n.id));
   return { nodes: keep, edges: edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
+}
+
+// ── Kind filter (UX 22 §3, docs/impl/v2.3.1-tasks.md §3.2) ──
+
+/** "empty" = the group has no objects here; the others are over the group's present kinds (those with objects). */
+export type GroupState = "all" | "some" | "none" | "empty";
+
+export function groupState(g: KindGroupId, hidden: ReadonlySet<MapKind>, counts: Record<MapKind, number>): { state: GroupState; shown: number; total: number } {
+  let total = 0, shown = 0, present = 0, visible = 0;
+  for (const k of GROUP.get(g)!.kinds) {
+    const n = counts[k];
+    total += n;
+    if (n === 0) continue;
+    present++;
+    if (!hidden.has(k)) { visible++; shown += n; }
+  }
+  const state: GroupState = present === 0 ? "empty" : visible === present ? "all" : visible === 0 ? "none" : "some";
+  return { state, shown, total };
+}
+
+/** Chip click: "all" hides every kind of the group (present or not); "some", "none" and "empty" show every kind of it. */
+export function toggleGroup(g: KindGroupId, hidden: ReadonlySet<MapKind>, counts: Record<MapKind, number>): Set<MapKind> {
+  const hide = groupState(g, hidden, counts).state === "all";
+  const next = new Set(hidden);
+  for (const k of GROUP.get(g)!.kinds) {
+    if (hide) next.add(k);
+    else next.delete(k);
+  }
+  return next;
+}
+
+/** Kinds that are hidden AND have objects here: the N of "Kinds · N hidden", so "hidden" always means "this is hiding something". */
+export function hiddenPresent(hidden: ReadonlySet<MapKind>, counts: Record<MapKind, number>): number {
+  let n = 0;
+  for (const k of hidden) if (counts[k] > 0) n++;
+  return n;
+}
+
+/** Disabled reason of a zero-count row, or null when it has objects. A skipped source comes first: never "No objects" for a kind that could not be read. */
+export function zeroReason(kind: MapKind, counts: Record<MapKind, number>, skipped: readonly MapSource[], scopeWord: "namespace" | "chain"): string | null {
+  if (counts[kind] > 0) return null;
+  return skipped.includes(KIND_SOURCE[kind]) ? "Couldn't read this kind." : `No objects of this kind in this ${scopeWord}.`;
+}
+
+/** The chip's version of `zeroReason`: null when the group has objects; "Couldn't read this group." only when every kind of it was skipped. */
+export function groupZeroReason(g: KindGroupId, counts: Record<MapKind, number>, skipped: readonly MapSource[], scopeWord: "namespace" | "chain"): string | null {
+  const kinds = GROUP.get(g)!.kinds;
+  if (kinds.some((k) => counts[k] > 0)) return null;
+  return kinds.every((k) => skipped.includes(KIND_SOURCE[k])) ? "Couldn't read this group." : `No objects of this kind in this ${scopeWord}.`;
+}
+
+/** UX 22 §3.7: a search must not say "no match" while a hidden kind holds the object. */
+export function matchLineText(shown: number, inHidden: number): string {
+  if (shown > 0) {
+    const base = `${shown} ${shown === 1 ? "match" : "matches"}.`;
+    return inHidden > 0 ? `${base} ${inHidden} more in hidden kinds.` : base;
+  }
+  return inHidden > 0 ? `No match in the shown kinds. ${inHidden} in hidden kinds.` : "No match on the map.";
+}
+
+/**
+ * C-5: for each shown node id (a collapsed pod group counts its members, `groupOf` maps member id -> group id), the number
+ * of distinct (relation, direction, other object) links whose other end is of a hidden kind. 12 pods that mount one
+ * hidden ConfigMap count 1. Edges with both ends hidden or both shown are ignored; nodes with no such link are absent.
+ */
+export function hiddenLinks(map: Pick<ResourceMap, "nodes" | "edges">, hidden: ReadonlySet<MapKind>, groupOf: ReadonlyMap<string, string>): Map<string, number> {
+  const out = new Map<string, number>();
+  if (hidden.size === 0) return out;
+  const kind = new Map(map.nodes.map((n) => [n.id, n.kind]));
+  const links = new Map<string, Set<string>>();
+  for (const e of map.edges) {
+    const kf = kind.get(e.from);
+    const kt = kind.get(e.to);
+    if (!kf || !kt) continue;
+    const fromHidden = hidden.has(kf);
+    if (fromHidden === hidden.has(kt)) continue;
+    const shownId = fromHidden ? e.to : e.from;
+    const owner = groupOf.get(shownId) ?? shownId;
+    const key = `${e.relation}\u0000${fromHidden ? "in" : "out"}\u0000${fromHidden ? e.from : e.to}`;
+    (links.get(owner) ?? links.set(owner, new Set()).get(owner)!).add(key);
+  }
+  for (const [id, set] of links) out.set(id, set.size);
+  return out;
+}
+
+/**
+ * The strip / node name / List sentence about links that go to hidden kinds, or null when nothing is hidden (or there is
+ * nothing to add). `shownRelations` = the node's relations among the shown kinds; `hiddenLinkCount` = its `hiddenLinks`.
+ */
+export function hiddenLinkText(shownRelations: number, hiddenLinkCount: number, anyHidden: boolean): string | null {
+  if (!anyHidden) return null;
+  const n = hiddenLinkCount;
+  if (shownRelations === 0) {
+    if (n === 0) return "No connections among the shown kinds.";
+    return `No connections among the shown kinds. ${n} ${n === 1 ? "goes to a hidden kind" : "go to hidden kinds"}.`;
+  }
+  if (n === 0) return null;
+  return `${n} ${n === 1 ? "connection goes to a hidden kind" : "connections go to hidden kinds"}.`;
+}
+
+/** Polite announcement after a toggle. Counts are the hidden-applied, ungrouped set (C-4), the same as the List. */
+export function kindsAnnouncement(hiddenPresentCount: number, objects: number, connections: number): string {
+  const o = `${objects} ${objects === 1 ? "object" : "objects"}`;
+  const c = `${connections} ${connections === 1 ? "connection" : "connections"}`;
+  return hiddenPresentCount === 0
+    ? `All kinds shown. ${o}, ${c}.`
+    : `${hiddenPresentCount} ${hiddenPresentCount === 1 ? "kind" : "kinds"} hidden. ${o}, ${c} shown.`;
 }
 
 const BADNESS: Record<MapStatus, number> = { ok: 0, unknown: 1, warn: 2, bad: 3 };
@@ -184,14 +307,17 @@ export function drawable(nodes: unknown[], cap = DRAW_CAP): { count: number; too
 }
 
 export interface MapPrepared extends MapView {
-  /** Drawable node count after hide and group. */
+  /** Drawable node count after group and hide. */
   count: number;
   tooMany: boolean;
 }
-/** The whole pipeline in its one allowed order: hide -> group -> count -> cap. */
-export function prepareMap(map: Pick<ResourceMap, "nodes" | "edges">, hidden: ReadonlySet<KindGroupId>): MapPrepared {
-  const h = hideGroups(map.nodes, map.edges, hidden);
-  const v = groupPods(h.nodes, h.edges);
+/**
+ * The whole pipeline in its one allowed order: group pods -> hide kinds -> count -> cap. Grouping comes first so that
+ * hiding an owner kind (ReplicaSets) keeps its pods collapsed instead of dropping the `owns` edges that make the group.
+ */
+export function prepareMap(map: Pick<ResourceMap, "nodes" | "edges">, hidden: ReadonlySet<MapKind>): MapPrepared {
+  const g = groupPods(map.nodes, map.edges);
+  const v = hideKinds(g.nodes, g.edges, hidden);
   return { ...v, ...drawable(v.nodes) };
 }
 

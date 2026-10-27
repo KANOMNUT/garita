@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { MapEdge, MapKind, MapNode, MapSource, MapStatus, ResourceMap } from "../types/k8s";
 import {
-  DRAW_CAP, KIND_GROUPS, edgeFamily, relationLabel, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, countByGroup, drawable, focusNodeId, groupPods, hideGroups,
-  focusBanner, lineage, mapState, matchIds, prepareMap, relationsOf, type MapViewNode,
+  ALL_KINDS, DRAW_CAP, KIND_GROUPS, KIND_SOURCE, edgeFamily, relationLabel, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, countByKind, drawable, focusNodeId, groupPods, hideKinds,
+  focusBanner, groupState, groupZeroReason, hiddenLinkText, hiddenLinks, hiddenPresent, kindsAnnouncement, lineage, mapState, matchIds, matchLineText, prepareMap, relationsOf,
+  toggleGroup, zeroReason, type KindGroupId, type MapViewNode,
 } from "./resourceMap";
 
 const node = (kind: MapKind, name: string, status: MapStatus = "ok"): MapNode => ({
@@ -33,21 +34,207 @@ describe("tables", () => {
   });
 });
 
-describe("hideGroups", () => {
+describe("hideKinds", () => {
   const d = node("deploy", "api");
   const cm = node("cm", "env");
   const p = node("pods", "p");
   const edges = [edge(d, p), edge(p, cm, "uses-config")];
-  it("removes a hidden group's nodes and touching edges", () => {
-    const r = hideGroups([d, cm, p], edges, new Set(["config"]));
+  it("removes a hidden kind's nodes and touching edges", () => {
+    const r = hideKinds([d, cm, p], edges, new Set<MapKind>(["cm"]));
     expect(r.nodes.map((n) => n.id)).toEqual([d.id, p.id]);
     expect(r.edges).toEqual([edges[0]]);
   });
-  it("is a no-op with nothing hidden", () => {
-    expect(hideGroups([d], [], new Set()).nodes).toEqual([d]);
+  it("hides one kind of a group and keeps the others", () => {
+    const rs = node("rs", "api-1");
+    const r = hideKinds([d, rs, p], [edge(d, rs), edge(rs, p)], new Set<MapKind>(["rs"]));
+    expect(r.nodes.map((n) => n.id)).toEqual([d.id, p.id]);
+    expect(r.edges).toEqual([]);
   });
-  it("countByGroup counts per group", () => {
-    expect(countByGroup([d, cm, p])).toEqual({ workloads: 2, routing: 0, storage: 0, config: 1, scaling: 0 });
+  it("is a no-op with nothing hidden", () => {
+    expect(hideKinds([d], [], new Set()).nodes).toEqual([d]);
+  });
+  it("countByKind counts per kind and lists every kind", () => {
+    const c = countByKind([d, cm, p, node("pods", "q")]);
+    expect(c).toMatchObject({ deploy: 1, cm: 1, pods: 2, rs: 0, sec: 0 });
+    expect(Object.keys(c).sort()).toEqual([...ALL_KINDS].sort());
+    expect(ALL_KINDS).toHaveLength(17);
+  });
+});
+
+describe("KIND_SOURCE (D5)", () => {
+  it("covers all 17 kinds, every value is a SKIPPED_COPY key, and endpointslices maps to no kind", () => {
+    expect(Object.keys(KIND_SOURCE).sort()).toEqual([...ALL_KINDS].sort());
+    for (const s of Object.values(KIND_SOURCE)) expect(SKIPPED_COPY[s]).toBeTruthy();
+    expect(Object.values(KIND_SOURCE)).not.toContain("endpointslices");
+    expect(new Set(Object.values(KIND_SOURCE)).size).toBe(17);
+    expect(KIND_SOURCE.rs).toBe("replicasets");
+    expect(KIND_SOURCE.pvc).toBe("persistentvolumeclaims");
+  });
+});
+
+describe("group chips over kinds", () => {
+  const counts = (o: Partial<Record<MapKind, number>>) => ({ ...countByKind([]), ...o });
+  const c = counts({ deploy: 4, rs: 12, pods: 2, cm: 8 });
+  it("groupState: all, some, none and empty are over the present kinds", () => {
+    expect(groupState("workloads", new Set(), c)).toEqual({ state: "all", shown: 18, total: 18 });
+    expect(groupState("workloads", new Set<MapKind>(["rs"]), c)).toEqual({ state: "some", shown: 6, total: 18 });
+    expect(groupState("workloads", new Set<MapKind>(["deploy", "rs", "pods"]), c)).toEqual({ state: "none", shown: 0, total: 18 });
+    expect(groupState("routing", new Set(), c)).toEqual({ state: "empty", shown: 0, total: 0 });
+    // a hidden kind with no objects hides nothing
+    expect(groupState("workloads", new Set<MapKind>(["sts", "ds"]), c).state).toBe("all");
+    expect(groupState("config", new Set<MapKind>(["sec"]), c).state).toBe("all");
+  });
+  it("toggleGroup: a fully shown group hides every kind of it, absent ones included", () => {
+    const next = toggleGroup("workloads", new Set(), c);
+    expect([...next].sort()).toEqual(["cron", "deploy", "ds", "jobs", "pods", "rs", "sts"]);
+    expect(groupState("workloads", next, c).state).toBe("none");
+  });
+  it("toggleGroup: a mixed, hidden or empty group shows every kind of it and leaves other groups alone", () => {
+    const h = new Set<MapKind>(["rs", "cm", "sts"]);
+    expect([...toggleGroup("workloads", h, c)]).toEqual(["cm"]);
+    const all = new Set<MapKind>(["deploy", "rs", "pods", "svc"]);
+    expect([...toggleGroup("workloads", all, c)].sort()).toEqual(["svc"]);
+    // the empty group after Hide all: clickable, shows its (absent) kinds again
+    const hideAll = new Set(ALL_KINDS);
+    const next = toggleGroup("routing", hideAll, c);
+    expect(next.has("svc")).toBe(false);
+    expect(next.has("deploy")).toBe(true);
+    expect(toggleGroup("routing", new Set(), c).size).toBe(0);
+  });
+  it("toggleGroup does not mutate its input", () => {
+    const h = new Set<MapKind>(["rs"]);
+    toggleGroup("workloads", h, c);
+    expect([...h]).toEqual(["rs"]);
+  });
+  it("hiddenPresent counts only hidden kinds that have objects", () => {
+    expect(hiddenPresent(new Set(), c)).toBe(0);
+    expect(hiddenPresent(new Set<MapKind>(["rs", "cm", "sts", "svc"]), c)).toBe(2);
+    expect(hiddenPresent(new Set(ALL_KINDS), c)).toBe(4);
+  });
+  it("every group id is covered by KIND_GROUPS", () => {
+    const ids: KindGroupId[] = KIND_GROUPS.map((g) => g.id);
+    expect(ids).toEqual(["workloads", "routing", "storage", "config", "scaling"]);
+  });
+});
+
+describe("zero reasons (UX 22 §3.6)", () => {
+  const c = { ...countByKind([]), deploy: 3 };
+  it("a kind with objects has no reason", () => {
+    expect(zeroReason("deploy", c, [], "namespace")).toBeNull();
+    expect(zeroReason("deploy", c, ["deployments"], "chain")).toBeNull();
+  });
+  it("no objects, source read fine: namespace or chain wording", () => {
+    expect(zeroReason("ds", c, [], "namespace")).toBe("No objects of this kind in this namespace.");
+    expect(zeroReason("ds", c, ["pods"], "chain")).toBe("No objects of this kind in this chain.");
+  });
+  it("a skipped source reads Couldn't read, never No objects", () => {
+    expect(zeroReason("ds", c, ["daemonsets"], "namespace")).toBe("Couldn't read this kind.");
+    expect(zeroReason("pv", c, ["persistentvolumes"], "chain")).toBe("Couldn't read this kind.");
+    expect(zeroReason("svc", c, ["endpointslices"], "namespace")).toBe("No objects of this kind in this namespace.");
+  });
+  it("the chip says Couldn't read this group only when every kind of the group was skipped", () => {
+    expect(groupZeroReason("workloads", c, [], "namespace")).toBeNull();
+    expect(groupZeroReason("config", c, ["configmaps"], "namespace")).toBe("No objects of this kind in this namespace.");
+    expect(groupZeroReason("config", c, ["configmaps", "secrets"], "namespace")).toBe("Couldn't read this group.");
+    expect(groupZeroReason("storage", c, [], "chain")).toBe("No objects of this kind in this chain.");
+  });
+});
+
+describe("matchLineText", () => {
+  it("the four sentences", () => {
+    expect(matchLineText(3, 0)).toBe("3 matches.");
+    expect(matchLineText(1, 0)).toBe("1 match.");
+    expect(matchLineText(3, 2)).toBe("3 matches. 2 more in hidden kinds.");
+    expect(matchLineText(0, 2)).toBe("No match in the shown kinds. 2 in hidden kinds.");
+    expect(matchLineText(0, 0)).toBe("No match on the map.");
+  });
+});
+
+describe("hiddenLinks", () => {
+  const dep = node("deploy", "api");
+  const rs = node("rs", "api-1");
+  const rs2 = node("rs", "api-2");
+  const pod = node("pods", "api-1-x");
+  const cm = node("cm", "env");
+  const sec = node("sec", "tls");
+  const none = new Map<string, string>();
+  const map = (edges: MapEdge[], ...nodes: MapNode[]) => ({ nodes, edges });
+  it("nothing hidden gives an empty map", () => {
+    expect(hiddenLinks(map([edge(dep, rs)], dep, rs), new Set(), none).size).toBe(0);
+  });
+  it("counts the links of each shown end that go to a hidden kind", () => {
+    const m = map([edge(dep, rs), edge(dep, rs2), edge(rs, pod), edge(rs2, pod)], dep, rs, rs2, pod);
+    const r = hiddenLinks(m, new Set<MapKind>(["rs"]), none);
+    expect(r.get(dep.id)).toBe(2);
+    expect(r.get(pod.id)).toBe(2);
+    expect(r.has(rs.id)).toBe(false);
+  });
+  it("is distinct per relation, direction and other object", () => {
+    const e = edge(pod, cm, "uses-config");
+    const m = map([e, { ...e }, edge(pod, sec, "uses-secret")], pod, cm, sec);
+    expect(hiddenLinks(m, new Set<MapKind>(["cm", "sec"]), none).get(pod.id)).toBe(2);
+  });
+  it("a collapsed group counts the distinct links of its members once", () => {
+    const ps = pods(12);
+    const m = map([...ps.map((p) => edge(p, cm, "uses-config")), edge(ps[0], sec, "uses-secret")], cm, sec, ...ps);
+    const groupOf = new Map(ps.map((p) => [p.id, "group:rs/x"] as const));
+    const r = hiddenLinks(m, new Set<MapKind>(["cm", "sec"]), groupOf);
+    expect(r.get("group:rs/x")).toBe(2);
+    expect(r.size).toBe(1);
+    // ungrouped (the List): one per pod, the first pod has two
+    const flat = hiddenLinks(m, new Set<MapKind>(["cm", "sec"]), none);
+    expect(flat.get(ps[0].id)).toBe(2);
+    expect(flat.get(ps[1].id)).toBe(1);
+  });
+  it("the pod group of a hidden owner survives and has one link to it", () => {
+    const owner = node("rs", "api-1");
+    const ps = pods(12);
+    const m = map(ps.map((p) => edge(owner, p)), owner, ...ps);
+    const hide = new Set<MapKind>(["rs"]);
+    const prepared = prepareMap(m, hide);
+    expect(prepared.nodes.map((n) => n.id)).toEqual([`group:${owner.id}`]);
+    const groupOf = new Map(prepared.nodes.flatMap((n) => (n.members ?? []).map((p) => [p.id, n.id] as const)));
+    const r = hiddenLinks(m, hide, groupOf);
+    expect([...r]).toEqual([[`group:${owner.id}`, 1]]);
+  });
+  it("ignores edges with both ends hidden or both shown, and edges to unknown ids", () => {
+    const m = map([edge(dep, rs), edge(rs, pod), edge(pod, cm, "uses-config"), { from: pod.id, to: "ghost/x/y", relation: "owns", detail: "" }], dep, rs, pod, cm);
+    const r = hiddenLinks(m, new Set<MapKind>(["rs", "pods"]), none);
+    expect(r.get(dep.id)).toBe(1);
+    expect(r.get(cm.id)).toBe(1);
+    expect(r.has(rs.id)).toBe(false);
+    expect(r.has(pod.id)).toBe(false);
+  });
+  it("opposite directions to the same object are two links", () => {
+    const a = edge(dep, rs, "owns");
+    const b = edge(rs, dep, "owns");
+    expect(hiddenLinks(map([a, b], dep, rs), new Set<MapKind>(["rs"]), none).get(dep.id)).toBe(2);
+  });
+});
+
+describe("hiddenLinkText", () => {
+  it("is null when nothing is hidden", () => {
+    expect(hiddenLinkText(0, 0, false)).toBeNull();
+    expect(hiddenLinkText(3, 2, false)).toBeNull();
+  });
+  it("shown relations plus hidden links: singular and plural", () => {
+    expect(hiddenLinkText(2, 1, true)).toBe("1 connection goes to a hidden kind.");
+    expect(hiddenLinkText(2, 3, true)).toBe("3 connections go to hidden kinds.");
+    expect(hiddenLinkText(2, 0, true)).toBeNull();
+  });
+  it("no shown relations: the strip and node name sentence", () => {
+    expect(hiddenLinkText(0, 2, true)).toBe("No connections among the shown kinds. 2 go to hidden kinds.");
+    expect(hiddenLinkText(0, 1, true)).toBe("No connections among the shown kinds. 1 goes to a hidden kind.");
+    expect(hiddenLinkText(0, 0, true)).toBe("No connections among the shown kinds.");
+  });
+});
+
+describe("kindsAnnouncement", () => {
+  it("says what is hidden and what is left, singular and plural", () => {
+    expect(kindsAnnouncement(2, 27, 31)).toBe("2 kinds hidden. 27 objects, 31 connections shown.");
+    expect(kindsAnnouncement(1, 1, 1)).toBe("1 kind hidden. 1 object, 1 connection shown.");
+    expect(kindsAnnouncement(0, 41, 63)).toBe("All kinds shown. 41 objects, 63 connections.");
+    expect(kindsAnnouncement(0, 1, 0)).toBe("All kinds shown. 1 object, 0 connections.");
   });
 });
 
@@ -88,14 +275,21 @@ describe("drawable and prepareMap", () => {
     expect(drawable(new Array(DRAW_CAP).fill(0))).toEqual({ count: 400, tooMany: false });
     expect(drawable(new Array(DRAW_CAP + 1).fill(0))).toEqual({ count: 401, tooMany: true });
   });
-  it("pipeline order is hide, group, count, cap", () => {
+  it("pipeline order is group, hide, count, cap", () => {
     const rs = node("rs", "r");
     const ps = pods(500);
     const map = { nodes: [rs, ...ps], edges: ps.map((p) => edge(rs, p)) };
     // grouped before counting: 500 pods become 1 group, so 2 drawable, not 501
     expect(prepareMap(map, new Set())).toMatchObject({ count: 2, tooMany: false });
-    // hiding workloads removes the pods before grouping
-    expect(prepareMap(map, new Set(["workloads"]))).toMatchObject({ count: 0, tooMany: false });
+    // pods have kind pods, so hiding Pods hides the group node too
+    expect(prepareMap(map, new Set<MapKind>(["rs", "pods"]))).toMatchObject({ count: 0, tooMany: false });
+    // hiding one kind keeps the rest
+    expect(prepareMap(map, new Set<MapKind>(["pods"]))).toMatchObject({ count: 1, tooMany: false });
+    // hiding the owner keeps its pods collapsed: group first, then hide (only the owns edge goes)
+    const noRs = prepareMap(map, new Set<MapKind>(["rs"]));
+    expect(noRs).toMatchObject({ count: 1, tooMany: false });
+    expect(noRs.nodes.map((n) => n.id)).toEqual([`group:${rs.id}`]);
+    expect(noRs.edges).toEqual([]);
     // 450 unowned pods stay separate and trip the cap
     expect(prepareMap({ nodes: pods(450), edges: [] }, new Set())).toMatchObject({ count: 450, tooMany: true });
   });

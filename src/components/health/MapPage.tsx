@@ -1,13 +1,16 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Ban, Circle, Info, ShieldOff } from "lucide-react";
-import type { MapKind, ResourceType } from "../../types/k8s";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { AlertCircle, Ban, ChevronDown, Circle, Info, ShieldOff } from "lucide-react";
+import type { MapKind, MapSource, ResourceType } from "../../types/k8s";
 import { useDaemonSets, useDeployments, useIngresses, useResourceMap, useServices, useStatefulSets } from "../../hooks/useResources";
 import {
-  DRAW_CAP, KIND_GROUPS, KIND_LABEL, KIND_PLURAL, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, START_KINDS, countByGroup, edgeFamily,
-  focusBanner, focusNodeId, hideGroups, lineage, mapState, matchIds, nodeText, prepareMap, relationLabel, relationsOf, type KindGroupId, type MapViewNode,
+  ALL_KINDS, DRAW_CAP, KIND_GROUPS, KIND_LABEL, KIND_PLURAL, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, START_KINDS, countByKind, edgeFamily,
+  focusBanner, focusNodeId, groupState, groupZeroReason, hideKinds, hiddenLinks, hiddenLinkText, hiddenPresent, kindsAnnouncement, lineage, mapState,
+  matchIds, matchLineText, nodeText, prepareMap, relationLabel, relationsOf, toggleGroup, zeroReason, type MapViewNode,
 } from "../../utils/resourceMap";
 import { GraphCanvas, STATUS_VIEW, type GraphCanvasHandle, type GraphEdgeView, type GraphNodeView } from "../graph/GraphCanvas";
 import { GraphList, type GraphListSection } from "../graph/GraphList";
+import { Popover } from "../Popover";
+import { disabledAttrs } from "../../utils/guardrails";
 import { Block, PageHeader, PartialStrip, Segmented, useRefocus } from "./HealthShell";
 import { StaleStrip } from "./StaleStrip";
 import { ModeToggle, NetpolView, type MapMode } from "./NetpolView";
@@ -59,28 +62,115 @@ function NameSelect({ kind, context, namespace, value, onChange }: { kind: keyof
   );
 }
 
-/** `scopeWord`: counts come from the namespace, or from the chain while focused. */
-function KindFilter({ counts, hidden, onToggle, scopeWord }: { counts: Record<KindGroupId, number>; hidden: ReadonlySet<KindGroupId>; onToggle: (id: KindGroupId) => void; scopeWord: "namespace" | "chain" }) {
+const chipFocus = "focus-visible:ring-2 focus-visible:ring-accent/70 outline-hidden";
+const headerBtn = `min-h-6 px-2 rounded-sm text-[11.5px] text-accent hover:bg-surface-tint/6 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${chipFocus}`;
+const NO_GROUPS: ReadonlyMap<string, string> = new Map();
+const NO_LINKS: ReadonlyMap<string, number> = new Map();
+
+/**
+ * Group chips (shortcuts over the kinds) plus the Kinds button and its checklist (UX 22 §3). The hidden state is a set of
+ * kinds; every change goes out through `onChange` as the next set. `scopeWord`: counts come from the namespace, or from
+ * the chain while focused. `label` names the `role="group"`.
+ */
+function KindFilter({ label, counts, hidden, skipped, onChange, scopeWord, className = "" }: {
+  label: string;
+  counts: Record<MapKind, number>;
+  hidden: ReadonlySet<MapKind>;
+  skipped: readonly MapSource[];
+  onChange: (next: Set<MapKind>) => void;
+  scopeWord: "namespace" | "chain";
+  className?: string;
+}) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const hiddenN = hiddenPresent(hidden, counts);
+  // The Popover does not move focus; the first row takes it on open (UX 22 §3.10). Rows are native tab stops (C-2).
+  useEffect(() => { if (open) list.current?.querySelector<HTMLInputElement>("input")?.focus(); }, [open]);
+  const showAllReason = hidden.size === 0 ? "All kinds are already shown." : undefined;
+  const hideAllReason = ALL_KINDS.every((k) => hidden.has(k) || counts[k] === 0) ? "All kinds are already hidden." : undefined;
   return (
-    <>
+    <div role="group" aria-labelledby={`${id}-label`} className={`flex flex-wrap items-center gap-2 ${className}`}>
+      <span id={`${id}-label`} className="text-[11.5px] text-mute">{label}</span>
       {KIND_GROUPS.map((g) => {
-        const none = counts[g.id] === 0;
+        const { state, shown, total } = groupState(g.id, hidden, counts);
+        const flagged = g.kinds.some((k) => hidden.has(k));
+        // A group with no objects is a dead chip, unless its kinds are flagged hidden (after Hide all): then it stays clickable.
+        const reason = state === "empty" && !flagged ? groupZeroReason(g.id, counts, skipped, scopeWord) : null;
+        const pressed: boolean | "mixed" = state === "empty" ? !flagged : state === "all" ? true : state === "some" ? "mixed" : false;
         return (
           <button
             key={g.id}
             type="button"
-            aria-pressed={!hidden.has(g.id)}
-            aria-disabled={none || undefined}
-            title={none ? `No objects of this kind in this ${scopeWord}.` : undefined}
-            onClick={() => { if (!none) onToggle(g.id); }}
-            className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 flex items-center gap-1.5 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${hidden.has(g.id) ? "bg-card/70 ring-edge text-mute" : "bg-accent/12 ring-accent/30 text-ink"}`}
+            aria-pressed={pressed}
+            aria-disabled={reason ? true : undefined}
+            title={reason ?? undefined}
+            onClick={() => { if (!reason) onChange(toggleGroup(g.id, hidden, counts)); }}
+            className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 flex items-center gap-1.5 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${chipFocus} ${pressed === false ? "bg-card/70 ring-edge text-mute" : "bg-accent/12 ring-accent/30 text-ink"}`}
           >
-            {g.label} <span className="mono tabular-nums">{counts[g.id]}</span>
-            {none && <span className="sr-only">. No objects of this kind in this {scopeWord}.</span>}
+            {g.label} <span className="mono tabular-nums">{state === "some" ? `${shown} of ${total}` : total}</span>
+            {reason && <span className="sr-only">. {reason}</span>}
           </button>
         );
       })}
-    </>
+      <div className="relative">
+        <button
+          ref={trigger}
+          type="button"
+          data-kinds-button
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={`Kinds to show, ${hiddenN === 0 ? "all shown" : `${hiddenN} hidden`}`}
+          onClick={() => setOpen((v) => !v)}
+          className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 bg-card/70 flex items-center gap-1.5 ${chipFocus} ${hiddenN > 0 ? "ring-accent/40 text-ink" : "ring-edge text-mute hover:text-ink"}`}
+        >
+          {hiddenN > 0 ? `Kinds · ${hiddenN} hidden` : "Kinds"}
+          <ChevronDown size={11} aria-hidden className={open ? "rotate-180" : ""} />
+        </button>
+        <Popover open={open} onClose={() => setOpen(false)} triggerRef={trigger} label="Kinds to show" className="left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] text-left">
+          <div className="flex items-center gap-1 px-3 pt-2 pb-1.5 border-b border-edge">
+            <span className="flex-1 text-[12px] font-semibold text-ink">Kinds to show</span>
+            <button type="button" {...disabledAttrs(showAllReason)} onClick={() => { if (!showAllReason) onChange(new Set()); }} className={headerBtn}>Show all</button>
+            <button type="button" {...disabledAttrs(hideAllReason)} onClick={() => { if (!hideAllReason) onChange(new Set(ALL_KINDS)); }} className={headerBtn}>Hide all</button>
+          </div>
+          <div ref={list} className="max-h-[min(24rem,60vh)] overflow-auto p-1.5">
+            {KIND_GROUPS.map((g) => (
+              <div key={g.id} role="group" aria-labelledby={`${id}-${g.id}`}>
+                <p id={`${id}-${g.id}`} className="px-2 pt-2 pb-0.5 text-[10.5px] uppercase tracking-wider text-mute">{g.label}</p>
+                {g.kinds.map((k) => {
+                  const rowReason = zeroReason(k, counts, skipped, scopeWord);
+                  const n = counts[k];
+                  return (
+                    <label
+                      key={k}
+                      title={rowReason ?? undefined}
+                      className={`flex items-center gap-2 min-h-6 px-2 rounded-sm text-[11.5px] text-ink hover:bg-surface-tint/6 ${rowReason ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-accent h-3.5 w-3.5"
+                        checked={!hidden.has(k)}
+                        {...disabledAttrs(rowReason ?? undefined)}
+                        onChange={() => {
+                          if (rowReason) return;
+                          const next = new Set(hidden);
+                          if (next.has(k)) next.delete(k);
+                          else next.add(k);
+                          onChange(next);
+                        }}
+                      />
+                      <span>{KIND_PLURAL[k]}<span className="sr-only">, {n} {n === 1 ? "object" : "objects"}</span></span>
+                      <span aria-hidden className="ml-auto mono text-[11px] tabular-nums text-mute">{n}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </Popover>
+      </div>
+    </div>
   );
 }
 
@@ -90,7 +180,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
   const q = useResourceMap(context, namespace, focusStr, visible && mode === "resources");
   const map = q.data;
 
-  const [hidden, setHidden] = useState<ReadonlySet<KindGroupId>>(new Set());
+  const [hidden, setHidden] = useState<ReadonlySet<MapKind>>(new Set());
   const [view, setView] = useState<"graph" | "list">("graph");
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [shows, setShows] = useState(false);
@@ -114,9 +204,29 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
   // "Show only this": the focus's lineage. The one source for the graph, the List, the counts, the scope line and the announcement.
   const narrowed = useMemo(() => (map && state === "ok" ? lineage(map, fid) : map), [map, state, fid]);
   const prepared = useMemo(() => (narrowed && state === "ok" ? prepareMap(narrowed, hidden) : null), [narrowed, state, hidden]);
-  const rawCounts = useMemo(() => countByGroup(narrowed?.nodes ?? []), [narrowed]);
+  const rawCounts = useMemo(() => countByKind(narrowed?.nodes ?? []), [narrowed]);
+  const skippedSources = useMemo<MapSource[]>(() => (map?.skipped ?? []).map((s) => s.source), [map]);
+  // N of "Kinds · N hidden": hidden kinds that have objects here. A stable string stands for the set in effects and the canvas epoch.
+  const hiddenCount = useMemo(() => hiddenPresent(hidden, rawCounts), [hidden, rawCounts]);
+  const kindsKey = useMemo(() => [...hidden].sort().join(","), [hidden]);
   const byId = useMemo(() => new Map<string, MapViewNode>((prepared?.nodes ?? []).map((n) => [n.id, n])), [prepared]);
   const matches = useMemo(() => matchIds(prepared?.nodes ?? [], search), [prepared, search]);
+  // A search must not say "no match" while a hidden kind holds the object (UX 22 §3.7).
+  const hiddenMatches = useMemo(
+    () => (narrowed && state === "ok" && hiddenCount > 0 && search.trim() ? matchIds(narrowed.nodes.filter((n) => hidden.has(n.kind)), search).size : 0),
+    [narrowed, state, hidden, hiddenCount, search],
+  );
+
+  // Links to hidden kinds, once per prepared map (a collapsed pod group counts its members' distinct links, C-5).
+  const groupOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of prepared?.nodes ?? []) for (const p of n.members ?? []) m.set(p.id, n.id);
+    return m;
+  }, [prepared]);
+  const hidLinks = useMemo(
+    () => (narrowed && state === "ok" && hiddenCount > 0 ? hiddenLinks(narrowed, hidden, groupOf) : NO_LINKS),
+    [narrowed, state, hidden, hiddenCount, groupOf],
+  );
 
   // Relations once per prepared map; a search keystroke only re-flags matches.
   const rels = useMemo(() => new Map((prepared?.nodes ?? []).map((n) => [n.id, relationsOf(n.id, prepared!.edges, byId)])), [prepared, byId]);
@@ -131,6 +241,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
         else verbs.push(`${r.verb} 1`);
       }
       const st = NO_STATUS_KINDS.has(n.kind) ? undefined : n.status;
+      const hiddenSentence = hiddenLinkText(rel.length, hidLinks.get(n.id) ?? 0, hiddenCount > 0);
       return {
         id: n.id,
         column: MAP_COLUMN[n.kind],
@@ -138,10 +249,10 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
         name: n.members ? `${n.name} · ${n.counts}` : n.name,
         status: st,
         note: n.kind === "pv" ? "cluster-scoped" : undefined,
-        accessibleName: `${nodeText(n)} in ${namespace}.${st ? ` ${STATUS_VIEW[st].word}.` : ""} ${verbs.length ? `${verbs.join(", ").toLowerCase().replace(/^./, (c) => c.toUpperCase())}.` : "No connections."}`,
+        accessibleName: `${nodeText(n)} in ${namespace}.${st ? ` ${STATUS_VIEW[st].word}.` : ""} ${verbs.length ? `${verbs.join(", ").toLowerCase().replace(/^./, (c) => c.toUpperCase())}.` : hiddenSentence ?? "No connections."}${verbs.length && hiddenSentence ? ` ${hiddenSentence}` : ""}`,
       };
     });
-  }, [prepared, rels, namespace]);
+  }, [prepared, rels, namespace, hidLinks, hiddenCount]);
   const canvasNodes = useMemo<GraphNodeView[]>(() => (matches.size ? baseNodes.map((n) => (matches.has(n.id) ? { ...n, match: true } : n)) : baseNodes), [baseNodes, matches]);
   const canvasEdges = useMemo<GraphEdgeView[]>(
     () => (prepared?.edges ?? []).map((e) => ({ from: e.from, to: e.to, family: edgeFamily(e.relation), label: relationLabel(e) })),
@@ -171,9 +282,18 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
   // List view: the data already loaded, ungrouped, as the keyboard / screen-reader fallback.
   const flat = useMemo(() => {
     if (!narrowed || state !== "ok") return null;
-    const f = hideGroups(narrowed.nodes, narrowed.edges, hidden);
+    const f = hideKinds(narrowed.nodes, narrowed.edges, hidden);
     const ids = new Map<string, MapViewNode>(f.nodes.map((n) => [n.id, n]));
-    return { ...f, text: new Map(f.nodes.map((n) => [n.id, relationsOf(n.id, f.edges, ids).map((r) => r.text).join(" · ") || "No connections found."])) };
+    const links = hiddenLinks(narrowed, hidden, NO_GROUPS); // ungrouped, like the rows
+    return {
+      ...f,
+      text: new Map(f.nodes.map((n) => {
+        const rel = relationsOf(n.id, f.edges, ids).map((r) => r.text);
+        const hl = links.get(n.id) ?? 0;
+        const extra = hl > 0 ? hiddenLinkText(rel.length, hl, true) : null;
+        return [n.id, [rel.join(" · "), extra].filter(Boolean).join(" · ") || "No connections found."] as const;
+      })),
+    };
   }, [narrowed, state, hidden]);
   const sections = useMemo<GraphListSection[]>(() => {
     if (!flat) return [];
@@ -207,14 +327,29 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
     else if (state === "ok") setAnnouncement(`${focus ? `Showing the chain for ${focusLabel}. ` : "Map loaded. "}${narrowed.nodes.length} objects, ${narrowed.edges.length} connections.`);
   }, [narrowed, visible, state, scope, focusStr, prepared]);
 
+  // A kind toggle is announced once per burst (400 ms). The scope reset empties the set without a word, and the first render is not a toggle.
+  const kindsSeen = useRef({ scope, key: "" });
+  useEffect(() => {
+    const seen = kindsSeen.current;
+    if (seen.scope !== scope) { kindsSeen.current = { scope, key: "" }; return; }
+    if (seen.key === kindsKey) return;
+    seen.key = kindsKey;
+    if (!flat || !visible || prepared?.tooMany) return; // nothing is drawn in the too-many state
+    const t = setTimeout(() => setAnnouncement(kindsAnnouncement(hiddenCount, flat.nodes.length, flat.edges.length)), 400);
+    return () => clearTimeout(t);
+  }, [kindsKey, scope]);
+
   const tooManyShown = state === "truncated" || (state === "ok" && !!prepared?.tooMany);
   const requestFocus = useRefocus(root, `${namespace}|${fid ?? ""}|${state}|${tooManyShown}`, tooManyShown ? 'select[aria-label="Name"]' : '[data-graph-node][tabindex="0"]');
-  const toggle = useCallback((id: KindGroupId) => { requestFocus(); setHidden((h) => { const n = new Set(h); if (n.has(id)) n.delete(id); else n.add(id); return n; }); }, [requestFocus]);
+  const setKinds = useCallback((next: Set<MapKind>) => { requestFocus(); setHidden(next); }, [requestFocus]);
+  // Its button unmounts with the all-hidden sentence, so focus goes to the Kinds button, which stays.
+  // Arms useRefocus first: if showing everything crosses into the too-many state, the filter row unmounts too.
+  const showAllKinds = useCallback(() => { requestFocus(); setHidden(new Set()); root.current?.querySelector<HTMLElement>("[data-kinds-button]")?.focus(); }, [requestFocus]);
 
   const cur = focusedId ? byId.get(focusedId) : undefined;
   const skipped = map?.skipped ?? [];
   const focusLabel = focus ? `${KIND_LABEL[focus.kind]} ${focus.name}` : "";
-  const matchLine = search.trim() && prepared ? (matches.size ? `${matches.size} ${matches.size === 1 ? "match" : "matches"}` : "No match on the map.") : "";
+  const matchLine = search.trim() && prepared ? matchLineText(matches.size, hiddenMatches) : "";
 
   const clearFocus = (
     <button type="button" onClick={() => { requestFocus(); onFocusChange(null); }} className={btn}>Show whole namespace</button>
@@ -290,10 +425,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
             </button>
           </div>
           {!truncated && (
-            <div className="flex items-center gap-2 flex-wrap justify-center">
-              <span className="text-[11.5px] text-mute">Or hide kinds:</span>
-              <KindFilter counts={rawCounts} hidden={hidden} onToggle={toggle} scopeWord={focus ? "chain" : "namespace"} />
-            </div>
+            <KindFilter label="Or hide kinds:" counts={rawCounts} hidden={hidden} skipped={skippedSources} onChange={setKinds} scopeWord={focus ? "chain" : "namespace"} className="justify-center" />
           )}
           {focus && clearFocus}
         </div>
@@ -316,7 +448,10 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
     body = (
       <>
         {prepared.nodes.length === 0 ? (
-          <p className="text-[12px] text-mute px-1">All kinds are hidden. Turn a kind back on to see the map.</p>
+          <div className="flex items-center gap-3 flex-wrap px-1">
+            <p className="text-[12px] text-mute">All kinds are hidden. Turn a kind back on to see the map.</p>
+            <button type="button" onClick={showAllKinds} className={btn}>Show all kinds</button>
+          </div>
         ) : show ? (
           <div className="h-[60vh] min-h-80">
             <MemoCanvas
@@ -328,7 +463,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
               onOpen={open}
               onExpandDetails={toggleStrip}
               ariaLabel={`Resource map for namespace ${namespace}`}
-              epoch={`${[...hidden].sort().join(",")}|${focusStr ?? ""}`}
+              epoch={`${kindsKey}|${focusStr ?? ""}`}
               fitKey={focusStr ?? ""}
             />
           </div>
@@ -368,6 +503,8 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
     const rel = rels.get(n.id) ?? [];
     const st = NO_STATUS_KINDS.has(n.kind) ? null : STATUS_VIEW[n.status];
     const verbs = [...new Set(rel.map((r) => r.verb))];
+    // Edges to hidden kinds are not listed; say how many there are (UX 22 §3.7). Replaces "No connections found" when that would be false.
+    const hiddenText = hiddenCount > 0 && (hidLinks.get(n.id) ?? 0) > 0 ? hiddenLinkText(rel.length, hidLinks.get(n.id) ?? 0, true) : null;
     return (
       <div className="flex flex-col gap-1.5">
         <div className="flex items-start gap-2 flex-wrap">
@@ -406,7 +543,8 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
             ))}
           </p>
         ))}
-        {rel.length === 0 && (
+        {hiddenText && <p className="text-mute">{hiddenText}</p>}
+        {rel.length === 0 && !hiddenText && (
           <p className="text-mute">No connections found for this object. References to objects that don&apos;t exist aren&apos;t shown.</p>
         )}
       </div>
@@ -460,8 +598,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
       {q.isRefetchError && map && <StaleStrip at={q.dataUpdatedAt} />}
       {prepared && !prepared.tooMany && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11.5px] text-mute">Show:</span>
-          <KindFilter counts={rawCounts} hidden={hidden} onToggle={toggle} scopeWord={focus ? "chain" : "namespace"} />
+          <KindFilter label="Show:" counts={rawCounts} hidden={hidden} skipped={skippedSources} onChange={setKinds} scopeWord={focus ? "chain" : "namespace"} />
           <span className="flex-1" />
           {matchLine && <span className="text-[11.5px] text-mute" role="status">{matchLine}</span>}
           <Segmented label="Map view" value={view} options={[["graph", "Graph"], ["list", "List"]] as const} onChange={setView} />
