@@ -79,7 +79,7 @@ Each item carries its version tag.
   - An exec-plugin cluster (GKE, EKS, AKS): the service proxy works with exec auth.
 - **v2.3.1** (visual checks, not cluster checks; nothing below has been seen in a running app; plan §6.2):
   - Edit-view overlay: marks sit exactly under their words in WKWebView, WebView2 and WebKitGTK (top, after scrolling to the bottom, on the long last-applied line, a line that ends at the wrap width, after a trailing newline), stay aligned while scrolling, dragging the panel width and resizing the window, and never cover the text, caret or a mouse selection. If a webview shows a steady offset, use the fallback in `ui.md` → YAML find (v2.3.1) (`wrap="off"`).
-  - `Cmd+F` (macOS) and `Ctrl+F` (Windows, Linux) inside a YAML view open only the app's bar, with no webview find bar (the v1.3.1 row says WebView2's `Ctrl+F` does not open one); the log viewer's chord still focuses its Include field.
+  - `Cmd+F` (macOS) and `Ctrl+F` (Windows, Linux) inside a YAML view open only the app's bar, with no webview find bar (the v1.3.1 row at :24 expects WebView2's `Ctrl+F` not to open one; not observed yet); the log viewer's chord still focuses its Include field.
   - Find bar sticks while scrolling a long object at 320, 480 and 900 px, and the current mark is not hidden under it; mark contrast in the light theme and under the teal and rose accents.
   - Kinds popover over the canvas (z-order, both themes, scrolling inside on a short window); the button beside the five chips at 720 px.
   - ArgoCD with at least three Applications: a TopBar search, then Select all selects only the shown apps and the Sync dialog counts only them; after sorting, a shift-click range follows the displayed order.
