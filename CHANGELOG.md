@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Map: filter by kind.** A **Kinds** button beside the group chips on the Map page opens a checklist of every kind on the map, each with its object count, so you can hide or show one kind at a time (ConfigMaps and Secrets, or only ReplicaSets). The group chips stay as shortcuts and read "2 of 7" when only some of their kinds are shown. Nothing is hidden silently: a search says how many matches sit in hidden kinds, and an object's details and the List view say how many of its connections go to a hidden kind. Hiding ReplicaSets keeps large groups of pods collapsed instead of spreading them out. The same filter is offered when a namespace has too many objects to draw. The choice resets when you change cluster or namespace.
+- **Find in YAML.** Press Ctrl+F (Cmd+F on macOS) with the cursor in a resource's YAML, a Pod's YAML or a Helm release's Values to open a find bar. Matches are highlighted, "3 of 12" shows where you are, Enter and Shift+Enter go to the next and previous match, and Esc closes the bar. It works while you edit: the matches are highlighted behind the text you type, and closing the bar selects the current match. The search is literal and ignores case. It looks only at the text on screen, so redacted Helm values cannot be matched and a Secret's YAML is searchable only after you reveal it; with Neat on, "Search full object" turns Neat off to search the rest.
 - **macOS: install without an administrator password.** On a standard account Garita can live in the `Applications` folder inside your home folder (`~/Applications`), and in-app updates there need no password either; in `/Applications` they ask for an administrator's. The README and the website show the per-user steps, including Homebrew's `HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"`. From a source checkout, `make mac-install` builds the app and copies it there, and `make mac-app` builds only the signed `.app`.
 
 ### Changed
@@ -17,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ArgoCD: bulk "Select all" and shift-click cover only the rows shown.** With a search typed in the top bar, "Select all" used to pick Applications the table had hidden, and Sync, Refresh and Hard Refresh then acted on them. Select all, shift-click ranges and the bulk actions now use exactly the rows the table shows, in the order it shows them, including after you sort a column.
+- **The YAML text can be reached from the keyboard.** The read-only YAML and Helm Values text now takes focus with Tab and scrolls with the arrow keys, and screen readers announce it as a named region.
 - **`make mac` no longer fails with `hdiutil: couldn't unmount "diskN" - Resource busy`.** Local builds now bundle only the `.app` and make the DMG from it, so Tauri's Finder-scripted DMG step no longer runs on your Mac.
 - **Settings → Command line → Install works on a macOS standard account.** When Garita can't write `/usr/local/bin`, it links the `garita` command into `~/.local/bin` or `~/bin` if that folder is on your `PATH`. Otherwise a standard account now gets a command without `sudo` (into `~/.local/bin`) plus the `PATH` line to add to `~/.zprofile`, instead of a `sudo` line it cannot run. Garita never edits your shell profile. The "temporary location" message now says to move Garita to `/Applications` or `~/Applications`.
 

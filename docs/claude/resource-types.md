@@ -74,8 +74,8 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 **Map (v2.2.0):** a kind that should appear on the resource map touches both sides.
 - **Rust (`map.rs`, nothing checks these):** a `Sources` field, its list in `get_resource_map` and its node status in `map_nodes`; the `own!` owner list in `build_map` and any edge function that should reach the kind.
-- **TS (`types/k8s.ts`, `utils/resourceMap.ts`):** a `MapKind` member (documented as a subset of `ResourceType`, not enforced: `MapPage` casts `n.kind as ResourceType`); a `MapSource` member and its `SKIPPED_COPY` row for the list; `MAP_COLUMN`, `KIND_LABEL`, `KIND_PLURAL` and `KIND_GROUPS`.
-- **What `tsc` catches:** the `Record<MapKind, …>` tables (`MAP_COLUMN`, `KIND_LABEL`, `KIND_PLURAL`), and `SKIPPED_COPY` only once `MapSource` has the member (a missing source is not caught). `KIND_GROUPS` is a plain array: a kind missing there makes `countByGroup` index an unknown group at runtime.
+- **TS (`types/k8s.ts`, `utils/resourceMap.ts`):** a `MapKind` member (documented as a subset of `ResourceType`, not enforced: `MapPage` casts `n.kind as ResourceType`); a `MapSource` member and its `SKIPPED_COPY` row for the list; `MAP_COLUMN`, `KIND_LABEL`, `KIND_PLURAL`, `KIND_SOURCE` and `KIND_GROUPS`.
+- **What `tsc` catches:** the `Record<MapKind, …>` tables (`MAP_COLUMN`, `KIND_LABEL`, `KIND_PLURAL`, `KIND_SOURCE`), and `SKIPPED_COPY` only once `MapSource` has the member (a missing source is not caught). `KIND_GROUPS` is a plain array: a kind missing there is left out of `ALL_KINDS`, so the Kinds list never offers it and `countByKind` counts it as `NaN`.
 
 No form is a supported state: `ResourceCreator` falls back to YAML; the panel shows no pencil. Without a form, still add the `resourceTemplates.ts` entry, or ⌘N opens an empty textarea.
 

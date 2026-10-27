@@ -27,6 +27,8 @@ Bundling principle (from `docs/feature-recommendations.md` §4): ship shared hel
 
 **2026-10-22 (status):** v2.3.0 (#16 external observability, #13 right-sizing upgrade) is implemented on `feat/v2.3.0`, not yet released; its live rows are in `docs/claude/open-items.md` (v2.3.0). Contracts: `docs/claude/pods-logs.md` (External observability).
 
+**2026-10-27 (status):** v2.3.1 (Search and filter: the Map Kinds filter, YAML find, and the ArgoCD bulk-selection fix) is implemented on `feat/v2.3.1`, not yet released. The user's visual checks (`docs/impl/v2.3.1-tasks.md` §6.2) and the UX acceptance (`docs/ux/23-v2.3.1-acceptance.md`) come before the tag. Requirement 1 of the request (ArgoCD Application search) was dropped by the user. Contracts: `docs/claude/ui.md` (Resource map, YAML find), `docs/claude/argocd.md` (Lens Parity); owed checks: `docs/claude/open-items.md` (v2.3.1).
+
 **2026-10-16 (user decision):** v2.2.0 Q60-1 = no layout dependency. The map and NetworkPolicy view use an own layered layout (`src/utils/graphLayout.ts`); `@dagrejs/dagre` needs a fresh OK.
 
 Why the split differs from recommendations §4: v1.4 is three releases because #33 changes the Secret read path (it needs its own test pass) and #41 rewrites colour usage in most component files (it would collide with every feature task). v1.5 is three because #51 (pipeline) and #50 (auth path) each ship without feature work. #16 left v2.0 because it is large and shares nothing with #38/#39.
@@ -66,7 +68,7 @@ Note for v1.3.1's executor: its R9 targets `CLAUDE.md` sections that commit `417
 
 #21 cert-manager chain, #22 Flux sources + suspend/resume/reconcile, #23 routing explained, #26 CRD printer columns, #27 add-on panels, #34 impersonation, #36 in-place pod resize, #42 custom keybindings, #43 inline field docs, #45 demo mode. Prerequisites already scheduled: #49 (v1.4.0) before any new kind; #15 (v1.4.0) before #21/#22/#27; v1.6.0's edge model before #23.
 
-Known open items not scheduled by this roadmap (see `docs/claude/open-items.md`): bulk-select scope in `ArgoCDView`, ArgoCD header below ~720 px, `delete_argocd_app` clearing every finalizer, the hardcoded `argocd` `gvk_for` version, no quit warning during drain, drain not waiting for termination, "Retry blocked" not retrying `failed`.
+Known open items not scheduled by this roadmap (see `docs/claude/open-items.md`): ArgoCD header below ~720 px, `delete_argocd_app` clearing every finalizer, the hardcoded `argocd` `gvk_for` version, no quit warning during drain, drain not waiting for termination, "Retry blocked" not retrying `failed`.
 
 ## Rejected (not re-planned)
 
