@@ -276,7 +276,7 @@ Anatomy (HEALTH-SHELL, extended):
 | Scope line | "Namespace shop", then "41 objects · 63 connections" |
 | Focus chip | Only in focus mode (3.1 B) |
 | Partial strip | Only when `skipped` is non-empty; above the canvas, never replacing it (STATE-VOCAB 4.2); not dismissible while it holds |
-| Kind filter | Toggle buttons with `aria-pressed`, glyph-free, word and count. Groups: Workloads (deploy, sts, ds, rs, jobs, cron, pods), Services & routing (svc, ing, gateway, HTTPRoute), Storage (PVC, PV), Config (ConfigMap, Secret), Scaling & budgets (HPA, PDB). A group with zero objects is shown with count 0 and `aria-disabled` plus the reason "No objects of this kind in this namespace." |
+| Kind filter | Toggle buttons with `aria-pressed`, glyph-free, word and count. Groups: Workloads (deploy, sts, ds, rs, jobs, cron, pods), Services & routing (svc, ing, gateway, HTTPRoute), Storage (PVC, PV), Config (ConfigMap, Secret), Scaling & budgets (HPA, PDB). A group with zero objects is shown with count 0 and `aria-disabled` plus the reason "No objects of this kind in this namespace." **Superseded in v2.3.1:** a **Kinds** dropdown follows the five chips, the hidden state is a set of kinds (the chips become shortcuts with a partial state), and a chip with no objects is only inert when none of its kinds is hidden; see `docs/ux/22-v2.3.1-search-and-filter.md` §3 (wireframe in §3.3) and the acceptance in `docs/ux/23-v2.3.1-acceptance.md`. |
 | Mode toggle | Segmented control, two options, `role="radiogroup"`. The second label always carries "(approximation)". |
 | Graph or List | Segmented control (2.7) |
 | Canvas | 2.1 to 2.6 |
@@ -340,6 +340,8 @@ Skipped source to consequence copy (ids follow the final `SkippedSource.source` 
 | secrets | "Connections to Secrets aren't shown." |
 | horizontalpodautoscalers | "Autoscaler connections aren't shown." |
 | poddisruptionbudgets | "Disruption budget connections aren't shown." |
+
+**Zero-count rule for the kind filter (v2.3.1).** The "No objects" wording for a kind or group with no objects applies per kind in the Kinds list and per group on the chips, with the reason "Couldn't read this kind." (or "this group") when its source was skipped, so a skipped source never reads "No objects". A hidden kind or group with no objects stays reachable (Show all, or a chip whose kinds are flagged hidden). The rule and the kind-to-source map are `docs/ux/22-v2.3.1-search-and-filter.md` §3.6 and §8 (D5); checked in `docs/ux/23-v2.3.1-acceptance.md`.
 
 ### 3.6 Too many objects (T60-2)
 
