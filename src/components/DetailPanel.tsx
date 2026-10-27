@@ -30,6 +30,8 @@ import { selectShellContainer } from "../utils/containerSelect";
 import { loadNeatPref, saveNeatPref } from "../utils/neatYaml";
 import { defaultLogView } from "../utils/logFilter";
 import { NeatChip, NeatNote } from "./NeatYaml";
+import { YamlFind } from "./YamlFind";
+import { NEAT_NO_MATCH_HINT } from "../utils/yamlFind";
 import type { MetricRangeId, Pod, Container, ContainerStatus, ContainerEnvVar, ContainerEnvFrom, ContainerVolumeMount, ContainerProbe, ResourceType } from "../types/k8s";
 
 const STATUS_MAP: Record<string, { dot: string; text: string; bg: string; ring: string; pulse: boolean }> = {
@@ -1405,88 +1407,102 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   />
                 ))}
               </div>
-            ) : editMode ? (
-              <>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[11px] text-warn mono">Editing — changes apply to the cluster</span>
-                  <div className="flex-1" />
-                  <NeatChip on={neat} onToggle={toggleNeat} editing />
-                  <button
-                    onClick={() => { setEditMode(false); }}
-                    className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
-                  >
-                    cancel
-                  </button>
-                  <button
-                    disabled={applyResource.isPending}
-                    onClick={() => { if (yamlReason) return; setConfirmSave(true); }}
-                    {...disabledAttrs(yamlReason)}
-                    className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <SaveIcon /> Review &amp; save…
-                  </button>
-                </div>
-                {confirmSave && (
-                  <YamlSaveGate
-                    context={context}
-                    namespace={pod.namespace}
-                    resourceType="pods"
-                    name={pod.name}
-                    kindLabel="Pod"
-                    yaml={editContent}
-                    hasForm={false}
-                    onOpenForm={() => {}}
-                    onClose={() => setConfirmSave(false)}
-                    onSaved={() => { setConfirmSave(false); setEditMode(false); }}
-                  />
-                )}
-                <NeatNote hidden={[]} editing />
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={(e) => {
+            ) : (
+              // One <YamlFind> for the read and the edit view, so the find bar survives the switch. The Pod tab body is
+              // keyed only by name and tab, so the key carries the full identity (S2).
+              <YamlFind
+                key={`${context}\u0000${pod.namespace}\u0000${pod.name}`}
+                text={editMode ? editContent : shownYaml}
+                noun="YAML"
+                regionLabel={`Pod ${pod.name} YAML`}
+                edit={editMode ? {
+                  onChange: setEditContent,
+                  onKeyDown: (e) => {
                     // ⌘S / Ctrl+S opens the review gate; it never saves by itself.
                     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
                       e.preventDefault();
                       if (!yamlReason && !applyResource.isPending) { setConfirmSave(true); }
                     }
-                  }}
-                  spellCheck={false}
-                  className="mono text-[11px] leading-[1.6] rounded-lg p-3 ring-1 ring-accent/40 resize-none focus:outline-hidden min-h-[60vh] bg-surface-sunken"
-                />
-              </>
-            ) : (
-              <div className="flex flex-col gap-2 min-w-0">
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <NeatChip on={neat} onToggle={toggleNeat} editing={false} />
-                  <button
-                    onClick={() => navigator.clipboard.writeText(shownYaml)}
-                    title={neatShown ? "Copies the neat YAML, without the hidden fields." : undefined}
-                    className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
-                  >
-                    {neatShown ? "copy neat" : "copy"}
-                  </button>
-                  <button
-                    onClick={() => { if (yamlReason) return; setEditContent(yamlContent); setEditMode(true); }}
-                    {...disabledAttrs(yamlReason)}
-                    className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <SaveIcon /> edit
-                  </button>
-                </div>
-                {neat && (
-                  <div className="min-w-0">
-                    <NeatNote
-                      hidden={neatQuery.data?.hidden ?? []}
-                      editing={false}
-                      error={neatQuery.error ? ((neatQuery.error as any)?.message ?? String(neatQuery.error)) : undefined}
-                    />
+                  },
+                } : null}
+                noMatchHint={neatShown && (neatQuery.data?.hidden.length ?? 0) > 0
+                  ? { text: NEAT_NO_MATCH_HINT, action: { label: "Search full object", run: toggleNeat } }
+                  : null}
+              >
+                {({ findButton, bar, content }) => editMode ? (
+                  <>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-warn mono">Editing — changes apply to the cluster</span>
+                      <div className="flex-1" />
+                      {findButton}
+                      <NeatChip on={neat} onToggle={toggleNeat} editing />
+                      <button
+                        onClick={() => { setEditMode(false); }}
+                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                      >
+                        cancel
+                      </button>
+                      <button
+                        disabled={applyResource.isPending}
+                        onClick={() => { if (yamlReason) return; setConfirmSave(true); }}
+                        {...disabledAttrs(yamlReason)}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <SaveIcon /> Review &amp; save…
+                      </button>
+                    </div>
+                    {confirmSave && (
+                      <YamlSaveGate
+                        context={context}
+                        namespace={pod.namespace}
+                        resourceType="pods"
+                        name={pod.name}
+                        kindLabel="Pod"
+                        yaml={editContent}
+                        hasForm={false}
+                        onOpenForm={() => {}}
+                        onClose={() => setConfirmSave(false)}
+                        onSaved={() => { setConfirmSave(false); setEditMode(false); }}
+                      />
+                    )}
+                    <NeatNote hidden={[]} editing />
+                    {bar}
+                    {content}
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {findButton}
+                      <NeatChip on={neat} onToggle={toggleNeat} editing={false} />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(shownYaml)}
+                        title={neatShown ? "Copies the neat YAML, without the hidden fields." : undefined}
+                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                      >
+                        {neatShown ? "copy neat" : "copy"}
+                      </button>
+                      <button
+                        onClick={() => { if (yamlReason) return; setEditContent(yamlContent); setEditMode(true); }}
+                        {...disabledAttrs(yamlReason)}
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <SaveIcon /> edit
+                      </button>
+                    </div>
+                    {neat && (
+                      <div className="min-w-0">
+                        <NeatNote
+                          hidden={neatQuery.data?.hidden ?? []}
+                          editing={false}
+                          error={neatQuery.error ? ((neatQuery.error as any)?.message ?? String(neatQuery.error)) : undefined}
+                        />
+                      </div>
+                    )}
+                    {bar}
+                    {content}
                   </div>
                 )}
-                <pre className="mono text-[11px] leading-[1.6] rounded-lg p-3 ring-1 ring-edge overflow-auto bg-surface-sunken">
-                  {shownYaml}
-                </pre>
-              </div>
+              </YamlFind>
             )}
           </div>
         )}

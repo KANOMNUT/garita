@@ -1,6 +1,8 @@
 // App-update state model (v2.1.0 F1). Pure: no plugin, no DOM. The plugin calls and the store
 // live in useResources.ts (useAppUpdate). Copy: docs/ux/05 §9.7.
 
+import { isMacUserAgent } from "./platform";
+
 export type UpdatePhase = "check" | "download" | "install";
 export type UpdateState =
   | { s: "unavailable" }
@@ -32,7 +34,7 @@ export type UpdateEvent =
 export type UpdateMode = "unavailable" | "app" | "notice";
 export function updateMode(userAgent: string, dev: boolean): UpdateMode {
   if (dev) return "unavailable";
-  return /macintosh|mac os x/i.test(userAgent) ? "app" : "notice";
+  return isMacUserAgent(userAgent) ? "app" : "notice";
 }
 
 /** Pending version, if the state holds one (drives the Sidebar notice). */

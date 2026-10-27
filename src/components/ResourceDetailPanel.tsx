@@ -16,6 +16,8 @@ import {
 import { ConfirmModal } from "./ConfirmModal";
 import { loadNeatPref, saveNeatPref } from "../utils/neatYaml";
 import { NeatChip, NeatNote } from "./NeatYaml";
+import { YamlFind } from "./YamlFind";
+import { NEAT_NO_MATCH_HINT, REDACTED_NO_MATCH_HINT } from "../utils/yamlFind";
 import { PropagationPicker, deleteLabelFor, propagationDependents, usePropagationState } from "./PropagationPicker";
 import { useClusterIdentity } from "../utils/clusterIdentity";
 import { disabledAttrs, pickDisabledReason } from "../utils/guardrails";
@@ -3144,6 +3146,8 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
   const helmRevealQuery = useHelmValues(context, ns, name, helmRevealed, true);
   const helmRevealedNow = helmRevealed && helmRevealQuery.data !== undefined;
   const helmRevealing = helmRevealed && helmRevealQuery.isLoading;
+  // The Values tab shows the text view (read or edit) in this case; the error and the "No custom values" cards otherwise.
+  const valuesFindable = valuesEditMode || (!(helmValuesError && !helmRevealedNow) && (helmRevealedNow || !!helmValues.trim()));
   const helmRevealError = helmRevealed && helmRevealQuery.isError ? ((helmRevealQuery.error as any)?.message ?? String(helmRevealQuery.error)) : "";
   useEffect(() => {
     if (helmEditIntent && helmRevealed && helmRevealQuery.data !== undefined) {
@@ -3480,116 +3484,127 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                   />
                 ))}
               </div>
-            ) : valuesEditMode ? (
-              <>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[11px] text-warn mono">Editing — will run helm upgrade</span>
-                  <div className="flex-1" />
-                  <button
-                    onClick={() => { setValuesEditMode(false); }}
-                    className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
-                  >
-                    cancel
-                  </button>
-                  {/* No RBAC hint on purpose: an upgrade is a bundle of writes across many kinds, so no single can-i answers it. */}
-                  <button
-                    disabled={upgradeHelmRelease.isPending}
-                    onClick={() => { if (upgradeReason) return; setConfirmUpgrade(true); }}
-                    {...disabledAttrs(upgradeReason)}
-                    className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${upgradeReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <SaveIcon /> Review upgrade…
-                  </button>
-                </div>
-                {upgradeReason && !identity.readOnly && <p className="text-[11px] text-warn">{upgradeReason}</p>}
-                {confirmUpgrade && resource.kind === "helm" && (
-                  <HelmUpgradeGate
-                    context={context}
-                    namespace={ns}
-                    release={name}
-                    chartName={resource.item.chart_name}
-                    chart={resource.item.chart}
-                    valuesYaml={valuesEditContent}
-                    onClose={() => setConfirmUpgrade(false)}
-                    onUpgraded={() => { setConfirmUpgrade(false); setValuesEditMode(false); setValuesEditContent(""); setHelmRevealedFor(""); }}
-                  />
-                )}
-                <textarea
-                  value={valuesEditContent}
-                  onChange={(e) => setValuesEditContent(e.target.value)}
-                  onKeyDown={(e) => {
+            ) : valuesFindable ? (
+              // One <YamlFind> for the read and the edit view. Keyed on the object identity plus the reveal flag (S2):
+              // Hide, a selection change and a panel close unmount it, and with it the query.
+              <YamlFind
+                key={`${idKey}\u0000${helmRevealedNow}`}
+                text={valuesEditMode ? valuesEditContent : (helmRevealedNow ? (helmRevealQuery.data ?? "") : helmValues)}
+                noun="values"
+                regionLabel={`${name} values`}
+                edit={valuesEditMode ? {
+                  onChange: setValuesEditContent,
+                  onKeyDown: (e) => {
                     // ⌘S / Ctrl+S opens the review gate; it never upgrades by itself.
                     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
                       e.preventDefault();
                       if (!upgradeReason && !upgradeHelmRelease.isPending) setConfirmUpgrade(true);
                     }
-                  }}
-                  spellCheck={false}
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  autoComplete="off"
-                  className="mono text-[11px] leading-[1.6] rounded-lg p-3 ring-1 ring-accent/40 resize-none focus:outline-hidden min-h-[60vh] bg-surface-sunken"
-                />
-              </>
+                  },
+                } : null}
+                noMatchHint={!valuesEditMode && !helmRevealedNow ? { text: REDACTED_NO_MATCH_HINT } : null}
+              >
+                {({ findButton, bar, content }) => valuesEditMode ? (
+                  <>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-warn mono">Editing — will run helm upgrade</span>
+                      <div className="flex-1" />
+                      {findButton}
+                      <button
+                        onClick={() => { setValuesEditMode(false); }}
+                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                      >
+                        cancel
+                      </button>
+                      {/* No RBAC hint on purpose: an upgrade is a bundle of writes across many kinds, so no single can-i answers it. */}
+                      <button
+                        disabled={upgradeHelmRelease.isPending}
+                        onClick={() => { if (upgradeReason) return; setConfirmUpgrade(true); }}
+                        {...disabledAttrs(upgradeReason)}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${upgradeReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <SaveIcon /> Review upgrade…
+                      </button>
+                    </div>
+                    {upgradeReason && !identity.readOnly && <p className="text-[11px] text-warn">{upgradeReason}</p>}
+                    {confirmUpgrade && resource.kind === "helm" && (
+                      <HelmUpgradeGate
+                        context={context}
+                        namespace={ns}
+                        release={name}
+                        chartName={resource.item.chart_name}
+                        chart={resource.item.chart}
+                        valuesYaml={valuesEditContent}
+                        onClose={() => setConfirmUpgrade(false)}
+                        onUpgraded={() => { setConfirmUpgrade(false); setValuesEditMode(false); setValuesEditContent(""); setHelmRevealedFor(""); }}
+                      />
+                    )}
+                    {bar}
+                    {content}
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {!helmRevealedNow && (
+                      <p className="text-[11px] text-dim">
+                        Values under credential-looking keys are redacted. Other values may still be sensitive. Comments aren't shown in this view.
+                      </p>
+                    )}
+                    {/* One toolbar for both states: the toggle keeps its place, so focus stays on it (04 6.2). */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        aria-disabled={helmRevealing || undefined}
+                        onClick={() => {
+                          if (helmRevealing) return;
+                          if (helmRevealedNow) { hideHelmValues(); return; }
+                          setHelmEditIntent(false); setHelmRevealedFor(idKey);
+                        }}
+                        className={smallBtn}
+                      >
+                        {helmRevealedNow ? <EyeOff size={11} /> : <Eye size={11} />}{" "}
+                        {helmRevealedNow ? "Hide values" : helmRevealing && !helmEditIntent ? "Revealing…" : "Reveal values"}
+                      </button>
+                      {helmRevealedNow && <span className="mono text-[10px] px-1.5 rounded-sm bg-info/15 text-info ring-1 ring-info/30">Revealed</span>}
+                      <div className="flex-1" />
+                      {findButton}
+                      <button
+                        aria-disabled={helmRevealing || undefined}
+                        onClick={() => {
+                          if (valuesReason || helmRevealing) return;
+                          if (helmRevealedNow) { setValuesEditContent(helmEditSeed(qc, context, ns, name)); setValuesEditMode(true); return; }
+                          setHelmEditIntent(true); setHelmRevealedFor(idKey);
+                        }}
+                        {...disabledAttrs(valuesReason)}
+                        className={`${smallBtn} ${valuesReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <SaveIcon /> {helmRevealedNow ? "Edit" : helmRevealing && helmEditIntent ? "Revealing…" : "Reveal and edit…"}
+                      </button>
+                      {helmRevealedNow
+                        ? (helmRevealQuery.data ?? "").trim() && (
+                            <button onClick={() => navigator.clipboard.writeText(helmRevealQuery.data ?? "")} className={smallBtn}>Copy</button>
+                          )
+                        : <button onClick={() => navigator.clipboard.writeText(helmValues)} className={smallBtn}>Copy redacted text</button>}
+                    </div>
+                    {helmRevealError && (
+                      <div role="alert" className="rounded-sm bg-bad/10 ring-1 ring-bad/30 px-2 py-1.5 text-[11px] text-bad flex items-start gap-2">
+                        <span className="flex-1 min-w-0 wrap-break-word">Couldn't load the values: {helmRevealError}.</span>
+                        <button onClick={() => { void helmRevealQuery.refetch(); }} className={smallBtn}>Retry</button>
+                      </div>
+                    )}
+                    {helmRevealedNow && !(helmRevealQuery.data ?? "").trim() ? (
+                      <p className="pt-6 text-center text-[13px] text-dim">No custom values — using chart defaults</p>
+                    ) : (
+                      <>
+                        {bar}
+                        {content}
+                      </>
+                    )}
+                  </div>
+                )}
+              </YamlFind>
             ) : helmValuesError && !helmRevealedNow ? (
               <div role="alert" className="rounded-sm bg-bad/10 ring-1 ring-bad/30 px-2 py-1.5 text-[11px] text-bad flex items-start gap-2">
                 <span className="flex-1 min-w-0 wrap-break-word">Couldn't load the values: {helmValuesError}.</span>
                 <button onClick={() => { void refetchHelmValues(); }} className={smallBtn}>Retry</button>
-              </div>
-            ) : helmRevealedNow || helmValues.trim() ? (
-              <div className="flex flex-col gap-2">
-                {!helmRevealedNow && (
-                  <p className="text-[11px] text-dim">
-                    Values under credential-looking keys are redacted. Other values may still be sensitive. Comments aren't shown in this view.
-                  </p>
-                )}
-                {/* One toolbar for both states: the toggle keeps its place, so focus stays on it (04 6.2). */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    aria-disabled={helmRevealing || undefined}
-                    onClick={() => {
-                      if (helmRevealing) return;
-                      if (helmRevealedNow) { hideHelmValues(); return; }
-                      setHelmEditIntent(false); setHelmRevealedFor(idKey);
-                    }}
-                    className={smallBtn}
-                  >
-                    {helmRevealedNow ? <EyeOff size={11} /> : <Eye size={11} />}{" "}
-                    {helmRevealedNow ? "Hide values" : helmRevealing && !helmEditIntent ? "Revealing…" : "Reveal values"}
-                  </button>
-                  {helmRevealedNow && <span className="mono text-[10px] px-1.5 rounded-sm bg-info/15 text-info ring-1 ring-info/30">Revealed</span>}
-                  <div className="flex-1" />
-                  <button
-                    aria-disabled={helmRevealing || undefined}
-                    onClick={() => {
-                      if (valuesReason || helmRevealing) return;
-                      if (helmRevealedNow) { setValuesEditContent(helmEditSeed(qc, context, ns, name)); setValuesEditMode(true); return; }
-                      setHelmEditIntent(true); setHelmRevealedFor(idKey);
-                    }}
-                    {...disabledAttrs(valuesReason)}
-                    className={`${smallBtn} ${valuesReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <SaveIcon /> {helmRevealedNow ? "Edit" : helmRevealing && helmEditIntent ? "Revealing…" : "Reveal and edit…"}
-                  </button>
-                  {helmRevealedNow
-                    ? (helmRevealQuery.data ?? "").trim() && (
-                        <button onClick={() => navigator.clipboard.writeText(helmRevealQuery.data ?? "")} className={smallBtn}>Copy</button>
-                      )
-                    : <button onClick={() => navigator.clipboard.writeText(helmValues)} className={smallBtn}>Copy redacted text</button>}
-                </div>
-                {helmRevealError && (
-                  <div role="alert" className="rounded-sm bg-bad/10 ring-1 ring-bad/30 px-2 py-1.5 text-[11px] text-bad flex items-start gap-2">
-                    <span className="flex-1 min-w-0 wrap-break-word">Couldn't load the values: {helmRevealError}.</span>
-                    <button onClick={() => { void helmRevealQuery.refetch(); }} className={smallBtn}>Retry</button>
-                  </div>
-                )}
-                {helmRevealedNow && !(helmRevealQuery.data ?? "").trim() ? (
-                  <p className="pt-6 text-center text-[13px] text-dim">No custom values — using chart defaults</p>
-                ) : (
-                  <pre className="mono text-[11px] leading-[1.6] rounded-lg p-3 ring-1 ring-edge overflow-auto bg-surface-sunken">
-                    {helmRevealedNow ? helmRevealQuery.data : helmValues}
-                  </pre>
-                )}
               </div>
             ) : (
               <div className="pt-10 pb-6 flex flex-col items-center gap-4">
@@ -3629,91 +3644,102 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                   />
                 ))}
               </div>
-            ) : editMode ? (
-              <>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[11px] text-warn mono">Editing — changes apply directly to the cluster</span>
-                  <div className="flex-1" />
-                  <NeatChip on={neat} onToggle={toggleNeat} editing />
-                  <button
-                    onClick={() => { setEditMode(false); }}
-                    className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
-                  >
-                    cancel
-                  </button>
-                  <button
-                    disabled={applyResource.isPending}
-                    onClick={() => { if (yamlReason) return; setConfirmSave(true); }}
-                    {...disabledAttrs(yamlReason)}
-                    className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <SaveIcon /> Review &amp; save…
-                  </button>
-                </div>
-                {confirmSave && (
-                  <YamlSaveGate
-                    context={context}
-                    namespace={ns}
-                    resourceType={resource.kind}
-                    name={name}
-                    kindLabel={kindLabel(resource)}
-                    yaml={editContent}
-                    hasForm={!!EDIT_FORM[resource.kind]}
-                    onOpenForm={() => { setConfirmSave(false); setEditMode(false); setShowEditor(true); }}
-                    onClose={() => setConfirmSave(false)}
-                    onSaved={() => { setConfirmSave(false); setEditMode(false); }}
-                  />
-                )}
-                <NeatNote hidden={[]} editing />
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={(e) => {
+            ) : (
+              // One <YamlFind> for the read and the edit view, so the find bar survives the switch. Keyed on the
+              // object identity (S2); the skeleton and the Secret placeholder above stay outside it.
+              <YamlFind
+                key={idKey}
+                text={editMode ? editContent : shownYaml}
+                noun="YAML"
+                regionLabel={`${kindLabel(resource)} ${name} YAML`}
+                edit={editMode ? {
+                  onChange: setEditContent,
+                  onKeyDown: (e) => {
                     // ⌘S / Ctrl+S opens the review gate; it never saves by itself.
                     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
                       e.preventDefault();
                       if (!yamlReason && !applyResource.isPending) setConfirmSave(true);
                     }
-                  }}
-                  spellCheck={false}
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  autoComplete="off"
-                  className="mono text-[11px] leading-[1.6] rounded-lg p-3 ring-1 ring-accent/40 resize-none focus:outline-hidden min-h-[60vh] bg-surface-sunken"
-                />
-              </>
-            ) : (
-              <div className="flex flex-col gap-2 min-w-0">
-                <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <NeatChip on={neat} onToggle={toggleNeat} editing={false} />
-                  <button
-                    onClick={() => navigator.clipboard.writeText(shownYaml)}
-                    title={neatShown ? "Copies the neat YAML, without the hidden fields." : undefined}
-                    className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
-                  >
-                    {neatShown ? "copy neat" : "copy"}
-                  </button>
-                  <button
-                    onClick={() => { if (yamlReason) return; setEditContent(yamlContent); setEditMode(true); }}
-                    {...disabledAttrs(yamlReason)}
-                    className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <SaveIcon /> edit
-                  </button>
-                </div>
-                {neat && (
-                  <div className="min-w-0">
-                    <NeatNote
-                      hidden={neatQuery.data?.hidden ?? []}
-                      editing={false}
-                      error={neatQuery.error ? ((neatQuery.error as any)?.message ?? String(neatQuery.error)) : undefined}
-                    />
+                  },
+                } : null}
+                noMatchHint={neatShown && (neatQuery.data?.hidden.length ?? 0) > 0
+                  ? { text: NEAT_NO_MATCH_HINT, action: { label: "Search full object", run: toggleNeat } }
+                  : null}
+              >
+                {({ findButton, bar, content }) => editMode ? (
+                  <>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-warn mono">Editing — changes apply directly to the cluster</span>
+                      <div className="flex-1" />
+                      {findButton}
+                      <NeatChip on={neat} onToggle={toggleNeat} editing />
+                      <button
+                        onClick={() => { setEditMode(false); }}
+                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                      >
+                        cancel
+                      </button>
+                      <button
+                        disabled={applyResource.isPending}
+                        onClick={() => { if (yamlReason) return; setConfirmSave(true); }}
+                        {...disabledAttrs(yamlReason)}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <SaveIcon /> Review &amp; save…
+                      </button>
+                    </div>
+                    {confirmSave && (
+                      <YamlSaveGate
+                        context={context}
+                        namespace={ns}
+                        resourceType={resource.kind}
+                        name={name}
+                        kindLabel={kindLabel(resource)}
+                        yaml={editContent}
+                        hasForm={!!EDIT_FORM[resource.kind]}
+                        onOpenForm={() => { setConfirmSave(false); setEditMode(false); setShowEditor(true); }}
+                        onClose={() => setConfirmSave(false)}
+                        onSaved={() => { setConfirmSave(false); setEditMode(false); }}
+                      />
+                    )}
+                    <NeatNote hidden={[]} editing />
+                    {bar}
+                    {content}
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {findButton}
+                      <NeatChip on={neat} onToggle={toggleNeat} editing={false} />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(shownYaml)}
+                        title={neatShown ? "Copies the neat YAML, without the hidden fields." : undefined}
+                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                      >
+                        {neatShown ? "copy neat" : "copy"}
+                      </button>
+                      <button
+                        onClick={() => { if (yamlReason) return; setEditContent(yamlContent); setEditMode(true); }}
+                        {...disabledAttrs(yamlReason)}
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <SaveIcon /> edit
+                      </button>
+                    </div>
+                    {neat && (
+                      <div className="min-w-0">
+                        <NeatNote
+                          hidden={neatQuery.data?.hidden ?? []}
+                          editing={false}
+                          error={neatQuery.error ? ((neatQuery.error as any)?.message ?? String(neatQuery.error)) : undefined}
+                        />
+                      </div>
+                    )}
+                    {bar}
+                    {content}
                   </div>
                 )}
-                <pre className="mono text-[11px] leading-[1.6] rounded-lg p-3 ring-1 ring-edge overflow-auto bg-surface-sunken">
-                  {shownYaml}
-                </pre>
-              </div>
+              </YamlFind>
             )}
           </div>
         )}
