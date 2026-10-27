@@ -18,6 +18,7 @@ Bundling principle (from `docs/feature-recommendations.md` §4): ship shared hel
 | v1.5.2 → v2.1.3 | Distribution | #52, #55, #53 | [v2.1.3-tasks.md](v2.1.3-tasks.md) |
 | v1.6.0 → v2.2.0 | Map and timeline | #18, #24, #17 (+ UX-06 doc) | [v2.2.0-tasks.md](v2.2.0-tasks.md) |
 | v1.7.0 → v2.3.0 | External observability | #16 (+ #13 upgrade) | [v2.3.0-tasks.md](v2.3.0-tasks.md) |
+| v2.3.1 | Search and filter (frontend only) | Map kind filter, YAML find (Ctrl/Cmd+F), ArgoCD bulk-select fix (+ UX 22 doc) | [v2.3.1-tasks.md](v2.3.1-tasks.md) |
 | v2.0.0 | Real-time and fleet, plus the rebrand | Rebrand, #38, #39 | [v2.0.0-tasks.md](v2.0.0-tasks.md) (incl. Rebrand section). **v2.0.0 shipped the rebrand only; #38/#39 are unscheduled** (plan text: v2.0.0-tasks.md §1–§9; UX 06 §7–§8 are low-fidelity) |
 
 **2026-10-09 (user decision):** the v2.0.0 Rebrand ships next and on its own, from v1.4.2 (`feat/v2.0.0-rebrand`; v2.0.0-tasks.md → Freeze addendum). It moves to Apache-2.0 and public GitHub Releases, which reopens "public GitHub-style releases" under Rejected. v1.5.0–v1.7.0 and #38/#39 follow it, and their version numbers are re-cut then.
