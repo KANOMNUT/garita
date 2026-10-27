@@ -12,6 +12,7 @@ import { useClusterIdentity } from "../utils/clusterIdentity";
 import { argoBulkRefreshEquiv, argoBulkSyncEquiv, deleteEquiv, helmUninstallEquiv } from "../utils/kubectlEquiv";
 import { checkBulk, disabledAttrs, pickDisabledReason } from "../utils/guardrails";
 import { relativeFromIso, expiryState } from "../utils/expiry";
+import { rangeSelect, shownRows, type SortState } from "../utils/tableRows";
 import { nodePool, nodeZone, nodeInstanceType, type LabelHit } from "../utils/nodeLabels";
 import {
   useDeployments, useStatefulSets, useDaemonSets, useJobs, useCronJobs, useHPAs,
@@ -1748,6 +1749,9 @@ function ArgoCdHealthStrip({ apps, filter, setFilter }: {
   );
 }
 
+/** The table key of an Application (`namespace/name`); also the bulk-selection key. */
+const argoKey = (a: ArgoCdApp): string => `${a.namespace}/${a.name}`;
+
 const ARGO_FILTER_PREDICATE: Partial<Record<ArgoFilter, (a: ArgoCdApp) => boolean>> = {
   healthy:     (a) => a.health_status === "Healthy",
   degraded:    (a) => a.health_status === "Degraded",
@@ -1769,7 +1773,18 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
   const bulkSync = useBulkSyncArgoCdApps();
   const bulkRefresh = useBulkRefreshArgoCdApps();
 
-  const filtered = filter === "all" ? data : data.filter(ARGO_FILTER_PREDICATE[filter]!);
+  const [sort, setSort] = useState<SortState | null>(null);
+
+  const filtered = useMemo(
+    () => (filter === "all" ? data : data.filter(ARGO_FILTER_PREDICATE[filter]!)),
+    [data, filter],
+  );
+  // Exactly the rows the table shows (health filter, then its search, in its sort order). Select
+  // all, the shift-range and the bulk actions all work from this list, never from `filtered`.
+  const shown = useMemo(
+    () => shownRows(filtered, search, argoKey, argoColumns, sort),
+    [filtered, search, sort],
+  );
 
   // Stale keys after a filter/search change would make "N selected" lie about what's visible.
   useEffect(() => {
@@ -1778,32 +1793,19 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
   }, [filter, search]);
 
   const handleBulkCheck = (app: ArgoCdApp, shiftHeld: boolean) => {
-    const key = `${app.namespace}/${app.name}`;
-    setBulkSelected(prev => {
-      const next = new Set(prev);
-      if (shiftHeld && lastCheckedRef.current) {
-        const ids = filtered.map(a => `${a.namespace}/${a.name}`);
-        const a = ids.indexOf(lastCheckedRef.current);
-        const b = ids.indexOf(key);
-        if (a !== -1 && b !== -1) {
-          const [lo, hi] = a < b ? [a, b] : [b, a];
-          const addAll = !prev.has(key);
-          for (let i = lo; i <= hi; i++) { if (addAll) next.add(ids[i]); else next.delete(ids[i]); }
-          lastCheckedRef.current = key;
-          return next;
-        }
-      }
-      if (next.has(key)) next.delete(key); else next.add(key);
-      lastCheckedRef.current = key;
-      return next;
-    });
+    const key = argoKey(app);
+    // Read the anchor now: the updater below may run after the ref has moved on.
+    const anchor = lastCheckedRef.current;
+    const order = shown.map(argoKey);
+    lastCheckedRef.current = key;
+    setBulkSelected(prev => rangeSelect(prev, order, anchor, key, shiftHeld));
   };
 
   const columns = useMemo<Column<ArgoCdApp>[]>(() => [
     {
       id: "sel", header: "", width: 28,
       cell: (a) => {
-        const key = `${a.namespace}/${a.name}`;
+        const key = argoKey(a);
         return (
           <input
             type="checkbox"
@@ -1817,9 +1819,9 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
     },
     ...argoColumns,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [bulkSelected, filtered]);
+  ], [bulkSelected, shown]);
 
-  const selectedApps = filtered.filter(a => bulkSelected.has(`${a.namespace}/${a.name}`));
+  const selectedApps = shown.filter(a => bulkSelected.has(argoKey(a)));
 
   const confirmCopy: Record<"sync" | "refresh" | "hardRefresh", { title: string; description: string; confirmLabel: string }> = {
     sync: {
@@ -1865,13 +1867,13 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
     setConfirmAction(null);
   };
 
-  const bulkBar = bulkSelected.size > 0 ? (
+  const bulkBar = selectedApps.length > 0 ? (
     <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-      <span className="mono text-[11px] text-accent font-semibold shrink-0">{bulkSelected.size} selected</span>
+      <span className="mono text-[11px] text-accent font-semibold shrink-0">{selectedApps.length} selected</span>
       <button onClick={() => setBulkSelected(new Set())} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge flex items-center gap-1">
         <X size={10} /> Clear
       </button>
-      <button onClick={() => setBulkSelected(new Set(filtered.map(a => `${a.namespace}/${a.name}`)))} className="h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge">
+      <button onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className="h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge">
         Select all
       </button>
       <button onClick={() => { if (bulkReason) return; setConfirmAction("sync"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-accent hover:bg-accent/20 bg-accent/10 ring-1 ring-accent/30 flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
@@ -1888,7 +1890,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
       )}
     </div>
   ) : (
-    <button onClick={() => setBulkSelected(new Set(filtered.map(a => `${a.namespace}/${a.name}`)))} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge shrink-0 whitespace-nowrap">
+    <button onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge shrink-0 whitespace-nowrap">
       Select all
     </button>
   );
@@ -1896,8 +1898,9 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
   return (
     <>
       <GenericResourceTable context={context} presenceKey="argocd" columns={columns} data={filtered} isLoading={isLoading}
-        error={error} onRetry={refetch} keyFn={(a) => `${a.namespace}/${a.name}`}
+        error={error} onRetry={refetch} keyFn={argoKey}
         selectedKey={selectedKey} onSelect={onSelect} search={search}
+        sort={sort} onSortChange={setSort}
         title="ArgoCD Applications"
         extraLeft={<ArgoCdHealthStrip apps={data} filter={filter} setFilter={setFilter} />}
         extra={

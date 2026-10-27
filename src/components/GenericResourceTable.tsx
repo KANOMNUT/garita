@@ -6,6 +6,7 @@ import { ViewState } from "./ViewState";
 import { useApiPresence } from "../hooks/useResources";
 import { viewState } from "../utils/viewState";
 import { disabledAttrs, READ_ONLY_REASON_SHORT } from "../utils/guardrails";
+import { searchRows, sortRows, type SortState } from "../utils/tableRows";
 
 export interface Column<T> {
   id: string;
@@ -50,6 +51,12 @@ interface Props<T> {
    * #15 states: not installed / no access / nothing here. Needs `context` and `title`.
    */
   presenceKey?: string;
+  /**
+   * Controlled sort. When `onSortChange` is given, the table shows `sort` and reports header
+   * clicks instead of keeping its own state, so the caller knows the displayed order.
+   */
+  sort?: SortState | null;
+  onSortChange?: (sort: SortState | null) => void;
 }
 
 function SkeletonRow({ cols }: { cols: number }) {
@@ -69,6 +76,7 @@ export function GenericResourceTable<T>({
   selectedKey, onSelect, emptyIcon, emptyText = "No resources found",
   title, count, extra, extraLeft, search, storageKey, onDelete,
   deleteLabel = "Delete", deleteIcon, context, presenceKey, defaultHidden,
+  sort, onSortChange,
 }: Props<T>) {
   const identity = useClusterIdentity(context ?? "");
   const readOnly = !!context && identity.readOnly;
@@ -76,8 +84,9 @@ export function GenericResourceTable<T>({
   const presence = presenceQ.data?.find((p) => p.key === presenceKey);
   const errorMessage: string | null = error ? ((error as any)?.message ?? String(error)) : null;
   const vs = presenceKey ? viewState(presence?.state ?? "unknown", errorMessage, data.length) : null;
-  const [sortCol, setSortCol] = useState<string | null>(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [ownSort, setOwnSort] = useState<SortState | null>(null);
+  // Controlled when the caller passes `onSortChange` (the caller needs the displayed order).
+  const currentSort = onSortChange ? (sort ?? null) : ownSort;
 
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
     if (!storageKey) return new Set();
@@ -114,36 +123,22 @@ export function GenericResourceTable<T>({
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [showColMenu]);
 
-  const filtered = useMemo(
-    () =>
-      search
-        ? data.filter((item) => keyFn(item).toLowerCase().includes(search.toLowerCase()))
-        : data,
-    [data, search, keyFn],
-  );
+  const filtered = useMemo(() => searchRows(data, search, keyFn), [data, search, keyFn]);
 
   const sorted = useMemo(
-    () =>
-      sortCol
-        ? [...filtered].sort((a, b) => {
-            const col = columns.find((c) => c.id === sortCol);
-            const va = col?.sortValue?.(a) ?? "";
-            const vb = col?.sortValue?.(b) ?? "";
-            if (typeof va === "number" && typeof vb === "number") {
-              return sortAsc ? va - vb : vb - va;
-            }
-            return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
-          })
-        : filtered,
-    [filtered, sortCol, sortAsc, columns],
+    () => sortRows(filtered, columns, currentSort),
+    [filtered, columns, currentSort],
   );
 
   const handleSort = useCallback(
     (colId: string) => {
-      if (sortCol === colId) setSortAsc((v) => !v);
-      else { setSortCol(colId); setSortAsc(true); }
+      const next: SortState = currentSort?.col === colId
+        ? { col: colId, asc: !currentSort.asc }
+        : { col: colId, asc: true };
+      if (onSortChange) onSortChange(next);
+      else setOwnSort(next);
     },
-    [sortCol],
+    [currentSort, onSortChange],
   );
 
   // Never hide the first (name) column.
@@ -237,7 +232,7 @@ export function GenericResourceTable<T>({
                     key={col.id}
                     style={col.width ? { width: col.width } : undefined}
                     className={`sticky top-0 z-1 bg-panel/95 backdrop-blur-sm border-b border-edge text-left text-[10.5px] uppercase tracking-[0.06em] font-semibold py-2 px-2 first:pl-3 last:pr-3
-                      ${sortCol === col.id ? "text-accent" : "text-dim"}`}
+                      ${currentSort?.col === col.id ? "text-accent" : "text-dim"}`}
                   >
                     {col.sortable ? (
                       <button
@@ -245,8 +240,8 @@ export function GenericResourceTable<T>({
                         className="flex items-center gap-1 hover:text-ink"
                       >
                         {col.header}
-                        {sortCol === col.id
-                          ? sortAsc ? <ChevronUp size={9} /> : <ChevronDown size={9} />
+                        {currentSort?.col === col.id
+                          ? currentSort.asc ? <ChevronUp size={9} /> : <ChevronDown size={9} />
                           : <ChevronDown size={9} className="opacity-40" />}
                       </button>
                     ) : (
