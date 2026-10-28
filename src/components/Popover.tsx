@@ -58,7 +58,11 @@ export function Popover({ open, onClose, triggerRef, label, className = "", chil
       ref={panelRef}
       role="dialog"
       aria-label={label}
-      className={`absolute z-30 rounded-lg bg-panel ring-1 ring-edge2 shadow-xl ${className}`}
+      // Focusable but not a tab stop: a click on anything inside that is not itself focusable (text, and on WebKit
+      // every button and checkbox) focuses the panel instead of the nearest focusable ancestor (`<main tabIndex={-1}>`),
+      // so the blur handler below does not see focus leave and close the panel before the click lands.
+      tabIndex={-1}
+      className={`absolute z-30 rounded-lg bg-panel ring-1 ring-edge2 shadow-xl outline-hidden ${className}`}
       // A popover may sit inside a draggable header: do not let a click inside it start a window drag.
       onMouseDown={(e) => e.stopPropagation()}
       onBlur={(e) => {

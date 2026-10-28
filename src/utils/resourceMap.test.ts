@@ -3,7 +3,7 @@ import type { MapEdge, MapKind, MapNode, MapSource, MapStatus, ResourceMap } fro
 import {
   ALL_KINDS, DRAW_CAP, KIND_GROUPS, KIND_SOURCE, edgeFamily, relationLabel, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, countByKind, drawable, focusNodeId, groupPods, hideKinds,
   focusBanner, groupState, groupZeroReason, hiddenLinkText, hiddenLinks, hiddenPresent, kindsAnnouncement, lineage, mapState, matchIds, matchLineText, prepareMap, relationsOf,
-  toggleGroup, zeroReason, type KindGroupId, type MapViewNode,
+  setGroupShown, zeroReason, type KindGroupId, type MapViewNode,
 } from "./resourceMap";
 
 const node = (kind: MapKind, name: string, status: MapStatus = "ok"): MapNode => ({
@@ -84,26 +84,28 @@ describe("group chips over kinds", () => {
     expect(groupState("workloads", new Set<MapKind>(["sts", "ds"]), c).state).toBe("all");
     expect(groupState("config", new Set<MapKind>(["sec"]), c).state).toBe("all");
   });
-  it("toggleGroup: a fully shown group hides every kind of it, absent ones included", () => {
-    const next = toggleGroup("workloads", new Set(), c);
-    expect([...next].sort()).toEqual(["cron", "deploy", "ds", "jobs", "pods", "rs", "sts"]);
+  it("setGroupShown(false) hides every kind of the group, absent ones included, and leaves other groups alone", () => {
+    const next = setGroupShown("workloads", new Set<MapKind>(["cm"]), false);
+    expect([...next].sort()).toEqual(["cm", "cron", "deploy", "ds", "jobs", "pods", "rs", "sts"]);
     expect(groupState("workloads", next, c).state).toBe("none");
+    expect(groupState("config", next, c).state).toBe("none");
+    expect(groupState("routing", next, c).state).toBe("empty");
   });
-  it("toggleGroup: a mixed, hidden or empty group shows every kind of it and leaves other groups alone", () => {
-    const h = new Set<MapKind>(["rs", "cm", "sts"]);
-    expect([...toggleGroup("workloads", h, c)]).toEqual(["cm"]);
-    const all = new Set<MapKind>(["deploy", "rs", "pods", "svc"]);
-    expect([...toggleGroup("workloads", all, c)].sort()).toEqual(["svc"]);
-    // the empty group after Hide all: clickable, shows its (absent) kinds again
-    const hideAll = new Set(ALL_KINDS);
-    const next = toggleGroup("routing", hideAll, c);
-    expect(next.has("svc")).toBe(false);
-    expect(next.has("deploy")).toBe(true);
-    expect(toggleGroup("routing", new Set(), c).size).toBe(0);
+  it("setGroupShown(true) shows every kind of the group, flagged-but-absent ones too, and leaves other groups alone", () => {
+    const h = new Set<MapKind>(["rs", "cm", "sts", "deploy", "pods"]);
+    expect([...setGroupShown("workloads", h, true)]).toEqual(["cm"]);
+    expect(groupState("workloads", setGroupShown("workloads", h, true), c).state).toBe("all");
+    // an empty group flagged hidden (after hiding all of it) can be cleared
+    expect(setGroupShown("routing", new Set(ALL_KINDS), true).has("svc")).toBe(false);
+    expect(setGroupShown("routing", new Set(ALL_KINDS), true).has("deploy")).toBe(true);
+    expect(setGroupShown("routing", new Set(), true).size).toBe(0);
   });
-  it("toggleGroup does not mutate its input", () => {
+  it("setGroupShown is idempotent and does not mutate its input", () => {
     const h = new Set<MapKind>(["rs"]);
-    toggleGroup("workloads", h, c);
+    const hidden = setGroupShown("workloads", h, false);
+    expect([...setGroupShown("workloads", hidden, false)].sort()).toEqual([...hidden].sort());
+    expect([...h]).toEqual(["rs"]);
+    expect([...setGroupShown("workloads", h, true)]).toEqual([]);
     expect([...h]).toEqual(["rs"]);
   });
   it("hiddenPresent counts only hidden kinds that have objects", () => {

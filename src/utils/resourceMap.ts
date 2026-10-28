@@ -159,18 +159,17 @@ export function groupState(g: KindGroupId, hidden: ReadonlySet<MapKind>, counts:
   return { state, shown, total };
 }
 
-/** Chip click: "all" hides every kind of the group (present or not); "some", "none" and "empty" show every kind of it. */
-export function toggleGroup(g: KindGroupId, hidden: ReadonlySet<MapKind>, counts: Record<MapKind, number>): Set<MapKind> {
-  const hide = groupState(g, hidden, counts).state === "all";
+/** Show (`show`) or hide every kind of a group, present or not. The other groups are untouched. */
+export function setGroupShown(g: KindGroupId, hidden: ReadonlySet<MapKind>, show: boolean): Set<MapKind> {
   const next = new Set(hidden);
   for (const k of GROUP.get(g)!.kinds) {
-    if (hide) next.add(k);
-    else next.delete(k);
+    if (show) next.delete(k);
+    else next.add(k);
   }
   return next;
 }
 
-/** Kinds that are hidden AND have objects here: the N of "Kinds · N hidden", so "hidden" always means "this is hiding something". */
+/** Kinds that are hidden AND have objects here: the N of the kind announcement and the "goes to hidden kinds" sentences, so "hidden" always means "this is hiding something". */
 export function hiddenPresent(hidden: ReadonlySet<MapKind>, counts: Record<MapKind, number>): number {
   let n = 0;
   for (const k of hidden) if (counts[k] > 0) n++;

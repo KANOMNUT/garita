@@ -3,9 +3,9 @@ import { AlertCircle, Ban, ChevronDown, Circle, Info, ShieldOff } from "lucide-r
 import type { MapKind, MapSource, ResourceType } from "../../types/k8s";
 import { useDaemonSets, useDeployments, useIngresses, useResourceMap, useServices, useStatefulSets } from "../../hooks/useResources";
 import {
-  ALL_KINDS, DRAW_CAP, KIND_GROUPS, KIND_LABEL, KIND_PLURAL, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, START_KINDS, countByKind, edgeFamily,
+  DRAW_CAP, KIND_GROUPS, KIND_LABEL, KIND_PLURAL, MAP_COLUMN, NO_STATUS_KINDS, SKIPPED_COPY, START_KINDS, countByKind, edgeFamily,
   focusBanner, focusNodeId, groupState, groupZeroReason, hideKinds, hiddenLinks, hiddenLinkText, hiddenPresent, kindsAnnouncement, lineage, mapState,
-  matchIds, matchLineText, nodeText, prepareMap, relationLabel, relationsOf, toggleGroup, zeroReason, type MapViewNode,
+  matchIds, matchLineText, nodeText, prepareMap, relationLabel, relationsOf, setGroupShown, zeroReason, type KindGroupId, type MapViewNode,
 } from "../../utils/resourceMap";
 import { GraphCanvas, STATUS_VIEW, type GraphCanvasHandle, type GraphEdgeView, type GraphNodeView } from "../graph/GraphCanvas";
 import { GraphList, type GraphListSection } from "../graph/GraphList";
@@ -68,108 +68,133 @@ const NO_GROUPS: ReadonlyMap<string, string> = new Map();
 const NO_LINKS: ReadonlyMap<string, number> = new Map();
 
 /**
- * Group chips (shortcuts over the kinds) plus the Kinds button and its checklist (UX 22 §3). The hidden state is a set of
- * kinds; every change goes out through `onChange` as the next set. `scopeWord`: counts come from the namespace, or from
- * the chain while focused. `label` names the `role="group"`.
+ * One group chip that opens a dropdown with the group's kinds (v2.3.1; supersedes the single Kinds button of UX 22 §3.3).
+ * The trigger keeps its visible text as its name (WCAG 2.5.3): the group label, then the object count, or "shown of total"
+ * when part of the group is hidden. It is a menu trigger, not a toggle, so it has no `aria-pressed`.
  */
-function KindFilter({ label, counts, hidden, skipped, onChange, scopeWord, className = "" }: {
+function GroupChip({ group, counts, hidden, skipped, scopeWord, open, onToggle, onClose, onChange }: {
+  group: (typeof KIND_GROUPS)[number];
+  counts: Record<MapKind, number>;
+  hidden: ReadonlySet<MapKind>;
+  skipped: readonly MapSource[];
+  scopeWord: "namespace" | "chain";
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onChange: (next: Set<MapKind>) => void;
+}) {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const { state, shown, total } = groupState(group.id, hidden, counts);
+  const flagged = group.kinds.some((k) => hidden.has(k));
+  // A group with no objects is a dead chip, unless its kinds are flagged hidden (after Hide all): then it stays openable.
+  const reason = state === "empty" && !flagged ? groupZeroReason(group.id, counts, skipped, scopeWord) : null;
+  const isOpen = open && !reason;
+  // A group that empties on a refetch closes for good: otherwise it would reopen by itself, and take focus, when its objects return.
+  useEffect(() => { if (open && reason) onClose(); }, [open, reason, onClose]);
+  // The Popover does not move focus: the first enabled checkbox takes it (else the first enabled header button). Rows are native tab stops (C-2).
+  useEffect(() => {
+    if (!isOpen) return;
+    const b = body.current;
+    (b?.querySelector<HTMLElement>('input:not([aria-disabled="true"])') ?? b?.querySelector<HTMLElement>('button:not([aria-disabled="true"])'))?.focus();
+  }, [isOpen]);
+  const showAllReason = flagged ? undefined : "All kinds in this group are already shown.";
+  const hideAllReason = group.kinds.every((k) => hidden.has(k) || counts[k] === 0) ? "All kinds in this group are already hidden." : undefined;
+  const muted = state === "none" || (state === "empty" && flagged);
+  return (
+    <div className="relative">
+      <button
+        ref={trigger}
+        type="button"
+        data-kind-chip
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        aria-disabled={reason ? true : undefined}
+        title={reason ?? undefined}
+        onClick={() => { if (!reason) onToggle(); }}
+        className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 flex items-center gap-1.5 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${chipFocus} ${muted ? "bg-card/70 ring-edge text-mute" : "bg-accent/12 ring-accent/30 text-ink"}`}
+      >
+        {group.label} <span className="mono tabular-nums">{state === "some" || state === "none" ? `${shown} of ${total}` : total}</span>
+        <ChevronDown size={11} aria-hidden className={isOpen ? "rotate-180" : ""} />
+        {reason && <span className="sr-only">. {reason}</span>}
+      </button>
+      <Popover open={isOpen} onClose={onClose} triggerRef={trigger} label={`${group.label}: kinds to show`} className="left-0 top-full mt-1 w-64 max-w-[calc(100vw-2rem)] text-left">
+        <div ref={body}>
+          <div className="flex items-center gap-1 px-3 pt-2 pb-1.5 border-b border-edge">
+            <span className="flex-1 text-[12px] font-semibold text-ink">{group.label}</span>
+            <button type="button" {...disabledAttrs(showAllReason)} onClick={() => { if (!showAllReason) onChange(setGroupShown(group.id, hidden, true)); }} className={headerBtn}>Show all</button>
+            <button type="button" {...disabledAttrs(hideAllReason)} onClick={() => { if (!hideAllReason) onChange(setGroupShown(group.id, hidden, false)); }} className={headerBtn}>Hide all</button>
+          </div>
+          <div className="max-h-[min(24rem,60vh)] overflow-auto p-1.5">
+            {group.kinds.map((k) => {
+              const rowReason = zeroReason(k, counts, skipped, scopeWord);
+              const n = counts[k];
+              return (
+                <label
+                  key={k}
+                  title={rowReason ?? undefined}
+                  className={`flex items-center gap-2 min-h-6 px-2 rounded-sm text-[11.5px] text-ink hover:bg-surface-tint/6 ${rowReason ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-accent h-3.5 w-3.5"
+                    checked={!hidden.has(k)}
+                    {...disabledAttrs(rowReason ?? undefined)}
+                    onChange={() => {
+                      if (rowReason) return;
+                      const next = new Set(hidden);
+                      if (next.has(k)) next.delete(k);
+                      else next.add(k);
+                      onChange(next);
+                    }}
+                  />
+                  <span>{KIND_PLURAL[k]}<span className="sr-only">, {n} {n === 1 ? "object" : "objects"}</span></span>
+                  <span aria-hidden className="ml-auto mono text-[11px] tabular-nums text-mute">{n}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+/**
+ * The group chips, each a dropdown over its kinds, plus "Show all kinds" while anything is hidden. The hidden state is a
+ * set of kinds; every change goes out through `onChange` as the next set. One dropdown is open at a time. `scopeWord`:
+ * counts come from the namespace, or from the chain while focused. `label` names the `role="group"`.
+ */
+function KindFilter({ label, counts, hidden, skipped, onChange, onShowAll, scopeWord, className = "" }: {
   label: string;
   counts: Record<MapKind, number>;
   hidden: ReadonlySet<MapKind>;
   skipped: readonly MapSource[];
   onChange: (next: Set<MapKind>) => void;
+  onShowAll: () => void;
   scopeWord: "namespace" | "chain";
   className?: string;
 }) {
   const id = useId();
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const list = useRef<HTMLDivElement>(null);
-  const hiddenN = hiddenPresent(hidden, counts);
-  // The Popover does not move focus; the first row takes it on open (UX 22 §3.10). Rows are native tab stops (C-2).
-  useEffect(() => { if (open) list.current?.querySelector<HTMLInputElement>("input")?.focus(); }, [open]);
-  const showAllReason = hidden.size === 0 ? "All kinds are already shown." : undefined;
-  const hideAllReason = ALL_KINDS.every((k) => hidden.has(k) || counts[k] === 0) ? "All kinds are already hidden." : undefined;
+  const [openId, setOpenId] = useState<KindGroupId | null>(null);
   return (
     <div role="group" aria-labelledby={`${id}-label`} className={`flex flex-wrap items-center gap-2 ${className}`}>
       <span id={`${id}-label`} className="text-[11.5px] text-mute">{label}</span>
-      {KIND_GROUPS.map((g) => {
-        const { state, shown, total } = groupState(g.id, hidden, counts);
-        const flagged = g.kinds.some((k) => hidden.has(k));
-        // A group with no objects is a dead chip, unless its kinds are flagged hidden (after Hide all): then it stays clickable.
-        const reason = state === "empty" && !flagged ? groupZeroReason(g.id, counts, skipped, scopeWord) : null;
-        const pressed: boolean | "mixed" = state === "empty" ? !flagged : state === "all" ? true : state === "some" ? "mixed" : false;
-        return (
-          <button
-            key={g.id}
-            type="button"
-            aria-pressed={pressed}
-            aria-disabled={reason ? true : undefined}
-            title={reason ?? undefined}
-            onClick={() => { if (!reason) onChange(toggleGroup(g.id, hidden, counts)); }}
-            className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 flex items-center gap-1.5 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${chipFocus} ${pressed === false ? "bg-card/70 ring-edge text-mute" : "bg-accent/12 ring-accent/30 text-ink"}`}
-          >
-            {g.label} <span className="mono tabular-nums">{state === "some" ? `${shown} of ${total}` : total}</span>
-            {reason && <span className="sr-only">. {reason}</span>}
-          </button>
-        );
-      })}
-      <div className="relative">
-        <button
-          ref={trigger}
-          type="button"
-          data-kinds-button
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          aria-label={`Kinds, ${hiddenN === 0 ? "all shown" : `${hiddenN} hidden`}`}
-          onClick={() => setOpen((v) => !v)}
-          className={`min-h-6 px-2.5 py-1 rounded-lg text-[11.5px] ring-1 bg-card/70 flex items-center gap-1.5 ${chipFocus} ${hiddenN > 0 ? "ring-accent/40 text-ink" : "ring-edge text-mute hover:text-ink"}`}
-        >
-          {hiddenN > 0 ? `Kinds · ${hiddenN} hidden` : "Kinds"}
-          <ChevronDown size={11} aria-hidden className={open ? "rotate-180" : ""} />
-        </button>
-        <Popover open={open} onClose={() => setOpen(false)} triggerRef={trigger} label="Kinds to show" className="left-0 top-full mt-1 w-72 max-w-[calc(100vw-2rem)] text-left">
-          <div className="flex items-center gap-1 px-3 pt-2 pb-1.5 border-b border-edge">
-            <span className="flex-1 text-[12px] font-semibold text-ink">Kinds to show</span>
-            <button type="button" {...disabledAttrs(showAllReason)} onClick={() => { if (!showAllReason) onChange(new Set()); }} className={headerBtn}>Show all</button>
-            <button type="button" {...disabledAttrs(hideAllReason)} onClick={() => { if (!hideAllReason) onChange(new Set(ALL_KINDS)); }} className={headerBtn}>Hide all</button>
-          </div>
-          <div ref={list} className="max-h-[min(24rem,60vh)] overflow-auto p-1.5">
-            {KIND_GROUPS.map((g) => (
-              <div key={g.id} role="group" aria-labelledby={`${id}-${g.id}`}>
-                <p id={`${id}-${g.id}`} className="px-2 pt-2 pb-0.5 text-[10.5px] uppercase tracking-wider text-mute">{g.label}</p>
-                {g.kinds.map((k) => {
-                  const rowReason = zeroReason(k, counts, skipped, scopeWord);
-                  const n = counts[k];
-                  return (
-                    <label
-                      key={k}
-                      title={rowReason ?? undefined}
-                      className={`flex items-center gap-2 min-h-6 px-2 rounded-sm text-[11.5px] text-ink hover:bg-surface-tint/6 ${rowReason ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="accent-accent h-3.5 w-3.5"
-                        checked={!hidden.has(k)}
-                        {...disabledAttrs(rowReason ?? undefined)}
-                        onChange={() => {
-                          if (rowReason) return;
-                          const next = new Set(hidden);
-                          if (next.has(k)) next.delete(k);
-                          else next.add(k);
-                          onChange(next);
-                        }}
-                      />
-                      <span>{KIND_PLURAL[k]}<span className="sr-only">, {n} {n === 1 ? "object" : "objects"}</span></span>
-                      <span aria-hidden className="ml-auto mono text-[11px] tabular-nums text-mute">{n}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </Popover>
-      </div>
+      {KIND_GROUPS.map((g) => (
+        <GroupChip
+          key={g.id}
+          group={g}
+          counts={counts}
+          hidden={hidden}
+          skipped={skipped}
+          scopeWord={scopeWord}
+          open={openId === g.id}
+          onToggle={() => setOpenId((v) => (v === g.id ? null : g.id))}
+          onClose={() => setOpenId((v) => (v === g.id ? null : v))}
+          onChange={onChange}
+        />
+      ))}
+      {hidden.size > 0 && <button type="button" onClick={onShowAll} className={btn}>Show all kinds</button>}
     </div>
   );
 }
@@ -342,9 +367,14 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
   const tooManyShown = state === "truncated" || (state === "ok" && !!prepared?.tooMany);
   const requestFocus = useRefocus(root, `${namespace}|${fid ?? ""}|${state}|${tooManyShown}`, tooManyShown ? 'select[aria-label="Name"]' : '[data-graph-node][tabindex="0"]');
   const setKinds = useCallback((next: Set<MapKind>) => { requestFocus(); setHidden(next); }, [requestFocus]);
-  // Its button unmounts with the all-hidden sentence, so focus goes to the Kinds button, which stays.
-  // Arms useRefocus first: if showing everything crosses into the too-many state, the filter row unmounts too.
-  const showAllKinds = useCallback(() => { requestFocus(); setHidden(new Set()); root.current?.querySelector<HTMLElement>("[data-kinds-button]")?.focus(); }, [requestFocus]);
+  // The "Show all kinds" buttons (the filter row's and the all-hidden sentence's) unmount with the state they clear, so focus goes to
+  // the first enabled group chip, which stays. Arms useRefocus first: if showing everything crosses into the too-many state, the
+  // filter row unmounts too.
+  const showAllKinds = useCallback(() => {
+    requestFocus();
+    setHidden(new Set());
+    root.current?.querySelector<HTMLElement>('[data-kind-chip]:not([aria-disabled="true"])')?.focus();
+  }, [requestFocus]);
 
   const cur = focusedId ? byId.get(focusedId) : undefined;
   const skipped = map?.skipped ?? [];
@@ -425,7 +455,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
             </button>
           </div>
           {!truncated && (
-            <KindFilter label="Or hide kinds:" counts={rawCounts} hidden={hidden} skipped={skippedSources} onChange={setKinds} scopeWord={focus ? "chain" : "namespace"} className="justify-center" />
+            <KindFilter label="Or hide kinds:" counts={rawCounts} hidden={hidden} skipped={skippedSources} onChange={setKinds} onShowAll={showAllKinds} scopeWord={focus ? "chain" : "namespace"} className="justify-center" />
           )}
           {focus && clearFocus}
         </div>
@@ -598,7 +628,7 @@ export function MapPage({ context, namespace, namespaces, visible, search, focus
       {q.isRefetchError && map && <StaleStrip at={q.dataUpdatedAt} />}
       {prepared && !prepared.tooMany && (
         <div className="flex flex-wrap items-center gap-2">
-          <KindFilter label="Show:" counts={rawCounts} hidden={hidden} skipped={skippedSources} onChange={setKinds} scopeWord={focus ? "chain" : "namespace"} />
+          <KindFilter label="Show:" counts={rawCounts} hidden={hidden} skipped={skippedSources} onChange={setKinds} onShowAll={showAllKinds} scopeWord={focus ? "chain" : "namespace"} />
           <span className="flex-1" />
           {matchLine && <span className="text-[11.5px] text-mute" role="status">{matchLine}</span>}
           <Segmented label="Map view" value={view} options={[["graph", "Graph"], ["list", "List"]] as const} onChange={setView} />
