@@ -7,7 +7,7 @@ use k8s_openapi::api::core::v1::{
     Namespace as K8sNamespace, PersistentVolumeClaim as K8sPVC,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
-use kube::{api::{DeleteParams, PostParams}, Api};
+use kube::{api::PostParams, Api};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -91,8 +91,10 @@ pub async fn create_namespace(context: String, name: String) -> Result<(), Strin
 pub async fn delete_namespace(context: String, name: String) -> Result<(), String> {
     let result: Result<(), String> = async {
         let client = client_for_context(&context).await.map_err(|e| e.to_string())?;
+        // Explicit Background, like kubectl and `delete_resource`: never the library default.
+        let dp = super::pods::delete_params_for(None)?;
         let api: Api<K8sNamespace> = Api::all(client);
-        api.delete(&name, &DeleteParams::default())
+        api.delete(&name, &dp)
             .await
             .map_err(|e| format!("Failed to delete namespace: {}", e))?;
         Ok(())
@@ -168,6 +170,7 @@ pub async fn get_resource_metadata(
         "pvc" => get_ns!(K8sPVC),
         "pv" => get_all!(K8sPV),
         "nodes" | "node" => get_all!(K8sNode),
+        "ns" | "namespace" => get_all!(K8sNamespace),
         _ => Ok(ResourceMetadata { annotations: HashMap::new(), labels: HashMap::new() }),
     }
 }

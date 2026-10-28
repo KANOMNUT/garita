@@ -102,6 +102,7 @@ pub(crate) fn gvk_for(
         "pv" | "persistentvolume" | "pvs" => ("", "v1", "PersistentVolume", "persistentvolumes", false),
         "sc" | "storageclass" => ("storage.k8s.io", "v1", "StorageClass", "storageclasses", false),
         "nodes" | "node" => ("", "v1", "Node", "nodes", false),
+        "ns" | "namespace" | "namespaces" => ("", "v1", "Namespace", "namespaces", false),
         "crd" | "customresourcedefinition" => (
             "apiextensions.k8s.io",
             "v1",
@@ -295,7 +296,7 @@ mod tests {
         "pods", "deploy", "sts", "ds", "jobs", "cron", "svc", "ing", "cm", "sec", "pvc", "pv",
         "nodes", "hpa", "crd", "netpol", "sa", "roles", "croles", "rbindings", "crbindings", "sc",
         "pdb", "ep", "eps", "rs", "mwc", "vwc", "vs", "cert", "flux-ks", "flux-hr", "gw",
-        "httproute", "rq", "lr", "pc", "argocd",
+        "httproute", "rq", "lr", "pc", "argocd", "ns",
     ];
 
     #[test]
@@ -306,14 +307,14 @@ mod tests {
     }
 
     #[test]
-    fn cluster_scoped_set_is_exactly_the_nine_null_namespace_kinds() {
+    fn cluster_scoped_set_is_exactly_the_null_namespace_kinds() {
         let mut cluster_scoped: Vec<&str> = READABLE_KINDS
             .iter()
             .copied()
             .filter(|k| !gvk_for(k).expect("resolves").4)
             .collect();
         cluster_scoped.sort_unstable();
-        let mut expected = vec!["pv", "sc", "nodes", "crd", "croles", "crbindings", "pc", "mwc", "vwc"];
+        let mut expected = vec!["pv", "sc", "nodes", "crd", "croles", "crbindings", "pc", "mwc", "vwc", "ns"];
         expected.sort_unstable();
         assert_eq!(cluster_scoped, expected);
     }
@@ -333,6 +334,13 @@ mod tests {
         assert_eq!(gvk_for("pods").unwrap(), gvk_for("pod").unwrap());
         assert_eq!(gvk_for("pv").unwrap(), gvk_for("persistentvolume").unwrap());
         assert_eq!(gvk_for("nodes").unwrap(), gvk_for("node").unwrap());
+    }
+
+    #[test]
+    fn namespace_row_is_cluster_scoped_core_v1_and_aliases_agree() {
+        assert_eq!(gvk_for("ns").unwrap(), ("", "v1", "Namespace", "namespaces", false));
+        assert_eq!(gvk_for("ns").unwrap(), gvk_for("namespace").unwrap());
+        assert_eq!(gvk_for("ns").unwrap(), gvk_for("namespaces").unwrap());
     }
 
     #[test]

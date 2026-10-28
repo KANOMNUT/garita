@@ -9,7 +9,8 @@ use k8s_openapi::api::apps::v1::{
 use k8s_openapi::api::batch::v1::{CronJob as K8sCronJob, Job as K8sJob};
 use k8s_openapi::api::core::v1::{
     ConfigMap as K8sConfigMap, ContainerStatus as K8sContainerStatus,
-    Endpoints as K8sEndpoints, LimitRange as K8sLR, Node as K8sNodeType,
+    Endpoints as K8sEndpoints, LimitRange as K8sLR, Namespace as K8sNamespace,
+    Node as K8sNodeType,
     PersistentVolume as K8sPV, PersistentVolumeClaim as K8sPVC, Pod as K8sPod,
     ResourceQuota as K8sRQ, Secret as K8sSecret, Service as K8sService,
     ServiceAccount as K8sServiceAccount,
@@ -31,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::ipc::Channel;
 
+use super::extras::ResourceCondition;
 use super::utils::{age_from_timestamp, client_for_context, namespaced_or_all, parse_cpu_millis, parse_mem_mib};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -159,6 +161,33 @@ pub struct Pod {
     pub default_container: Option<String>,
     pub ephemeral_containers: Vec<EphemeralContainerInfo>,
     pub priority_class: Option<String>, // spec.priorityClassName
+    pub service_account: Option<String>, // spec.serviceAccountName; None when absent
+    pub conditions: Vec<ResourceCondition>, // status.conditions in API order; [] when absent
+}
+
+/// `status.conditions` in API order, mapped like `get_workload_conditions` (`reason` and
+/// `message` default to `""`, `last_transition` is RFC 3339 or `""`). Pure so it is testable
+/// without a cluster.
+fn pod_conditions(pod: &K8sPod) -> Vec<ResourceCondition> {
+    pod.status
+        .as_ref()
+        .and_then(|s| s.conditions.as_ref())
+        .map(|list| {
+            list.iter()
+                .map(|c| ResourceCondition {
+                    type_: c.type_.clone(),
+                    status: c.status.clone(),
+                    reason: c.reason.clone().unwrap_or_default(),
+                    message: c.message.clone().unwrap_or_default(),
+                    last_transition: c
+                        .last_transition_time
+                        .as_ref()
+                        .map(|t| t.0.to_rfc3339())
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Ephemeral containers in `spec.ephemeralContainers` order, each matched by name to its entry in
@@ -551,6 +580,8 @@ pub(crate) fn convert_pod(pod: K8sPod) -> Pod {
     let default_container = default_container_from(pod.metadata.annotations.as_ref());
     let ephemeral_containers = build_ephemeral_containers(&pod);
     let priority_class = pod.spec.as_ref().and_then(|s| s.priority_class_name.clone());
+    let service_account = pod.spec.as_ref().and_then(|s| s.service_account_name.clone());
+    let conditions = pod_conditions(&pod);
     let labels: HashMap<String, String> = pod.metadata.labels.unwrap_or_default().into_iter().collect();
 
     Pod {
@@ -575,6 +606,8 @@ pub(crate) fn convert_pod(pod: K8sPod) -> Pod {
         default_container,
         ephemeral_containers,
         priority_class,
+        service_account,
+        conditions,
     }
 }
 
@@ -832,7 +865,7 @@ pub async fn delete_pod(context: String, namespace: String, pod_name: String) ->
 /// An absent policy must NOT fall through to the library default: that sends no
 /// `propagationPolicy`, and for `batch/v1` Jobs the API server then orphans the
 /// dependents, leaving the pods running. Background is sent explicitly, as kubectl does.
-fn delete_params_for(p: Option<&str>) -> Result<DeleteParams, String> {
+pub(crate) fn delete_params_for(p: Option<&str>) -> Result<DeleteParams, String> {
     match p {
         None | Some("") | Some("background") => Ok(DeleteParams::background()),
         Some("foreground") => Ok(DeleteParams::foreground()),
@@ -1125,6 +1158,7 @@ async fn fetch_resource_yaml(
         "sec" | "secret" | "secrets" => fetch_namespaced!(K8sSecret, "secret"),
         "pvc" | "persistentvolumeclaim" | "pvcs" => fetch_namespaced!(K8sPVC, "pvc"),
         "pv" | "persistentvolume" | "pvs" => fetch_all!(K8sPV, "pv"),
+        "ns" | "namespace" | "namespaces" => fetch_all!(K8sNamespace, "namespace"),
         "nodes" | "node" => fetch_all!(K8sNodeType, "node"),
         "hpa" | "horizontalpodautoscaler" => fetch_namespaced!(K8sHPA, "hpa"),
         "crd" | "customresourcedefinition" => fetch_all!(K8sCRD, "crd"),
@@ -1544,6 +1578,7 @@ async fn replace_resource_yaml(
         "sec" | "secret" => replace_ns!(K8sSecret, "secret"),
         "pvc" => replace_ns!(K8sPVC, "pvc"),
         "pv" => replace_all!(K8sPV, "pv"),
+        "ns" | "namespace" | "namespaces" => replace_all!(K8sNamespace, "namespace"),
         "nodes" | "node" => replace_all!(K8sNodeType, "node"),
         "hpa" | "horizontalpodautoscaler" => replace_ns!(K8sHPA, "hpa"),
         "crd" | "customresourcedefinition" => replace_all!(K8sCRD, "crd"),
@@ -1989,6 +2024,54 @@ mod tests {
         let p = convert_pod(pod_from(json!({"spec": {"containers": [], "priorityClassName": "high"}})));
         assert_eq!(p.priority_class.as_deref(), Some("high"));
         assert_eq!(convert_pod(pod_from(json!({"spec": {"containers": []}}))).priority_class, None);
+    }
+
+    #[test]
+    fn pod_service_account_passthrough() {
+        let p = convert_pod(pod_from(json!({
+            "spec": {"containers": [], "serviceAccountName": "builder"}
+        })));
+        assert_eq!(p.service_account.as_deref(), Some("builder"));
+        let absent = convert_pod(pod_from(json!({"spec": {"containers": []}})));
+        assert_eq!(absent.service_account, None);
+        let no_spec = convert_pod(pod_from(json!({"metadata": {"name": "p"}})));
+        assert_eq!(no_spec.service_account, None);
+    }
+
+    #[test]
+    fn pod_conditions_keep_api_order_and_map_fields() {
+        let p = convert_pod(pod_from(json!({
+            "spec": {"containers": []},
+            "status": {"conditions": [
+                {"type": "PodScheduled", "status": "True",
+                 "lastTransitionTime": "2026-10-28T09:00:00Z"},
+                {"type": "Ready", "status": "False", "reason": "ContainersNotReady",
+                 "message": "containers with unready status: [app]",
+                 "lastProbeTime": "2026-10-28T09:05:00Z",
+                 "lastTransitionTime": "2026-10-28T09:01:00Z"},
+                {"type": "Initialized", "status": "True"}
+            ]}
+        })));
+        let types: Vec<&str> = p.conditions.iter().map(|c| c.type_.as_str()).collect();
+        assert_eq!(types, ["PodScheduled", "Ready", "Initialized"]);
+        let scheduled = &p.conditions[0];
+        assert_eq!(scheduled.status, "True");
+        assert_eq!(scheduled.reason, "", "absent reason defaults to an empty string");
+        assert_eq!(scheduled.message, "");
+        assert!(scheduled.last_transition.starts_with("2026-10-28T09:00:00"));
+        let ready = &p.conditions[1];
+        assert_eq!(ready.status, "False");
+        assert_eq!(ready.reason, "ContainersNotReady");
+        assert_eq!(ready.message, "containers with unready status: [app]");
+        assert!(ready.last_transition.starts_with("2026-10-28T09:01:00"), "the probe time is not the transition time");
+        assert_eq!(p.conditions[2].last_transition, "", "absent transition time defaults to an empty string");
+    }
+
+    #[test]
+    fn pod_without_status_has_no_conditions() {
+        assert!(convert_pod(pod_from(json!({"spec": {"containers": []}}))).conditions.is_empty());
+        assert!(convert_pod(pod_from(json!({"status": {"phase": "Pending"}}))).conditions.is_empty());
+        assert!(convert_pod(K8sPod::default()).conditions.is_empty());
     }
 
     // ---- build_ephemeral_containers ------------------------------------------

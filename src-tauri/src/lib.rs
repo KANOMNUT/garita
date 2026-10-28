@@ -135,7 +135,7 @@ use commands::{
         add_kubeconfig_path, add_kubeconfig_yaml, list_kubeconfigs, preview_kubeconfig_path,
         preview_kubeconfig_yaml, remove_kubeconfig, set_kubeconfig_enabled,
     },
-    namespaces::list_namespaces,
+    namespaces::{list_namespace_rows, list_namespaces},
     networking::{
         list_endpoint_slices, list_endpoints, list_ingress_classes, list_ingresses,
         list_network_policies, list_services,
@@ -218,6 +218,7 @@ pub fn run() {
             commands::migrate::detect_legacy_install,
             // namespaces
             list_namespaces,
+            list_namespace_rows,
             // workloads
             list_pods,
             list_pods_on_node,
