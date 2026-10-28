@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **ArgoCD: the Actions card comes first.** An Application's Overview now opens with Actions (the Prune, Dry run and Force options, Sync, Refresh and Hard Refresh) instead of ending with them below the field list, and the field list gains a **Sync policy** row that reads Automated or Manual.
+
+### Fixed
+
+- **ArgoCD: Health and Sync are no longer folded into one word.** The panel header called an Application "Degraded" in red when it was Healthy but OutOfSync, Progressing, Suspended or Missing, directly above an Overview that said Healthy. The header now shows a Health chip and a Sync chip, and the Overview's operation badge reads "Last operation: …". On the Resources tab the filter chips are two groups, Health and Sync, with a count per status: "Healthy" means Healthy whatever its sync state, Missing is counted apart from Degraded, and Suspended and Unknown get their own chips when a resource has them.
+- **ArgoCD: Sync, Refresh and Hard Refresh look disabled in read-only mode and say why.** They used to look active and do nothing. The reason now shows under the buttons, and a pending request no longer takes focus away from the button.
+- **ArgoCD: an action's error stays until you start the next one.** An error from Sync or Refresh (an RBAC refusal, "operation already in progress") used to vanish after 6 seconds and was never announced to a screen reader. It now stays, starts with "Couldn't sync <app>:" or "Couldn't refresh <app>:", and is announced; a success clears itself after 4 seconds.
+- **The Pod panel shows the same status colour as the Pods table.** A pod in ImagePullBackOff was orange in the table and green in the panel header, and Failed and Unknown were green in the panel. Both now read one list, an unknown status is neutral rather than green, and **Failed** is a filter in the Pods table.
+- **Deleting a pod shows why it failed.** The confirm dialog (panel and table row) used to close at once, so a refusal (no permission, read-only mode, a network error) was never seen. It now stays open with the message until the delete succeeds, and its button reads "Delete pod".
+- **The Containers tab `logs` link opens that container's logs.** It used to open the log tab on the default container, so the card for a sidecar showed the wrong container.
+- **Keyboard: Pod rows and ArgoCD managed-resource rows open with Tab and Enter.** The pod name and the clickable kind in the ArgoCD Resources tab are now buttons, so a keyboard user can open a pod panel or jump from a managed resource to the object. The per-row pod menu is replaced by a Delete pod button that appears on hover and on keyboard focus, and gives its reason when it is disabled.
+- **Keyboard: the ENV, MOUNTS and PROBES sections keep focus.** Opening one used to drop keyboard focus, so you had to Tab from the top again; focus now stays on the header, which also reports whether it is expanded.
+- **Icon-only controls have names.** The close buttons, the pod Actions menu, the pod row checkboxes, the port-forward stop button and the panel's Edit and Delete buttons are announced by screen readers.
+- **Text contrast in the Pod and ArgoCD panels.** Secondary text (field names, dates, "req / lim" lines, log toolbar labels, the Unknown and Suspended badges) and the faded status text on filter chips used a colour below the 4.5:1 minimum in both themes. They now use the readable secondary colour or the full status colour.
+
 ## [2.3.1] - 2026-10-27
 
 ### Added

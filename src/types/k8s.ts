@@ -564,7 +564,7 @@ export type ResourceType =
   | "argo-appsets" | "argo-projects" | "argo-repos"
   | "crd-instances";
 
-export type PodStatus = "All" | "Running" | "Pending" | "CrashLoopBackOff" | "ImagePullBackOff" | "Terminating" | "Succeeded";
+export type PodStatus = "All" | "Running" | "Pending" | "CrashLoopBackOff" | "ImagePullBackOff" | "Terminating" | "Succeeded" | "Failed";
 
 // ─── Selected Resource (discriminated union for detail panel) ─────────────────
 

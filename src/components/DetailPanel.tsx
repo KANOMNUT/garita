@@ -29,21 +29,14 @@ import { deletePodsEquiv, restartPodEquiv } from "../utils/kubectlEquiv";
 import { selectShellContainer } from "../utils/containerSelect";
 import { loadNeatPref, saveNeatPref } from "../utils/neatYaml";
 import { defaultLogView } from "../utils/logFilter";
+import { podStatusStyle } from "../utils/podStatus";
 import { NeatChip, NeatNote } from "./NeatYaml";
 import { YamlFind } from "./YamlFind";
 import { NEAT_NO_MATCH_HINT } from "../utils/yamlFind";
 import type { MetricRangeId, Pod, Container, ContainerStatus, ContainerEnvVar, ContainerEnvFrom, ContainerVolumeMount, ContainerProbe, ResourceType } from "../types/k8s";
 
-const STATUS_MAP: Record<string, { dot: string; text: string; bg: string; ring: string; pulse: boolean }> = {
-  Running:          { dot: "bg-ok", text: "text-ok",     bg: "bg-ok/10",     ring: "ring-ok/30",     pulse: false },
-  Pending:          { dot: "bg-warn", text: "text-warn",   bg: "bg-warn/10",   ring: "ring-warn/30",   pulse: true  },
-  CrashLoopBackOff: { dot: "bg-bad", text: "text-bad",    bg: "bg-bad/10",    ring: "ring-bad/30",    pulse: true  },
-  Terminating:      { dot: "bg-purple", text: "text-purple", bg: "bg-purple/10", ring: "ring-purple/30", pulse: true  },
-  Succeeded:        { dot: "bg-info", text: "text-info",   bg: "bg-info/10",   ring: "ring-info/30",   pulse: false },
-};
-
 function StatusPill({ status }: { status: string }) {
-  const s = STATUS_MAP[status] ?? STATUS_MAP["Running"];
+  const s = podStatusStyle(status);
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] ${s.text} ${s.bg} ring-1 ${s.ring} font-medium`}>
       <span className="relative flex h-1.5 w-1.5">
@@ -57,10 +50,30 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+// Module scope on purpose: a component declared inside DetailPanel is a new type on every render, so React
+// would remount the focused button on each toggle or poll and keyboard focus would drop to <body> (POD-1).
+function AccordionHeader({ label, count, open, onToggle, controls }: {
+  label: string; count: number; open: boolean; onToggle: () => void; controls: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-controls={controls}
+      className="flex items-center gap-1.5 w-full min-h-7 py-1.5 mt-2 text-left border-t border-edge-raw/40 hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
+    >
+      <span className="text-[10px] uppercase tracking-wider text-mute font-semibold flex-1">{label}</span>
+      <span className="mono text-[10px] text-mute">({count})</span>
+      <ChevronRight size={12} aria-hidden className={`text-mute transition-transform ${open ? "rotate-90" : ""}`} />
+    </button>
+  );
+}
+
 function KV({ k, v, mono = true }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="flex items-baseline gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0">
-      <span className="text-[11px] text-dim w-[110px] shrink-0">{k}</span>
+      <span className="text-[11px] text-mute w-[110px] shrink-0">{k}</span>
       <span className={`text-[12px] text-ink ${mono ? "mono" : ""} truncate`}>{v}</span>
     </div>
   );
@@ -130,19 +143,19 @@ function DualZoneBar({
         )}
       </div>
       <div className="flex justify-between mt-0.5">
-        <span className="mono text-[10px] text-dim">req: {requestM != null ? `${requestM}${unitSuffix}` : '—'}</span>
+        <span className="mono text-[10px] text-mute">req: {requestM != null ? `${requestM}${unitSuffix}` : '—'}</span>
         {limitM != null && (
-          <span className="mono text-[10px] text-dim">lim: {limitM}{unitSuffix}</span>
+          <span className="mono text-[10px] text-mute">lim: {limitM}{unitSuffix}</span>
         )}
       </div>
       <div className="flex gap-3 mt-0.5">
         {requestM != null && usageM != null && (
-          <span className={`mono text-[10px] ${usagePct >= 85 ? 'text-bad' : usagePct >= 65 ? 'text-warn' : 'text-dim'}`}>
+          <span className={`mono text-[10px] ${usagePct >= 85 ? 'text-bad' : usagePct >= 65 ? 'text-warn' : 'text-mute'}`}>
             {Math.round((usageM / requestM) * 100)}% of req
           </span>
         )}
         {limitM != null && (
-          <span className="mono text-[10px] text-dim">{usagePct}% of lim</span>
+          <span className="mono text-[10px] text-mute">{usagePct}% of lim</span>
         )}
       </div>
     </div>
@@ -154,7 +167,7 @@ function DualZoneBar({
 function TimingChip({ label, value }: { label: string; value: string }) {
   return (
     <span className="flex items-baseline gap-1 text-[10px] leading-none">
-      <span className="text-dim">{label}</span>
+      <span className="text-mute">{label}</span>
       <span className="mono text-mute font-medium tabular-nums">{value}</span>
     </span>
   );
@@ -312,7 +325,7 @@ function MetricsTab({ pod, podMetrics, isLoading, error, context }: {
         const containerSpec = pod.containers.find((pc) => pc.name === c.name);
         return (
           <div key={c.name} className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-            <div className="text-[11px] text-dim mono mb-3">{c.name}</div>
+            <div className="text-[11px] text-mute mono mb-3">{c.name}</div>
             <DualZoneBar
               label="CPU"
               usageM={c.cpu_millicores}
@@ -365,9 +378,9 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
   return (
     <div className="p-4">
       <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-        <div className="text-[10.5px] uppercase tracking-wider text-dim font-semibold mb-3">Active Forwards</div>
+        <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-3">Active Forwards</div>
         {myForwards.length === 0 ? (
-          <div className="text-[12px] text-dim py-4 text-center">No active port-forwards for this pod</div>
+          <div className="text-[12px] text-mute py-4 text-center">No active port-forwards for this pod</div>
         ) : (
           <div className="flex flex-col gap-1.5 mb-3">
             {myForwards.map((f) => (
@@ -375,8 +388,10 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
                 <span className="h-1.5 w-1.5 rounded-full bg-ok shrink-0" />
                 <span className="mono text-[11.5px] text-ok flex-1">localhost:{f.local_port} → pod:{f.pod_port}</span>
                 <button
+                  type="button"
                   onClick={() => stopForward.mutate({ forwardId: f.id })}
-                  className="h-5 px-2 rounded-sm text-[10px] mono text-dim hover:text-bad transition-colors"
+                  aria-label={`Stop forward localhost:${f.local_port}`}
+                  className="h-5 px-2 rounded-sm text-[10px] mono text-mute hover:text-bad transition-colors"
                 >
                   stop
                 </button>
@@ -386,17 +401,17 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
         )}
 
         <div className="border-t border-edge-raw/60 pt-3 mt-3">
-          <div className="text-[10.5px] uppercase tracking-wider text-dim font-semibold mb-2">New Forward</div>
+          <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">New Forward</div>
           <div className="flex items-end gap-2">
             <div className="flex flex-col gap-1">
-              <span className="mono text-[9.5px] text-dim">Pod port</span>
+              <span className="mono text-[9.5px] text-mute">Pod port</span>
               <input
                 type="number" value={podPort} onChange={(e) => setPodPort(e.target.value)}
                 className="h-7 w-24 rounded-md bg-base ring-1 ring-edge mono text-[11px] text-ink px-2 focus:ring-accent focus:outline-hidden"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="mono text-[9.5px] text-dim">Local port</span>
+              <span className="mono text-[9.5px] text-mute">Local port</span>
               <input
                 type="number" value={localPort} onChange={(e) => setLocalPort(e.target.value)}
                 className="h-7 w-24 rounded-md bg-base ring-1 ring-edge mono text-[11px] text-ink px-2 focus:ring-accent focus:outline-hidden"
@@ -427,7 +442,7 @@ function SummaryTab({ pod }: { pod: Pod }) {
     <div className="p-4 flex flex-col gap-4 overflow-auto">
       {/* Status summary */}
       <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3">
-        <h3 className="text-[11px] uppercase tracking-wider text-dim mb-2">Status</h3>
+        <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Status</h3>
         <KV k="Phase" v={pod.status} />
         <KV k="Ready" v={pod.ready} />
         <KV k="Node" v={pod.node || "—"} />
@@ -438,12 +453,12 @@ function SummaryTab({ pod }: { pod: Pod }) {
       {/* Labels */}
       {labels.length > 0 && (
         <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3">
-          <h3 className="text-[11px] uppercase tracking-wider text-dim mb-2">Labels</h3>
+          <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Labels</h3>
           <div className="flex flex-wrap gap-1.5">
             {labels.map(([k, v]) => (
               <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 ring-1 ring-accent/20 text-[11px] mono">
                 <span className="text-accent">{k}</span>
-                <span className="text-dim">=</span>
+                <span className="text-mute">=</span>
                 <span className="text-ink">{v}</span>
               </span>
             ))}
@@ -454,14 +469,14 @@ function SummaryTab({ pod }: { pod: Pod }) {
       {/* Container statuses */}
       {pod.containers_status && pod.containers_status.length > 0 && (
         <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3">
-          <h3 className="text-[11px] uppercase tracking-wider text-dim mb-2">Container States</h3>
+          <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Container States</h3>
           {pod.containers_status.map(cs => (
             <div key={cs.name} className="flex items-center gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0">
               <span className="mono text-[11.5px] flex-1 truncate">{cs.name}</span>
               <span className={`text-[11px] ${cs.current_state === "running" ? "text-ok" : cs.current_state === "terminated" ? "text-bad" : "text-warn"}`}>
                 {cs.current_state}
               </span>
-              <span className="text-[11px] text-dim mono">↻{cs.restart_count}</span>
+              <span className="text-[11px] text-mute mono">↻{cs.restart_count}</span>
             </div>
           ))}
         </div>
@@ -530,24 +545,6 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
   const isOpen = (containerName: string, section: string) =>
     openSections[containerName]?.has(section) ?? false;
 
-  const AccordionHeader = ({
-    containerName, section, label, count
-  }: { containerName: string; section: string; label: string; count: number }) => (
-    <button
-      onClick={() => toggleSection(containerName, section)}
-      className="flex items-center gap-1.5 w-full py-1.5 mt-2 text-left border-t border-edge-raw/40 hover:text-ink transition-colors"
-    >
-      <span className="text-[10px] uppercase tracking-wider text-dim font-semibold flex-1">
-        {label}
-      </span>
-      <span className="mono text-[10px] text-dim/60">({count})</span>
-      <ChevronRight
-        size={10}
-        className={`text-dim transition-transform ${isOpen(containerName, section) ? 'rotate-90' : ''}`}
-      />
-    </button>
-  );
-
   const { data: podEvents = [], isLoading: eventsLoading } = usePodEvents(
     context, pod.namespace, pod.name, tab === "Events"
   );
@@ -567,6 +564,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
   );
   const deletePod = useDeletePod();
   const [confirmDeletePod, setConfirmDeletePod] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [confirmRestart, setConfirmRestart] = useState(false);
   const [restartError, setRestartError] = useState("");
   const [confirmSave, setConfirmSave] = useState(false);
@@ -650,7 +648,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
       <div className="px-4 pt-3 pb-3 border-b border-edge">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-[10.5px] uppercase tracking-wider text-dim">
+            <div className="flex items-center gap-2 text-[10.5px] uppercase tracking-wider text-mute">
               <Boxes size={11} />
               <span>Pod</span>
               <span className="text-edge2">·</span>
@@ -661,16 +659,19 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
               <StatusPill status={pod.status} />
               {identity.readOnly && <ReadOnlyChip />}
               <ProblemChip model={explain.model} onClick={() => { setTab("Summary"); setExplainNonce((n) => n + 1); }} />
-              <span className="text-[11px] text-dim mono">
+              <span className="text-[11px] text-mute mono">
                 {pod.ready} ready · {pod.restarts} restarts · {pod.age} old
               </span>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close pod panel"
+            title="Close (Esc)"
             className="h-7 w-7 -mr-1 rounded-md hover:bg-surface-tint/6 text-mute hover:text-ink flex items-center justify-center"
           >
-            <X size={14} />
+            <X size={14} aria-hidden />
           </button>
         </div>
         {/* actions */}
@@ -700,10 +701,14 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
           <div className="flex-1" />
           <div ref={menuRef} className="relative">
             <button
+              type="button"
               onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Pod actions"
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
               className="h-7 w-7 rounded-md bg-card/80 ring-1 ring-edge text-mute hover:text-ink flex items-center justify-center"
             >
-              <MoreHorizontal size={13} />
+              <MoreHorizontal size={13} aria-hidden />
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-8 z-20 w-44 rounded-lg bg-panel border border-edge shadow-xl py-1">
@@ -715,7 +720,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                 </button>
                 <div className="my-1 border-t border-edge-raw/60" />
                 <button
-                  onClick={() => { if (roReason) return; setConfirmDeletePod(true); setMenuOpen(false); }}
+                  onClick={() => { if (roReason) return; setDeleteError(""); setConfirmDeletePod(true); setMenuOpen(false); }}
                   {...disabledAttrs(roReason)}
                   className={`w-full text-left px-3 py-1.5 text-[12px] text-bad hover:bg-surface-tint/4 flex items-center gap-2 ${roReason ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
@@ -760,14 +765,21 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
             open={confirmDeletePod}
             title="Delete pod"
             description={`Delete pod "${pod.name}" from namespace "${pod.namespace}"? Kubernetes will recreate it if managed by a controller.`}
-            confirmLabel="Delete"
+            confirmLabel={deletePod.isPending ? "Deleting…" : "Delete pod"}
             destructive
-            onConfirm={() => {
-              deletePod.mutate({ context, namespace: pod.namespace, podName: pod.name });
-              setConfirmDeletePod(false);
-              onClose();
+            status={deleteError ? { tone: "error", text: deleteError } : null}
+            onConfirm={async () => {
+              // Stay open until the delete resolves: a refusal (RBAC, read-only backstop, network) shows here.
+              setDeleteError("");
+              try {
+                await deletePod.mutateAsync({ context, namespace: pod.namespace, podName: pod.name });
+                setConfirmDeletePod(false);
+                onClose();
+              } catch (e) {
+                setDeleteError((e as any)?.message ?? String(e));
+              }
             }}
-            onCancel={() => setConfirmDeletePod(false)}
+            onCancel={() => { setConfirmDeletePod(false); setDeleteError(""); }}
             isPending={deletePod.isPending}
           />
         </div>
@@ -795,7 +807,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
         {tab === "Overview" && (
           <div className="p-4 flex flex-col gap-3">
             <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-              <div className="text-[10.5px] uppercase tracking-wider text-dim font-semibold mb-1.5">Metadata</div>
+              <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-1.5">Metadata</div>
               <KV k="Name"            v={pod.name} />
               <KV k="Namespace"       v={pod.namespace} />
               <KV k="Owner"           v={pod.owner ?? "—"} />
@@ -804,7 +816,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
               <KV k="Created"         v={`${pod.age} ago`} mono={false} />
             </div>
             <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-              <div className="text-[10.5px] uppercase tracking-wider text-dim font-semibold mb-2">Labels</div>
+              <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">Labels</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(pod.labels).length > 0
                   ? Object.entries(pod.labels).map(([k, v]) => (
@@ -812,12 +824,12 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                       {k}={v}
                     </span>
                   ))
-                  : <span className="text-[11px] text-dim">No labels</span>
+                  : <span className="text-[11px] text-mute">No labels</span>
                 }
               </div>
             </div>
             <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-              <div className="text-[10.5px] uppercase tracking-wider text-dim font-semibold mb-2">Conditions</div>
+              <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">Conditions</div>
               <div className="grid grid-cols-2 gap-1.5">
                 {[
                   { k: "Initialized",     v: pod.status !== "Pending" },
@@ -898,13 +910,13 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
               return (
                 <Fragment key={i}>
                 {isFirstInit && (
-                  <div className="text-[10px] uppercase tracking-wider text-dim font-semibold flex items-center gap-1.5">
+                  <div className="text-[10px] uppercase tracking-wider text-mute font-semibold flex items-center gap-1.5">
                     Init Containers
                     <span className="text-[9.5px] text-mute normal-case tracking-normal">— run to completion before app containers start</span>
                   </div>
                 )}
                 {isFirstRegular && containers.some((x) => x.is_init) && (
-                  <div className="text-[10px] uppercase tracking-wider text-dim font-semibold mt-1">
+                  <div className="text-[10px] uppercase tracking-wider text-mute font-semibold mt-1">
                     Containers
                   </div>
                 )}
@@ -917,9 +929,9 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                         init
                       </span>
                     )}
-                    <span className="ml-auto text-[10.5px] uppercase tracking-wider text-dim">{c.status}</span>
+                    <span className="ml-auto text-[10.5px] uppercase tracking-wider text-mute">{c.status}</span>
                   </div>
-                  <div className="mono text-[11px] text-dim mt-1 truncate">{c.image}</div>
+                  <div className="mono text-[11px] text-mute mt-1 truncate">{c.image}</div>
                   {c.ports.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
                       {c.ports.map((p) => (
@@ -965,27 +977,34 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                     <span>restarts <span className="mono text-ink">{c.restart_count}</span></span>
                     <span className="text-edge2">·</span>
                     <button
+                      type="button"
                       onClick={() => { if (shellReason) return; setSelectedContainer(c.name); setTab("Shell"); }}
+                      aria-label={`Open shell in ${c.name}`}
                       {...disabledAttrs(shellReason)}
-                      className={`hover:text-ink flex items-center gap-1 ${shellReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      className={`h-6 px-1.5 -mx-1.5 rounded-sm flex items-center gap-1 hover:bg-surface-tint/6 hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${shellReason ? "opacity-50 cursor-not-allowed" : ""}`}
                     >
-                      <Terminal size={11} />exec
+                      <Terminal size={11} aria-hidden />exec
                     </button>
-                    <button onClick={() => setTab("Logs")} className="hover:text-ink flex items-center gap-1">
-                      <FileCode size={11} />logs
+                    <button
+                      type="button"
+                      onClick={() => { setLogPick(c.name); setTab("Logs"); }}
+                      aria-label={`Open logs for ${c.name}`}
+                      className="h-6 px-1.5 -mx-1.5 rounded-sm flex items-center gap-1 hover:bg-surface-tint/6 hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      <FileCode size={11} aria-hidden />logs
                     </button>
                   </div>
                   {hasHistory && (
                     <div className="mt-3 border-t border-edge-raw/60 pt-3">
-                      <div className="text-[10px] uppercase tracking-wider text-dim font-semibold mb-2">Restart History</div>
+                      <div className="text-[10px] uppercase tracking-wider text-mute font-semibold mb-2">Restart History</div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                         <div>
-                          <div className="text-[9.5px] uppercase tracking-wider text-dim mb-1">Current State</div>
+                          <div className="text-[9.5px] uppercase tracking-wider text-mute mb-1">Current State</div>
                           <span className={`mono text-[11px] ${cs?.current_state === "running" ? "text-ok" : cs?.current_state === "terminated" ? "text-bad" : "text-warn"}`}>
                             {cs?.current_state ?? c.status}
                           </span>
                           {cs?.current_started_at && (
-                            <div className="mono text-[10px] text-dim mt-0.5">{cs.current_started_at}</div>
+                            <div className="mono text-[10px] text-mute mt-0.5">{cs.current_started_at}</div>
                           )}
                           {cs?.current_reason && (
                             <span className="mt-1 inline-block mono text-[10px] px-1.5 py-0.5 rounded-sm bg-warn/10 ring-1 ring-warn/20 text-warn">
@@ -995,10 +1014,10 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                         </div>
                         {cs?.last_state && (
                           <div>
-                            <div className="text-[9.5px] uppercase tracking-wider text-dim mb-1">Last State</div>
+                            <div className="text-[9.5px] uppercase tracking-wider text-mute mb-1">Last State</div>
                             <span className="mono text-[11px] text-bad">{cs.last_state}</span>
                             {cs.last_finished_at && (
-                              <div className={`mono text-[10px] mt-0.5 ${reasonIsNonTerminal ? "text-dim" : "text-warn"}`}>
+                              <div className={`mono text-[10px] mt-0.5 ${reasonIsNonTerminal ? "text-mute" : "text-warn"}`}>
                                 {reasonIsNonTerminal ? cs.last_finished_at : `Last crash: ${cs.last_finished_at}`}
                               </div>
                             )}
@@ -1027,7 +1046,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                 </span>
                               )}
                               {cs.last_signal != null && cs.last_signal !== 0 && (
-                                <span className="mono text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-tint/4 ring-1 ring-edge text-dim">
+                                <span className="mono text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-tint/4 ring-1 ring-edge text-mute">
                                   sig {cs.last_signal}
                                 </span>
                               )}
@@ -1042,13 +1061,14 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   {((c.env?.length ?? 0) + (c.env_from?.length ?? 0)) > 0 && (
                     <>
                       <AccordionHeader
-                        containerName={c.name}
-                        section="env"
                         label="ENV"
                         count={(c.env?.length ?? 0) + (c.env_from?.length ?? 0)}
+                        open={isOpen(c.name, "env")}
+                        onToggle={() => toggleSection(c.name, "env")}
+                        controls={`acc-${c.name}-env`}
                       />
                       {isOpen(c.name, 'env') && (
-                        <div className="mt-1 flex flex-col gap-0.5">
+                        <div id={`acc-${c.name}-env`} className="mt-1 flex flex-col gap-0.5">
                           {c.env_from?.map((ef: ContainerEnvFrom, i: number) => {
                             const isNavigable = (ef.source_type === 'configmap' || ef.source_type === 'secret') && !!onNavigate;
                             const badgeClass = ef.source_type === 'configmap'
@@ -1057,10 +1077,10 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
 
                             const rowContent = (
                               <>
-                                <span className="text-dim/50 shrink-0 text-[10px]">⊞</span>
+                                <span aria-hidden className="text-dim/50 shrink-0 text-[10px]">⊞</span>
                                 <span className={`mono flex-1 min-w-0 truncate transition-colors ${
                                   isNavigable
-                                    ? 'text-accent/80 group-hover:text-accent group-hover:underline'
+                                    ? 'text-accent group-hover:text-accent group-hover:underline'
                                     : 'text-ink'
                                 }`}>
                                   {ef.name}
@@ -1068,7 +1088,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                 {isNavigable && (
                                   <ArrowUpRight
                                     size={12}
-                                    className="text-dim opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
+                                    className="text-mute opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
                                     aria-hidden="true"
                                   />
                                 )}
@@ -1076,7 +1096,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                   {ef.source_type === 'configmap' ? 'CM' : 'S'}
                                 </span>
                                 {ef.prefix && (
-                                  <span className="text-dim/60 text-[10px] truncate max-w-[80px]">{ef.prefix}</span>
+                                  <span className="text-mute text-[10px] truncate max-w-[80px]">{ef.prefix}</span>
                                 )}
                               </>
                             );
@@ -1122,13 +1142,13 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                                  hover:bg-surface-tint/6 focus-visible:outline-hidden focus-visible:ring-1
                                                  focus-visible:ring-accent/40 transition-colors group cursor-pointer"
                                     >
-                                      <span className="mono text-accent/70 group-hover:text-accent group-hover:underline
+                                      <span className="mono text-accent group-hover:text-accent group-hover:underline
                                                        flex-1 truncate text-[10.5px] italic transition-colors">
                                         {ev.value_from.name}/{ev.value_from.key}
                                       </span>
                                       <ArrowUpRight
                                         size={12}
-                                        className="text-dim opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
+                                        className="text-mute opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
                                         aria-hidden="true"
                                       />
                                       <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
@@ -1141,7 +1161,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                     </button>
                                   ) : (
                                     <>
-                                      <span className="mono text-dim/60 flex-1 truncate text-[10.5px] italic">
+                                      <span className="mono text-mute flex-1 truncate text-[10.5px] italic">
                                         {ev.value_from.source_type === 'fieldRef'
                                           ? `(fieldRef: ${ev.value_from.field_path})`
                                           : ev.value_from.source_type === 'resourceField'
@@ -1153,7 +1173,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                           ? 'bg-info/10 ring-1 ring-info/20 text-info'
                                           : ev.value_from.source_type === 'secret'
                                           ? 'bg-warn/10 ring-1 ring-warn/20 text-warn'
-                                          : 'bg-surface-tint/5 ring-1 ring-edge text-dim'
+                                          : 'bg-surface-tint/5 ring-1 ring-edge text-mute'
                                       }`}>
                                         {ev.value_from.source_type === 'configmap' ? 'CM'
                                          : ev.value_from.source_type === 'secret' ? 'S'
@@ -1164,7 +1184,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                   )}
                                 </>
                               ) : (
-                                <span className="mono text-dim flex-1 truncate">{ev.value ?? ''}</span>
+                                <span className="mono text-mute flex-1 truncate">{ev.value ?? ''}</span>
                               )}
                             </div>
                           ))}
@@ -1177,23 +1197,24 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   {(c.volume_mounts?.length ?? 0) > 0 && (
                     <>
                       <AccordionHeader
-                        containerName={c.name}
-                        section="mounts"
                         label="MOUNTS"
                         count={c.volume_mounts!.length}
+                        open={isOpen(c.name, "mounts")}
+                        onToggle={() => toggleSection(c.name, "mounts")}
+                        controls={`acc-${c.name}-mounts`}
                       />
                       {isOpen(c.name, 'mounts') && (
-                        <div className="mt-1 flex flex-col gap-0.5">
+                        <div id={`acc-${c.name}-mounts`} className="mt-1 flex flex-col gap-0.5">
                           {c.volume_mounts?.map((vm: ContainerVolumeMount, i: number) => (
                             <div key={i} className="flex items-center gap-2 py-0.5 text-[11px]">
                               <span className="mono text-ink flex-1 min-w-0 truncate" title={vm.mount_path}>
                                 {vm.mount_path}
                               </span>
-                              <span className="mono text-dim/70 w-[110px] shrink-0 truncate text-right" title={vm.name}>
+                              <span className="mono text-mute w-[110px] shrink-0 truncate text-right" title={vm.name}>
                                 {vm.name}
                               </span>
                               {vm.read_only && (
-                                <span className="text-[9px] uppercase tracking-wider text-warn/80 bg-warn/10 ring-1 ring-warn/20 px-1 rounded-sm shrink-0">
+                                <span className="text-[9px] uppercase tracking-wider text-warn bg-warn/10 ring-1 ring-warn/20 px-1 rounded-sm shrink-0">
                                   ro
                                 </span>
                               )}
@@ -1208,13 +1229,14 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   {c.probes !== undefined && (
                     <>
                       <AccordionHeader
-                        containerName={c.name}
-                        section="probes"
                         label="PROBES"
                         count={[c.probes?.liveness, c.probes?.readiness, c.probes?.startup].filter(Boolean).length}
+                        open={isOpen(c.name, "probes")}
+                        onToggle={() => toggleSection(c.name, "probes")}
+                        controls={`acc-${c.name}-probes`}
                       />
                       {isOpen(c.name, 'probes') && (
-                        <div className="mt-1 flex flex-col gap-1.5">
+                        <div id={`acc-${c.name}-probes`} className="mt-1 flex flex-col gap-1.5">
                           {(['liveness', 'readiness', 'startup'] as const).map((probeKey) => {
                             const probe: ContainerProbe | undefined = c.probes?.[probeKey];
                             const kindLabel =
@@ -1274,7 +1296,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                       {typeLabel}
                                     </span>
                                   ) : (
-                                    <span className="text-[11px] text-dim italic">
+                                    <span className="text-[11px] text-mute italic">
                                       Not configured
                                     </span>
                                   )}
@@ -1311,21 +1333,21 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
             })}
             {(debugContainers?.length ?? 0) > 0 && (
               <>
-                <div className="text-[10px] uppercase tracking-wider text-dim font-semibold mt-1">Debug Containers</div>
+                <div className="text-[10px] uppercase tracking-wider text-mute font-semibold mt-1">Debug Containers</div>
                 {debugContainers!.map((e) => (
                   <div key={e.name} className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
                     <div className="flex items-center gap-2">
                       <span className="mono text-[12.5px]">{e.name}</span>
                       <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-surface-tint/6 ring-1 ring-edge text-mute">debug</span>
-                      <span className="ml-auto text-[10.5px] uppercase tracking-wider text-dim">{e.state}</span>
+                      <span className="ml-auto text-[10.5px] uppercase tracking-wider text-mute">{e.state}</span>
                     </div>
-                    <div className="mono text-[11px] text-dim mt-1 truncate">{e.image}</div>
+                    <div className="mono text-[11px] text-mute mt-1 truncate">{e.image}</div>
                     <div className="text-[11px] text-mute mt-1">
                       {e.target_container ? `target: ${e.target_container}` : "no target"}
                       {e.reason ? ` · ${e.reason}` : ""}
                       {e.state === "terminated" && e.exit_code !== null ? ` · exit ${e.exit_code}` : ""}
                     </div>
-                    {e.message && <div className="mono text-[10.5px] text-dim mt-1 wrap-break-word">{e.message}</div>}
+                    {e.message && <div className="mono text-[10.5px] text-mute mt-1 wrap-break-word">{e.message}</div>}
                   </div>
                 ))}
               </>
@@ -1346,7 +1368,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                 </div>
               ))
             ) : podEvents.length === 0 ? (
-              <p className="py-12 text-center text-[13px] text-dim">No events found</p>
+              <p className="py-12 text-center text-[13px] text-mute">No events found</p>
             ) : (
               podEvents.map((e, i) => (
                 <div key={i} className="flex gap-2.5 py-2 border-b border-edge-raw/60 last:border-b-0">
@@ -1356,8 +1378,8 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                       <span className={`text-[11px] font-semibold ${e.type_ === "Warning" ? "text-warn" : "text-mute"}`}>
                         {e.reason}
                       </span>
-                      <span className="mono text-[10.5px] text-dim">{e.source}</span>
-                      <span className="ml-auto mono text-[10.5px] text-dim">{e.age}</span>
+                      <span className="mono text-[10.5px] text-mute">{e.source}</span>
+                      <span className="ml-auto mono text-[10.5px] text-mute">{e.age}</span>
                     </div>
                     <div className="text-[11.5px] text-ink/85 mt-0.5">{e.message}</div>
                   </div>

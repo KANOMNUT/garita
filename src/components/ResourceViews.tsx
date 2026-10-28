@@ -1630,7 +1630,7 @@ function healthPillClass(status: string): string {
     case "Healthy":     return "bg-ok/10 text-ok ring-1 ring-ok/30";
     case "Degraded":    return "bg-bad/10 text-bad ring-1 ring-bad/30";
     case "Progressing": return "bg-status-progress/10 text-status-progress ring-1 ring-status-progress/30";
-    default:            return "bg-surface-tint/4 text-dim ring-1 ring-edge";
+    default:            return "bg-surface-tint/4 text-mute ring-1 ring-edge";
   }
 }
 
@@ -1647,7 +1647,7 @@ function syncPillClass(status: string): string {
   switch (status) {
     case "Synced":    return "bg-ok/10 text-ok ring-1 ring-ok/30";
     case "OutOfSync": return "bg-warn/10 text-warn ring-1 ring-warn/30";
-    default:          return "bg-surface-tint/4 text-dim ring-1 ring-edge";
+    default:          return "bg-surface-tint/4 text-mute ring-1 ring-edge";
   }
 }
 
@@ -1687,22 +1687,22 @@ const argoColumns: Column<ArgoCdApp>[] = [
   { id: "dest",    header: "Destination", width: 150, cell: (a) => (
     <div className="flex flex-col" title={a.dest_server}>
       <span className="mono text-[11.5px] text-mute truncate max-w-[140px]">{a.dest_namespace || "—"}</span>
-      <span className="mono text-[10px] text-dim truncate max-w-[140px]">{a.dest_server.replace(/^https?:\/\//, "")}</span>
+      <span className="mono text-[10px] text-mute truncate max-w-[140px]">{a.dest_server.replace(/^https?:\/\//, "")}</span>
     </div>
   )},
   { id: "repo",    header: "Repo",        width: 160, cell: (a) => (
-    <span className="mono text-[11px] text-dim truncate inline-block max-w-[150px]" title={a.repo_url}>{repoShort(a.repo_url)}</span>
+    <span className="mono text-[11px] text-mute truncate inline-block max-w-[150px]" title={a.repo_url}>{repoShort(a.repo_url)}</span>
   )},
   { id: "rev",     header: "Revision",    width: 100, cell: (a) => (
     <div className="flex flex-col">
       <span className="mono text-[11.5px] text-mute tabular-nums">{a.last_commit || "—"}</span>
-      <span className="mono text-[10px] text-dim tabular-nums">{a.target_revision || "HEAD"}</span>
+      <span className="mono text-[10px] text-mute tabular-nums">{a.target_revision || "HEAD"}</span>
     </div>
   )},
   { id: "synced",  header: "Synced",      width: 100, sortable: true, sortValue: (a) => parseAge(a.age), cell: (a) => (
     <div className="flex flex-col">
       <span className="mono text-[11.5px] text-mute tabular-nums">{a.last_synced_at || "—"}</span>
-      <span className="mono text-[10px] text-dim tabular-nums">{a.age}</span>
+      <span className="mono text-[10px] text-mute tabular-nums">{a.age}</span>
     </div>
   )},
 ];
@@ -1721,7 +1721,7 @@ function ArgoHealthCard({ label, value, active, color, onClick }: {
         active ? "bg-surface-tint/[0.07] ring-accent/40" : "bg-card/70 ring-edge hover:bg-surface-tint/4"
       }`}
     >
-      <span className="text-[9px] uppercase tracking-wide text-dim font-medium">{label}</span>
+      <span className="text-[9px] uppercase tracking-wide text-mute font-medium">{label}</span>
       <span className={`text-[14px] font-semibold tabular-nums leading-tight ${color}`}>{value}</span>
     </button>
   );

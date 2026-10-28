@@ -66,8 +66,8 @@ export function LogSourceBar({
   return (
     <div role="group" aria-label="Source: changes reload the log" className="flex flex-col gap-1">
       <div className="flex items-baseline gap-1.5">
-        <span className="text-[9.5px] uppercase tracking-wider font-semibold text-dim">Source</span>
-        <span className="text-[10px] text-dim">Reloads the log</span>
+        <span className="text-[9.5px] uppercase tracking-wider font-semibold text-mute">Source</span>
+        <span className="text-[10px] text-mute">Reloads the log</span>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         {leading}

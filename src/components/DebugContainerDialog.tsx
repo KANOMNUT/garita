@@ -136,7 +136,7 @@ export function DebugContainerDialog({ pod, context, onClose, onStarted }: Props
             ))}
           </div>
           {imageError && <p role="alert" className="text-[11px] text-bad">{imageError}</p>}
-          <p className="text-[11px] text-dim">The image needs a shell (sh or bash). The node pulls it using the pod's image pull secrets.</p>
+          <p className="text-[11px] text-mute">The image needs a shell (sh or bash). The node pulls it using the pod's image pull secrets.</p>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -157,10 +157,10 @@ export function DebugContainerDialog({ pod, context, onClose, onStarted }: Props
               <option key={e.name} value={e.name}>[debug] {e.name}</option>
             ))}
           </select>
-          <p className="text-[11px] text-dim">Lets you see this container's processes. Not every container runtime supports it.</p>
+          <p className="text-[11px] text-mute">Lets you see this container's processes. Not every container runtime supports it.</p>
         </div>
 
-        <p className="text-[11.5px] text-mute">Name <span className="mono text-ink">{name}</span> <span className="text-dim">(generated)</span></p>
+        <p className="text-[11.5px] text-mute">Name <span className="mono text-ink">{name}</span> <span className="text-mute">(generated)</span></p>
 
         {error && <p className="text-[11.5px] text-mute">{rejectionPlainLine(error)}</p>}
       </div>

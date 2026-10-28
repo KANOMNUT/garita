@@ -6,8 +6,8 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 Applications are namespaced `argoproj.io/Application` CRDs read via `DynamicObject`, listed cluster-wide. The API version is discovered at runtime (see ArgoCD Lens Parity). `tabsFor()` returns four tabs:
 
-- **Overview**: status badges, commit box, fields, Sync/Refresh action bar.
-- **Resources**: `status.resources[]` with Sync and Health; 21 standard kinds are clickable; own Refresh / Hard Refresh.
+- **Overview**: the Actions card (sync options, Sync / Refresh / Hard Refresh) first, then the Last operation badge, commit box and fields (including Sync policy). Health and Sync are chips in the panel header, not in the Overview.
+- **Resources**: `status.resources[]` with Sync and Health; 21 standard kinds are clickable (the kind is a native button, so Enter opens it); Health and Sync filter groups; own Refresh / Hard Refresh.
 - **History**: `status.history[]`, each with "Roll back to this revision…" → `rollback_argocd_app(context, namespace, name, historyId)`, keyed by `ArgoCdHistoryEntry.id` (React key too). The backend reads revision and source(s) from the live object; the display string is never sent. Disabled with a reason when `ArgoCdApp.auto_sync`. `short_revision` shortens **only** a 40-hex SHA to 7 chars; other values (chart versions, `HEAD`, tags) pass through; multi-source shows `revisions[]` joined with `, `.
 - **Events**: K8s events for the app.
 
@@ -36,6 +36,14 @@ ArgoCD v2.8+ (`resourceHealthSource: appTree`) keeps per-resource health only in
 Fetch failure (resource deleted since reconcile): `Missing`. `kind_to_plural()` handles irregular plurals for `ApiResource`.
 
 **Sync and Health are independent; never collapse or fall back one to the other.** Sync (`status.resources[].status`) = does the cluster match git. Health (K8s `.status`) = does it work. A hand-edited ConfigMap goes `OutOfSync` after the next reconcile (~3 min) and stays `Healthy`.
+
+### Panel header, Resources filters and actions (UX review B1)
+
+- **The header shows Health and Sync as two chips** (`ArgoStatusChip`, from `argoHealthPill(health_status)` and `argoSyncPill(sync_status)`; the glyph is `aria-hidden` and an `sr-only` "Health: " / "Sync: " prefix names each). The one-word chip (`statusChip`, Healthy / Degraded) is for every other kind. `isHealthy("argocd")` reads `health_status === "Healthy"` alone, so a Healthy but OutOfSync Application, a Progressing, Suspended or Missing one is no longer called Degraded. The three pill maps (health, sync, operation phase) are module-level in `ResourceDetailPanel.tsx` and shared by the header, the Overview and the Resources tab; Suspended and Unknown are neutral (`mute`).
+- **Overview.** The operation pill is labelled `Last operation: <phase>` so it is not read as a third status. A `Sync policy` row reads `Automated` when `ArgoCdApp.auto_sync` and `Manual` otherwise (the field already gates rollback in History).
+- **Resources filters** are two independent single-select groups, `role="group"` Health and Sync, each chip `aria-pressed` and labelled with the status word and its count (`Degraded 2`). Counts are per status and always from the full list: a Missing resource counts under Missing, not Degraded. **"Healthy" is `health_status === "Healthy"` alone**, so a Healthy but OutOfSync resource counts under both Healthy and OutOfSync. Healthy, Progressing, Degraded, Missing, Synced and OutOfSync always show; Suspended and Unknown show only while some resource has that status (or the filter is on). The row order (Degraded and Missing, then OutOfSync, then Progressing) and the tab-strip badge (Degraded or Missing) are unchanged.
+- **Actions.** Sync, Refresh and Hard Refresh carry `aria-disabled` while busy or blocked by read-only mode, look disabled, and the read-only reason is printed under the buttons (the Resources tab Refresh and Hard buttons do the same). A busy request does not drop focus: the handlers bail out instead of using `disabled`.
+- **Action feedback** is `{ tone: "ok" | "error", text }`, never derived from the text. A success clears after 4 s; an error stays until the next action starts, so it can be read and copied. Errors read `Couldn't sync <name>: <message>` and `Couldn't refresh <name>: <message>`, in a `role="alert"` paragraph; success is `role="status"`. The Dry-run hint still keys on the backend's `Dry-run` prefix (a string match on backend wording, noted, not changed).
 
 The Resources tab Refresh / Hard Refresh call `useRefreshArgoCdApp`, which invalidates `["argocd-apps", context]` and `["argocd-app-resources", context, ns, name]`.
 

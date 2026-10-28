@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
-import { ChevronDown, ChevronUp, MoreHorizontal, Filter, ArrowUpDown, Boxes, Trash2, X, Copy, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronUp, Filter, ArrowUpDown, Boxes, Trash2, X, Copy, RotateCcw } from "lucide-react";
 import type { Pod, PodStatus } from "../types/k8s";
 import { useDeletePod, useBulkDeletePods, usePermissions } from "../hooks/useResources";
 import { Sparkline } from "./Sparkline";
@@ -8,19 +8,10 @@ import { ReadOnlyStrip } from "./ReadOnlyBadge";
 import { useClusterIdentity, type IdentityRole } from "../utils/clusterIdentity";
 import { checkBulk, disabledAttrs, pickDisabledReason, READ_ONLY_REASON_SHORT } from "../utils/guardrails";
 import { deletePodsByNamespaceEquiv, deletePodsEquiv } from "../utils/kubectlEquiv";
-
-const STATUS_MAP: Record<string, { dot: string; text: string; bg: string; ring: string; pulse: boolean }> = {
-  Running:          { dot: "bg-ok", text: "text-ok",     bg: "bg-ok/10",     ring: "ring-ok/30",     pulse: false },
-  Pending:          { dot: "bg-warn", text: "text-warn",   bg: "bg-warn/10",   ring: "ring-warn/30",   pulse: true  },
-  CrashLoopBackOff: { dot: "bg-bad", text: "text-bad",    bg: "bg-bad/10",    ring: "ring-bad/30",    pulse: true  },
-  ImagePullBackOff: { dot: "bg-orange", text: "text-orange", bg: "bg-orange/10", ring: "ring-orange/30", pulse: true  },
-  Terminating:      { dot: "bg-purple", text: "text-purple", bg: "bg-purple/10", ring: "ring-purple/30", pulse: true  },
-  Succeeded:        { dot: "bg-info", text: "text-info",   bg: "bg-info/10",   ring: "ring-info/30",   pulse: false },
-  Unknown:          { dot: "bg-dim", text: "text-dim",    bg: "bg-dim/10",    ring: "ring-dim/30",    pulse: false },
-};
+import { podStatusStyle } from "../utils/podStatus";
 
 const StatusPill = memo(function StatusPill({ status }: { status: string }) {
-  const s = STATUS_MAP[status] ?? STATUS_MAP["Unknown"];
+  const s = podStatusStyle(status);
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] ${s.text} ${s.bg} ring-1 ${s.ring} font-medium`}>
       <span className="relative flex h-1.5 w-1.5">
@@ -90,7 +81,7 @@ const SORT_OPTIONS: { field: SortField; dir: SortDir; label: string }[] = [
 
 // ─── FiltersBar ──────────────────────────────────────────────────────────────
 
-const STATUSES: PodStatus[] = ["All", "Running", "Pending", "CrashLoopBackOff", "ImagePullBackOff", "Terminating"];
+const STATUSES: PodStatus[] = ["All", "Running", "Pending", "CrashLoopBackOff", "ImagePullBackOff", "Terminating", "Failed"];
 
 interface FiltersBarProps {
   ns: string;
@@ -136,7 +127,7 @@ const FiltersBar = memo(function FiltersBar({
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-2 flex-1">
         <h2 className="text-[14px] font-semibold tracking-tight">Pods</h2>
-        <span className="mono text-[11px] text-dim">
+        <span className="mono text-[11px] text-mute">
           {search || status !== "All" || activeLabelCount > 0 ? `${count} / ${total}` : `${total}`} in {ns}
         </span>
       </div>
@@ -176,7 +167,7 @@ const FiltersBar = memo(function FiltersBar({
         {labelsOpen && (
           <div className="absolute right-0 top-9 z-30 w-72 rounded-lg bg-panel border border-edge shadow-xl py-2 max-h-80 overflow-y-auto">
             {allLabels.length === 0 ? (
-              <p className="px-3 py-2 text-[11.5px] text-dim">No labels found on pods</p>
+              <p className="px-3 py-2 text-[11.5px] text-mute">No labels found on pods</p>
             ) : (
               <>
                 {activeLabelCount > 0 && (
@@ -191,7 +182,7 @@ const FiltersBar = memo(function FiltersBar({
                 )}
                 {allLabels.map(({ key, values }) => (
                   <div key={key} className="px-3 py-1.5">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-dim mb-1.5">{key}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-mute mb-1.5">{key}</p>
                     <div className="flex flex-wrap gap-1">
                       {values.map(v => {
                         const active = activeLabels[key] === v;
@@ -298,7 +289,7 @@ const BulkActionBar = memo(function BulkActionBar({
       <span className="mono text-[12px] text-accent font-semibold shrink-0">{count} selected</span>
       <button
         onClick={onClear}
-        className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink flex items-center gap-1 bg-surface-tint/3 ring-1 ring-edge"
+        className="h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink flex items-center gap-1 bg-surface-tint/3 ring-1 ring-edge"
       >
         <X size={10} /> Clear
       </button>
@@ -426,7 +417,7 @@ function ConfirmBulkModal({
           <div key={`${p.namespace}/${p.name}`} className="flex items-center gap-2 py-1">
             <span className="h-1.5 w-1.5 rounded-full bg-bad shrink-0" />
             <span className="mono text-[11.5px] truncate">{p.name}</span>
-            <span className="mono text-[10.5px] text-dim ml-auto shrink-0">{p.namespace}</span>
+            <span className="mono text-[10.5px] text-mute ml-auto shrink-0">{p.namespace}</span>
           </div>
         ))}
       </div>
@@ -485,7 +476,8 @@ const PodRow = memo(function PodRow({ pod, selected, setSelected, onDelete, bulk
   const cpuReqPct = cpuLim > 0 ? Math.min(100, Math.round((cpuM / cpuLim) * 100)) : 0;
   const memReqPct = memLim > 0 ? Math.min(100, Math.round((memMi / memLim) * 100)) : 0;
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Read-only wins (DISABLE-PRECEDENCE); a bulk selection comes second (pods-logs.md: no single delete while selecting).
+  const rowReason = readOnlyReason ?? (bulkActive ? "Clear the selection to delete a single pod." : undefined);
 
   const crashReason = pod.containers_status?.find(
     (cs) => cs.restart_count > 0 && cs.last_reason && cs.last_reason !== "Completed"
@@ -497,19 +489,28 @@ const PodRow = memo(function PodRow({ pod, selected, setSelected, onDelete, bulk
   return (
     <tr
       onClick={handleClick}
-      className={`row-hover cursor-pointer border-b border-edge-raw/70 ${selected ? "row-selected" : ""}`}
+      className={`group row-hover cursor-pointer border-b border-edge-raw/70 ${selected ? "row-selected" : ""}`}
     >
       <td className="pl-3 pr-1 py-2 align-middle" onClick={(e) => e.stopPropagation()}>
         <input
           type="checkbox"
           checked={bulkChecked}
+          aria-label={`Select pod ${pod.name}`}
           onClick={(e) => { e.stopPropagation(); onBulkCheck(pod, e.shiftKey); }}
           onChange={() => {}}
           className="w-3.5 h-3.5 accent-accent cursor-pointer"
         />
       </td>
       <td className="row-bar pl-2 pr-2 py-2 align-middle">
-        <span className="mono text-[12px] truncate block">{pod.name}</span>
+        {/* X-1: the one keyboard stop for the row. It has no handler: Enter and Space dispatch a click that bubbles to the <tr>. */}
+        <button
+          type="button"
+          aria-current={selected ? "true" : undefined}
+          title={pod.name}
+          className="mono text-[12px] truncate block max-w-full text-left rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+        >
+          {pod.name}
+        </button>
       </td>
       <td className="px-2 py-2">
         <span className="mono text-[11.5px] text-mute">{pod.namespace}</span>
@@ -567,28 +568,15 @@ const PodRow = memo(function PodRow({ pod, selected, setSelected, onDelete, bulk
         <span className="mono text-[11px] text-mute truncate inline-block max-w-[160px] align-middle">{pod.node}</span>
       </td>
       <td className="pr-3 pl-1 py-2 text-right">
-        <div className="relative inline-block">
-          <button
-            onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v); }}
-            className={`text-dim hover:text-ink p-1 rounded-sm hover:bg-surface-tint/6 ${bulkActive ? "opacity-30 pointer-events-none" : ""}`}
-          >
-            <MoreHorizontal size={14} />
-          </button>
-          {menuOpen && !bulkActive && (
-            <div
-              className="absolute right-0 top-7 z-20 w-40 rounded-lg bg-panel border border-edge shadow-xl py-1"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                onClick={() => { if (readOnlyReason) return; handleDelete(); setMenuOpen(false); }}
-                {...disabledAttrs(readOnlyReason)}
-                className={`w-full text-left px-3 py-1.5 text-[12px] text-bad hover:bg-surface-tint/4 flex items-center gap-2 ${readOnlyReason ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                <Trash2 size={12} /> Delete pod
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          aria-label={`Delete pod ${pod.name}`}
+          onClick={(e) => { e.stopPropagation(); if (rowReason) return; handleDelete(); }}
+          {...(rowReason ? disabledAttrs(rowReason) : { title: `Delete pod ${pod.name}` })}
+          className={`h-6 w-6 inline-flex items-center justify-center rounded-sm text-mute opacity-0 group-hover:opacity-100 focus-visible:opacity-100 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${rowReason ? "cursor-not-allowed" : "hover:text-bad hover:bg-bad/10"}`}
+        >
+          <Trash2 size={12} aria-hidden />
+        </button>
       </td>
     </tr>
   );
@@ -613,7 +601,7 @@ function Th({
       onClick={sortKey ? () => onSort?.(sortKey) : undefined}
       className={`sticky top-0 z-1 bg-panel/95 backdrop-blur-sm border-b border-edge text-left text-[10.5px] uppercase tracking-[0.06em] font-semibold py-2 px-2 first:pl-3 last:pr-3
         ${sortKey ? "cursor-pointer select-none" : ""}
-        ${isActive ? "text-accent" : "text-dim"}`}
+        ${isActive ? "text-accent" : "text-mute"}`}
     >
       <div className="flex items-center gap-1">
         {children}
@@ -658,6 +646,7 @@ export function PodTable({
   const [confirmAction, setConfirmAction] = useState<"delete" | "restart" | null>(null);
   const [partialResult, setPartialResult] = useState<{ ok: number; failed: { name: string; error: string }[] } | null>(null);
   const [rowDeleteTarget, setRowDeleteTarget] = useState<{ name: string; namespace: string } | null>(null);
+  const [rowDeleteError, setRowDeleteError] = useState("");
   const [bulkError, setBulkError] = useState("");
 
   const deletePod = useDeletePod();
@@ -752,6 +741,7 @@ export function PodTable({
   }, []);
 
   const handleDelete = useCallback((podName: string, namespace: string) => {
+    setRowDeleteError("");
     setRowDeleteTarget({ name: podName, namespace });
   }, []);
 
@@ -888,6 +878,7 @@ export function PodTable({
                     ref={headerCheckboxRef}
                     type="checkbox"
                     checked={allFilteredChecked}
+                    aria-label="Select all shown pods"
                     onChange={handleHeaderCheck}
                     className="w-3.5 h-3.5 accent-accent cursor-pointer"
                   />
@@ -917,7 +908,7 @@ export function PodTable({
                           {search ? `No pods matching "${search}"` : "No pods found"}
                         </p>
                         {!search && (
-                          <p className="text-[11.5px] text-dim">Try selecting a different namespace or status filter</p>
+                          <p className="text-[11.5px] text-mute">Try selecting a different namespace or status filter</p>
                         )}
                       </div>
                     </td>
@@ -962,14 +953,21 @@ export function PodTable({
         open={rowDeleteTarget !== null}
         title="Delete pod"
         description={`Delete pod "${rowDeleteTarget?.name}" from namespace "${rowDeleteTarget?.namespace}"? Kubernetes will recreate it if managed by a controller.`}
-        confirmLabel="Delete"
+        confirmLabel={deletePod.isPending ? "Deleting…" : "Delete pod"}
         destructive
-        onConfirm={() => {
+        status={rowDeleteError ? { tone: "error", text: rowDeleteError } : null}
+        onConfirm={async () => {
           if (!rowDeleteTarget) return;
-          deletePod.mutate({ context, namespace: rowDeleteTarget.namespace, podName: rowDeleteTarget.name });
-          setRowDeleteTarget(null);
+          // Stay open until the delete resolves: a refusal (RBAC, read-only backstop, network) shows in the dialog.
+          setRowDeleteError("");
+          try {
+            await deletePod.mutateAsync({ context, namespace: rowDeleteTarget.namespace, podName: rowDeleteTarget.name });
+            setRowDeleteTarget(null);
+          } catch (e) {
+            setRowDeleteError((e as any)?.message ?? String(e));
+          }
         }}
-        onCancel={() => setRowDeleteTarget(null)}
+        onCancel={() => { setRowDeleteTarget(null); setRowDeleteError(""); }}
         isPending={deletePod.isPending}
         contextLabel={identity.label}
         contextColor={identity.color}

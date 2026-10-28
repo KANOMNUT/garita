@@ -12,6 +12,13 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 TS mirror: `ContainerStatus` in `k8s.ts`. The Containers tab shows a current/last state grid (exit 137 red, ≥1 amber, 0 green) and "Last crash: X ago". `PodTable` shows a restart pill (`↻ N · <reason>`), red for OOM.
 
+## Pod status vocabulary (`podStatus.ts`)
+
+`pod_status` (`pods.rs`) returns `Terminating`, `CrashLoopBackOff`, `ImagePullBackOff`, `Pending` (also for `ContainerCreating`), or the Kubernetes phase (`Running`, `Pending`, `Succeeded`, `Failed`, `Unknown`). `src/utils/podStatus.ts` (`POD_STATUS_STYLE`, `podStatusStyle`) is the one style table, read by the Pods table pill, the Pod panel header pill and the status dot in a workload's Pods tab. **Do not add a per-component status map**: two maps once drifted until a pod in `ImagePullBackOff` was orange in the table and green in the panel.
+- A status the table does not know gets the neutral style (`mute`, no pulse), never the green `Running` one. `Unknown` is neutral too. `Failed` is red and steady (only `Pending`, `CrashLoopBackOff`, `ImagePullBackOff` and `Terminating` pulse).
+- `PodStatus` (`k8s.ts`) includes `"Failed"`, and the Pods table status filter lists it, so failed pods can be isolated. `podStatus.test.ts` checks that every string `pod_status` can return has a style and that an unknown string is neutral.
+- On the Containers tab, a container card's **logs** link sets the Logs tab's container to that card's container (`setLogPick`, the same pick the Logs tab's selector uses) before it opens the tab, as **exec** sets the shell container. Both links are 24 px high targets with a name (`Open logs for <container>`, `Open shell in <container>`). The ENV, MOUNTS and PROBES section headers are a module-level component (`AccordionHeader`): a component declared inside `DetailPanel` would be a new type on every render and keyboard focus would drop to the page on each toggle. They expose `aria-expanded` and `aria-controls`.
+
 ## Workload → Pods
 
 `list_workload_pods(context, namespace, kind, name) -> Vec<Pod>` (`workload_pods.rs`) resolves ownership through `ownerReferences` UIDs:
@@ -32,7 +39,7 @@ TS mirror: `ContainerStatus` in `k8s.ts`. The Containers tab shows a current/las
 - Above **10 pods** the user types the namespace (one namespace) or the cluster label (several namespaces).
 - A per-cluster bulk limit (see Read-only mode and guardrails) disables the confirm with a reason.
 - `useBulkDeletePods()` runs `delete_pod` through `Promise.allSettled` and returns `{ ok, failed: { name, error }[] }`. A partial result switches the dialog to `phase="result"` and lists failed pods.
-- Per-row Delete is disabled while a bulk selection exists.
+- Per-row Delete is disabled while a bulk selection exists. It is a named trash button on the row (`aria-label="Delete pod <name>"`), disabled with a visible reason rather than hidden: read-only mode wins (`READ_ONLY_REASON_SHORT`), then "Clear the selection to delete a single pod." Its dialog stays open on a failed delete (see `ui.md` → Confirm-on-Destructive).
 
 ## Shell Terminal (xterm.js)
 
