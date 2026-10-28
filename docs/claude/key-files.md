@@ -25,7 +25,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/launchArgs.ts` | Pure plan for forwarded launch args (strip lines, deferral, namespace check) |
 | `src/utils/cliStatus.ts` | Pure model of `CliStatus` for Settings → Command line |
 | `src/utils/drain.ts` | Pure drain helpers; owns the `deleting` / `force-deleted` row states (never in `EvictionOutcome`) |
-| `src/utils/podStatus.ts` | `POD_STATUS_STYLE`, `podStatusStyle`: the one pod status vocabulary and its token classes, read by `PodTable`, `DetailPanel` and the workload Pods tab. See `pods-logs.md` |
+| `src/utils/podStatus.ts` | `POD_STATUS_STYLE`, `podStatusStyle`: the one pod status vocabulary and its token classes, read by `PodTable`, `DetailPanel`, the workload Pods tab and the Node panel's pod list. See `pods-logs.md` |
 | `src/utils/argoStatus.ts` | Pure ArgoCD status logic (with `argoStatus.test.ts`): the Health, Sync and operation pill tables (`argoHealthPill`, `argoSyncPill`, `argoPhasePill`), `isArgoHealthy`, the Resources tab filter groups (`filterArgoResources`, `argoHealthCount`, `argoSyncCount`, `visibleHealthFilters`, `ARGO_CHIP_CLS`) and row order (`argoSortScore`, `isDegradedOrMissing`). See `argocd.md` |
 | `src/utils/modalLayer.ts` | `useModalLayer`, `isModalOpen`, `isEditableTarget`. See Keyboard layering |
 | `src/components/Popover.tsx` | The one popover primitive; registers a modal layer |

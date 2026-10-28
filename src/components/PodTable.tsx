@@ -478,6 +478,11 @@ const PodRow = memo(function PodRow({ pod, selected, setSelected, onDelete, bulk
 
   // Read-only wins (DISABLE-PRECEDENCE); a bulk selection comes second (pods-logs.md: no single delete while selecting).
   const rowReason = readOnlyReason ?? (bulkActive ? "Clear the selection to delete a single pod." : undefined);
+  // Exclusive strings: hidden until the row is hovered or any control in it has focus. With a reason the trash shows
+  // dimmed, never in the enabled look (plan D9).
+  const trashReveal = rowReason
+    ? "opacity-0 group-hover:opacity-50 group-focus-within:opacity-50 focus-visible:opacity-50 cursor-not-allowed"
+    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-bad hover:bg-bad/10";
 
   const crashReason = pod.containers_status?.find(
     (cs) => cs.restart_count > 0 && cs.last_reason && cs.last_reason !== "Completed"
@@ -573,7 +578,7 @@ const PodRow = memo(function PodRow({ pod, selected, setSelected, onDelete, bulk
           aria-label={`Delete pod ${pod.name}`}
           onClick={(e) => { e.stopPropagation(); if (rowReason) return; handleDelete(); }}
           {...(rowReason ? disabledAttrs(rowReason) : { title: `Delete pod ${pod.name}` })}
-          className={`h-6 w-6 inline-flex items-center justify-center rounded-sm text-mute opacity-0 group-hover:opacity-100 focus-visible:opacity-100 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${rowReason ? "cursor-not-allowed" : "hover:text-bad hover:bg-bad/10"}`}
+          className={`h-6 w-6 inline-flex items-center justify-center rounded-sm text-mute outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${trashReveal}`}
         >
           <Trash2 size={12} aria-hidden />
         </button>

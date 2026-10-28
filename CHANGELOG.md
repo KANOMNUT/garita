@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Keyboard: rows open with Tab and Enter.** In the Pods table, in every resource list that opens a panel (Deployments, Services, ArgoCD Applications and the rest) and in the ArgoCD Resources tab, the row's name or kind is now a button, so a keyboard user can open a panel, or jump from a managed resource to the object, without the mouse. Esc closes the panel and focus stays on the row. The per-row pod menu is replaced by a Delete pod button that appears on hover and on keyboard focus, and gives its reason when it is disabled.
 - **Keyboard: the ENV, MOUNTS and PROBES sections keep focus.** Opening one used to drop keyboard focus, so you had to Tab from the top again; focus now stays on the header, which also reports whether it is expanded.
 - **Icon-only controls have names.** The close buttons, the pod Actions menu, the pod row checkboxes, the port-forward stop button and the panel's Edit and Delete buttons are announced by screen readers.
-- **Text contrast in the Pod and ArgoCD panels.** Secondary text (field names, dates, "req / lim" lines, log toolbar labels, the Unknown and Suspended badges) and the faded status text on filter chips used a colour below the 4.5:1 minimum in both themes. They now use the readable secondary colour or the full status colour.
+- **Text contrast in the Pod panel, the resource panels and the ArgoCD Applications list.** Secondary text (field names, dates, "req / lim" lines, log toolbar labels, the Unknown and Suspended badges) and the faded status text on filter chips used a colour below the 4.5:1 minimum in both themes. They now use the readable secondary colour or the full status colour.
 
 ## [2.3.1] - 2026-10-27
 

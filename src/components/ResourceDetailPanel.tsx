@@ -839,7 +839,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               </thead>
               <tbody>
                 {pods.map((p, i) => {
-                  const dotColor = p.status === "Running" ? "bg-ok" : p.status === "Pending" ? "bg-warn" : p.status === "Succeeded" ? "bg-info" : "bg-bad";
+                  const dotColor = podStatusStyle(p.status).dot;
                   return (
                     <tr key={i} className="border-b border-edge-raw/60 last:border-b-0">
                       <td className="px-3 py-1.5"><span className="mono text-[11.5px] text-ink truncate block max-w-[160px]" title={p.name}>{p.name}</span></td>
