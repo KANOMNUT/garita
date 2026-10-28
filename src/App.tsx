@@ -18,12 +18,13 @@ import { TurnOffReadOnlyConfirm } from "./components/ReadOnlyBadge";
 import { canCompare } from "./utils/resourceCompare";
 import { SettingsView, type SettingsSection } from "./components/SettingsView";
 import { ResourceCreator } from "./components/ResourceCreator";
+import { DeleteNamespaceConfirm } from "./components/DeleteNamespaceConfirm";
 import { MergeFromFileModal } from "./components/MergeFromFileModal";
 import { HelmInstallModal } from "./components/HelmInstallModal";
 import {
   useKubeContexts, useClusterAccess,
-  useNamespaces, startLaunchArgs, fetchNamespacesOrNull, useClusterInfo, useNodeMetricsHistory, usePodMetricsHistory, usePods, useNodeCapacity,
-  useDeleteNamespace, detectLegacyInstall,
+  useNamespaces, useNamespaceRows, startLaunchArgs, fetchNamespacesOrNull, useClusterInfo, useNodeMetricsHistory, usePodMetricsHistory, usePods, useNodeCapacity,
+  detectLegacyInstall,
 } from "./hooks/useResources";
 import { useActiveContext } from "./hooks/useActiveContext";
 import {
@@ -36,7 +37,7 @@ import {
   ResourceQuotaView, LimitRangeView, PriorityClassView,
   ArgoCdAppSetView, ArgoCdProjectView, ArgoCdRepositoryView,
   EndpointsView, EndpointSliceView, ReplicaSetView,
-  MutatingWebhookView, ValidatingWebhookView, VolumeSnapshotView, CRDInstanceView,
+  MutatingWebhookView, ValidatingWebhookView, VolumeSnapshotView, CRDInstanceView, NamespacesView,
 } from "./components/ResourceViews";
 import type { ClusterAccess, MapKind, Pod, ResourceType, SelectedResource, CRD } from "./types/k8s";
 import { RESOURCE_QUERY_KEY, HEALTH_QUERY_KEY, HEALTH_PAGES, type HealthPage, type MainView } from "./utils/resourceQueryKey";
@@ -50,7 +51,6 @@ import { DeprecatedApisPage } from "./components/health/DeprecatedApisPage";
 import { NodeCapacityPage } from "./components/health/NodeCapacityPage";
 import { MapPage } from "./components/health/MapPage";
 import type { MapMode } from "./components/health/NetpolView";
-import type { CreatableKind } from "./utils/resourceTemplates";
 import { isModalOpen, isEditableTarget, isInTerminal } from "./utils/modalLayer";
 import { useClusterIdentity, isIdentityStoreUnset, writeSeedIfUnset, isUpgradeNoticePending, dismissUpgradeNotice } from "./utils/clusterIdentity";
 import { UPGRADE_NOTICE_BODY, UPGRADE_NOTICE_TITLE } from "./brand";
@@ -209,7 +209,8 @@ function AppInner() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
-  const [creatorKind, setCreatorKind] = useState<CreatableKind | null>(null);
+  // The namespace the typed delete confirm is open for (row trash on the Namespaces page, or the panel header trash).
+  const [nsToDelete, setNsToDelete] = useState<string | null>(null);
   const [mergeFromFileOpen, setMergeFromFileOpen] = useState(false);
   const [helmInstallOpen, setHelmInstallOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("");
@@ -249,12 +250,14 @@ function AppInner() {
   const navigateSearchRef = useRef<string | null>(null);
   const lastRefreshRef = useRef<number>(0);
   const { data: namespaces = [] } = useNamespaces(currentContext);
+  // A Namespace is selected as a snapshot of its list row, and the page polls while one is Terminating. The panel reads the
+  // live row (same query, no extra fetch) so it shows Terminating after a delete; a name that left the list keeps its snapshot.
+  const { data: nsRows } = useNamespaceRows(currentContext);
   const { data: clusterAccess, error: clusterAccessError } = useClusterAccess(currentContext);
   const [accessBannerDismissed, setAccessBannerDismissed] = useState(false);
   const { data: clusterInfo } = useClusterInfo(currentContext);
   const { data: nodes = [], cpuHistory: nodeCpuHistory, memHistory: nodeMemHistory } = useNodeMetricsHistory(currentContext);
   const { cpuHistory: podCpuHistory, memHistory: podMemHistory, containerCpuHistory, containerMemHistory } = usePodMetricsHistory(currentContext, namespace);
-  const deleteNamespace = useDeleteNamespace();
   // NodeStrip's requests overlay (#12): progressive, so it only runs on the Pods view.
   const { data: nodeCapacity } = useNodeCapacity(currentContext, mainView === "resources" && activeResource === "pods");
 
@@ -565,6 +568,11 @@ function AppInner() {
   }, [handleRefresh, openCreator, overlayOpen]);
 
   const isPodView = activeResource === "pods";
+  const panelResource = useMemo<SelectedResource | null>(() => {
+    if (selectedResource?.kind !== "ns") return selectedResource;
+    const live = nsRows?.find((r) => r.name === selectedResource.item.name);
+    return live ? { kind: "ns", item: live } : selectedResource;
+  }, [selectedResource, nsRows]);
 
   return (
     <div className="w-full h-full overflow-hidden grain bg-base flex flex-col">
@@ -583,13 +591,8 @@ function AppInner() {
           onOpenWhoCan={openWhoCan}
           whoCanActive={mainView === "whocan"}
           journalActive={mainView === "journal"}
-          ns={namespace}
-          setNs={setNamespace}
           currentContext={currentContext}
-          namespaces={namespaces}
           onOpenSwitcher={() => setSwitcherOpen(true)}
-          onCreateNamespace={() => { setCreatorKind("ns"); setCreatorOpen(true); }}
-          onDeleteNamespace={(ctx, name) => deleteNamespace.mutateAsync({ context: ctx, name })}
           crdTarget={crdTarget}
           onSelectCrdInstance={(crd) => { setCrdTarget(crd); setActiveResource("crd-instances"); }}
         />
@@ -598,7 +601,6 @@ function AppInner() {
           <TopBar
             ns={namespace}
             setNs={setNamespace}
-            namespaces={namespaces}
             activeResource={activeResource}
             mainView={mainView}
             healthPage={healthPage}
@@ -614,6 +616,7 @@ function AppInner() {
             onSearch={setSearch}
             onCreateResource={mainView === "resources" ? openCreator : undefined}
             onMergeFromFile={mainView === "resources" ? () => { if (!identity.readOnly) setMergeFromFileOpen(true); } : undefined}
+            onManageNamespaces={() => setActiveResource("ns")}
             blockedRing={blockedRing}
           />
 
@@ -790,6 +793,12 @@ function AppInner() {
                   onSelect={(item) => setSelectedResource({ kind: "nodes", item })} />
               )}
               {activeResource === "events" && <EventView context={currentContext} namespace={namespace} />}
+              {activeResource === "ns" && (
+                <NamespacesView context={currentContext} search={search}
+                  selectedKey={selectedResource?.kind === "ns" ? selectedResource.item.name : null}
+                  onSelect={(item) => setSelectedResource({ kind: "ns", item })}
+                  onRequestDelete={setNsToDelete} />
+              )}
               {activeResource === "crd" && (
                 <CRDView context={currentContext} search={search}
                   selectedKey={selectedResource?.kind === "crd" ? selectedResource.item.name : null}
@@ -953,13 +962,14 @@ function AppInner() {
                 }}
               />
             )}
-            {selectedResource && !isPodView && (
+            {panelResource && !isPodView && (
               <ResourceDetailPanel
-                resource={selectedResource}
+                resource={panelResource}
                 compareNonce={compareNonce}
                 onOpenProblems={() => openHealth("problems")}
                 problemsVisible={mainView === "resources"}
                 onOpenMap={openMap}
+                onRequestNamespaceDelete={setNsToDelete}
                 context={currentContext}
                 onClose={() => setSelectedResource(null)}
                 onNavigate={(kind, ns, name) => {
@@ -987,6 +997,13 @@ function AppInner() {
       />
       <div role="status" aria-live="polite" className="sr-only">{announcement}</div>
       <TurnOffReadOnlyConfirm context={currentContext} open={readOnlyConfirm} onClose={() => setReadOnlyConfirm(false)} />
+      {/* Beside the other confirms, outside the TopBar <header> (a ConfirmModal has no portal and the header starts a window drag). */}
+      <DeleteNamespaceConfirm
+        context={currentContext}
+        name={nsToDelete}
+        onClose={() => setNsToDelete(null)}
+        onDeleted={(n) => { if (n === namespace) setNamespace("all"); }}
+      />
       <CommandPalette
         actions={paletteActions}
         open={paletteOpen}
@@ -1005,9 +1022,9 @@ function AppInner() {
       />
       <ResourceCreator
         open={creatorOpen}
-        onClose={() => { setCreatorOpen(false); setCreatorKind(null); }}
+        onClose={() => setCreatorOpen(false)}
         context={currentContext}
-        resourceType={creatorKind ?? activeResource}
+        resourceType={activeResource}
         namespace={namespace}
       />
       <MergeFromFileModal

@@ -23,6 +23,7 @@ export const RESOURCE_QUERY_KEY: Partial<Record<ResourceType, string>> = {
   rq:         "resource-quotas",
   lr:         "limit-ranges",
   nodes:      "nodes",
+  ns:         "namespaces",
   events:     "events",
   crd:        "crds",
   pc:         "priority-classes",

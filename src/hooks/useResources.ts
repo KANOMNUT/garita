@@ -19,11 +19,12 @@ import type {
   EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow,
   DrainPreview, EvictionResult, LogStreamEvent, NeatYaml, PropagationPolicy,
   LaunchArgs, CliStatus, YamlSavePreview, HelmUpgradePreview, LogSettings, AppLogLevel, JournalEntry, WhoCanResult, RuleGrant, UnusedReport, DeprecationReport, ResourceMap, NetpolModel,
-  ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
+  NamespaceRow, ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
 } from "../types/k8s";
 import { METRIC_RANGES, rangeWindow, samePlotExceptRange, targetKey } from "../utils/observability";
 import { newUsageHistory, recordUsage, type UsageHistory } from "../utils/rightSizing";
 import { RESOURCE_QUERY_KEY } from "../utils/resourceQueryKey";
+import { isTerminating, namespaceNames } from "../utils/namespaces";
 import { assertWritable, READ_ONLY_BLOCKS_SHELL } from "../utils/guardrails";
 import {
   canCheck, DEFAULT_PREFS, parsePrefs, reduce, UPDATES_KEY, updateMode,
@@ -149,12 +150,36 @@ export function useSetKubeconfigEnabled() {
 
 // ─── Namespaces ──────────────────────────────────────────────────────────────
 
-export function useNamespaces(context: string) {
-  return useQuery<string[], Error>({
-    queryKey: ["namespaces", context],
-    queryFn: () => invoke<string[]>("list_namespaces", { context }),
+// ONE query for every namespace consumer: key ["namespaces", ctx], data NamespaceRow[]. Every reader spreads
+// namespaceRowsQuery, so no queryFn on that key can put another shape (names, say) into the cache that the
+// picker and the Namespaces page read as rows. The names-only readers add a `select`.
+export const namespaceRowsQuery = (context: string) => ({
+  queryKey: ["namespaces", context] as const,
+  queryFn: () => invoke<NamespaceRow[]>("list_namespace_rows", { context }),
+  staleTime: 60_000,
+});
+
+/**
+ * Rows for the Namespaces page (`poll`: 5 s while any row is Terminating, else 30 s) and the picker
+ * (no interval). Only the page polls, so the always-mounted observers in App and the forms never start
+ * app-wide polling.
+ */
+export function useNamespaceRows(context: string, poll?: boolean) {
+  return useQuery<NamespaceRow[], Error>({
+    ...namespaceRowsQuery(context),
     enabled: !!context,
-    staleTime: 60_000,
+    refetchInterval: poll
+      ? (query) => (query.state.data?.some(isTerminating) ? 5_000 : 30_000)
+      : false,
+  });
+}
+
+/** Names only: the same query as `useNamespaceRows` with a `select`, so the form and page call sites keep their shape. */
+export function useNamespaces(context: string) {
+  return useQuery<NamespaceRow[], Error, string[]>({
+    ...namespaceRowsQuery(context),
+    enabled: !!context,
+    select: namespaceNames,
   });
 }
 
@@ -1700,6 +1725,7 @@ export const RBAC_RESOURCE: Partial<Record<ResourceType, { group: string; resour
   rq: { group: "", resource: "resourcequotas" },
   lr: { group: "", resource: "limitranges" },
   nodes: { group: "", resource: "nodes" },
+  ns: { group: "", resource: "namespaces" },
   events: { group: "", resource: "events" },
   crd: { group: "apiextensions.k8s.io", resource: "customresourcedefinitions" },
   pc: { group: "scheduling.k8s.io", resource: "priorityclasses" },
@@ -2182,12 +2208,8 @@ export function fetchNamespacesOrNull(qc: QueryClient, context: string): Promise
   // retry: false (the client default is 2) and a ~3 s cap: a slow cluster must not stall the launch (fail open).
   const timeout = new Promise<null>((r) => setTimeout(() => r(null), 3000));
   const fetch = qc
-    .fetchQuery<string[], Error>({
-      queryKey: ["namespaces", context],
-      queryFn: () => invoke<string[]>("list_namespaces", { context }),
-      staleTime: 60_000,
-      retry: false,
-    })
+    .fetchQuery<NamespaceRow[], Error>({ ...namespaceRowsQuery(context), retry: false })
+    .then(namespaceNames)
     .catch(() => null);
   return Promise.race([fetch, timeout]);
 }

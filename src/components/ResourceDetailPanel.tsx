@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useResizablePanel } from "../hooks/useResizablePanel";
 import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, CheckCircle2, ArrowUpRight, ChevronRight, StepBack, Network } from "lucide-react";
 import { useResourceYaml, useResourceEvents, useApplyResource, useCRDResources, useNodePods, useCordonNode, useUncordonNode, useDeleteNode, useAddNodeTaint, useRemoveNodeTaint, useStartServicePortForward, usePortForwards, useStopPortForward, useHelmValues, useUpgradeHelmRelease, useHelmHistory, useRollbackHelmRelease, useSyncArgoCdApp, useRollbackArgoCdApp, useRefreshArgoCdApp, useArgoCdCommitInfo, useArgoCdAppResources, useWorkloadPods, useResourceMetadata, useWorkloadConditions, useResourceGraph, useDeleteResource, useDeleteArgoCdApp, useUninstallHelmRelease, useTlsCertificateInfo, usePermissions, useResourceYamlNeat } from "../hooks/useResources";
-import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision } from "../types/k8s";
+import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision, NamespaceRow } from "../types/k8s";
 import { useRevealedSecret, forgetSecret, forgetHelmValues, useAccessChecks } from "../hooks/useResources";
 import { deniedNamespaces, secretGetCheck } from "../utils/permissionHints";
 import { formatSecretSize, hasRedactionSentinel, helmEditSeed } from "../utils/secretReveal";
@@ -47,6 +47,7 @@ import { NodeDrainDialog, DrainResultCard } from "./NodeDrainDialog";
 import { useNodeDrain } from "../hooks/useNodeDrain";
 import { defaultLogView } from "../utils/logFilter";
 import { podStatusStyle } from "../utils/podStatus";
+import { PROTECTED_NAMESPACES, PROTECTED_NAMESPACE_REASON, chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
 import {
   ARGO_CHIP_CLS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount,
   argoSyncPill, filterArgoResources, isArgoHealthy, isDegradedOrMissing, visibleHealthFilters,
@@ -61,14 +62,6 @@ function KV({ k, v, mono = true }: { k: string; v: string; mono?: boolean }) {
       <span className="text-[11px] text-mute w-[110px] shrink-0">{k}</span>
       <span className={`text-[12px] text-ink ${mono ? "mono" : ""} truncate`}>{v}</span>
     </div>
-  );
-}
-
-function StatusDot({ healthy }: { healthy: boolean }) {
-  return (
-    <span
-      className={`inline-block h-2 w-2 rounded-full shrink-0 ${healthy ? "bg-ok" : "bg-bad"}`}
-    />
   );
 }
 
@@ -1015,10 +1008,69 @@ function ServicePortForward({ item, context }: { item: import("../types/k8s").Se
 
 // ─── Overview renderers per resource kind ─────────────────────────────────────
 
-function OverviewContent({ resource, context, onNavigate, secretReveal }: {
+/** Namespace Overview (docs/ux/24 §4.4.5): the fields, the pods link, the built-in note and, while deleting, why it is stuck. */
+function NamespaceOverview({ row, onNavigate, onShowTab }: {
+  row: NamespaceRow;
+  onNavigate?: (kind: ResourceType, namespace: string, name: string) => void;
+  onShowTab?: (tab: "Events" | "YAML") => void;
+}) {
+  const terminating = isTerminating(row);
+  const since = deletingFor(row.deletion_timestamp);
+  // The conditions that explain a stuck delete are the ones that are True (NamespaceContentRemaining and friends).
+  const blocking = row.conditions.filter((c) => c.status === "True");
+  const labelCount = chipLabels(row.labels).length;
+  const link = "text-accent hover:underline rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
+  return (
+    <>
+      {PROTECTED_NAMESPACES.has(row.name) && (
+        <p className="text-[11.5px] text-mute pt-1 pb-2">{PROTECTED_NAMESPACE_REASON}</p>
+      )}
+      <KV k="Name"       v={row.name} />
+      <KV k="Status"     v={terminating ? `Terminating${since ? `, deleting for ${since}` : ""}` : row.phase || "—"} mono={false} />
+      <KV k="Age"        v={row.age} />
+      <KV k="Finalizers" v={row.finalizers.length > 0 ? row.finalizers.join(", ") : "—"} />
+      <KV k="Labels"     v={labelCount > 0 ? `${labelCount} (see Summary)` : "—"} mono={false} />
+      {onNavigate && (
+        <button
+          type="button"
+          onClick={() => onNavigate("pods", row.name, "")}
+          className="mt-3 h-7 px-2.5 rounded-md bg-card/80 ring-1 ring-edge text-[11.5px] text-mute hover:text-ink flex items-center gap-1.5 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+        >
+          <ArrowUpRight size={12} aria-hidden />
+          Show pods in this namespace
+        </button>
+      )}
+      {terminating && (
+        <section aria-label="Why it is still deleting" className="mt-3 pt-3 border-t border-edge-raw/60 flex flex-col gap-1.5">
+          <h4 className="text-[11px] font-medium text-mute">Why it is still deleting</h4>
+          {blocking.map((c) => (
+            <p key={c.type_} className="text-[11.5px] text-ink wrap-break-word">
+              <span aria-hidden>✕</span> {c.type_}{c.message ? `: ${c.message}` : ""}
+            </p>
+          ))}
+          <p className="text-[11.5px] text-mute">
+            Kubernetes removes the objects inside a namespace first. It stays Terminating while an object or a finalizer blocks removal.
+          </p>
+          {blocking.length === 0 && (
+            <p className="text-[11.5px] text-mute">
+              Open{" "}
+              <button type="button" onClick={() => onShowTab?.("Events")} className={link}>Events</button>
+              {" "}or{" "}
+              <button type="button" onClick={() => onShowTab?.("YAML")} className={link}>YAML</button>
+              {" "}to look for what is blocking it.
+            </p>
+          )}
+        </section>
+      )}
+    </>
+  );
+}
+
+function OverviewContent({ resource, context, onNavigate, onShowTab, secretReveal }: {
   resource: SelectedResource;
   context: string;
   onNavigate?: (kind: ResourceType, namespace: string, name: string) => void;
+  onShowTab?: (tab: "Events" | "YAML") => void;
   secretReveal: SecretReveal;
 }) {
   // Fetch commit metadata from ArgoCD API lazily — data may not be in the CRD.
@@ -1030,6 +1082,8 @@ function OverviewContent({ resource, context, onNavigate, secretReveal }: {
   );
 
   switch (resource.kind) {
+    case "ns":
+      return <NamespaceOverview row={resource.item} onNavigate={onNavigate} onShowTab={onShowTab} />;
     case "deploy": {
       const d = resource.item;
       const [, total] = d.ready.split("/").map(Number);
@@ -1593,6 +1647,7 @@ function kindLabel(resource: SelectedResource): string {
     pv:     "PersistentVolume",
     sc:     "StorageClass",
     nodes:  "Node",
+    ns:     "Namespace",
     crd:    "CustomResourceDefinition",
     netpol:     "NetworkPolicy",
     sa:         "ServiceAccount",
@@ -1645,6 +1700,7 @@ const EVENT_INVOLVED_KIND: Record<SelectedResource["kind"], string | null> = {
   pv: "PersistentVolume",
   sc: "StorageClass",
   nodes: "Node",
+  ns: "Namespace",
   crd: "CustomResourceDefinition",
   netpol: "NetworkPolicy",
   sa: "ServiceAccount",
@@ -1688,6 +1744,7 @@ function isHealthy(resource: SelectedResource): boolean {
     case "pvc":    return resource.item.status === "Bound";
     case "pv":     return resource.item.status === "Bound" || resource.item.status === "Available";
     case "nodes":  return resource.item.status === "ok";
+    case "ns":     return resource.item.phase === "Active";
     case "crd":    return resource.item.established;
     case "netpol":    return true;
     case "sa":        return true;
@@ -1718,14 +1775,30 @@ function isHealthy(resource: SelectedResource): boolean {
   }
 }
 
+type ChipTone = "ok" | "bad" | "terminating" | "neutral";
+
 /**
  * The one header chip for every kind except Application (which shows separate Health and Sync chips).
- * The generic words stay Healthy / Degraded until Q15 is applied (F4); `ns` joins in the Namespaces task.
+ * The generic words stay Healthy / Degraded until Q15 is applied (F4). A Namespace shows its phase instead:
+ * a Terminating namespace is being deleted, not "Degraded".
  */
-function statusChip(resource: SelectedResource): { label: string; tone: "ok" | "bad" } {
+function statusChip(resource: SelectedResource): { label: string; tone: ChipTone } {
+  if (resource.kind === "ns") {
+    if (isTerminating(resource.item)) return { label: "Terminating", tone: "terminating" };
+    if (resource.item.phase === "Active") return { label: "Active", tone: "ok" };
+    return { label: resource.item.phase || "Unknown", tone: "neutral" };
+  }
   const healthy = isHealthy(resource);
   return { label: healthy ? "Healthy" : "Degraded", tone: healthy ? "ok" : "bad" };
 }
+
+/** Header chip classes per tone. Literal strings so Tailwind sees them; `terminating` is the Terminating pod look. */
+const CHIP_STYLE: Record<ChipTone, { cls: string; dot: string; pulse: boolean }> = {
+  ok:          { cls: "text-ok bg-ok/10 ring-ok/30", dot: "bg-ok", pulse: false },
+  bad:         { cls: "text-bad bg-bad/10 ring-bad/30", dot: "bg-bad", pulse: false },
+  terminating: { cls: "text-purple bg-purple/10 ring-purple/30", dot: "bg-purple", pulse: true },
+  neutral:     { cls: "text-mute bg-surface-tint/5 ring-edge", dot: "bg-mute", pulse: false },
+};
 
 function resourceName(resource: SelectedResource): string {
   return resource.item.name;
@@ -2987,11 +3060,16 @@ interface Props {
   problemsVisible?: boolean;
   /** Header "Map" action (O10: workload and Service kinds only): map what is connected to this object. */
   onOpenMap?: (kind: MapKind, namespace: string, name: string) => void;
+  /**
+   * Namespaces: the header trash asks the host to open the typed delete confirm (one dialog, also opened by the page's
+   * row trash). Without it a Namespace panel has no delete button.
+   */
+  onRequestNamespaceDelete?: (name: string) => void;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ResourceDetailPanel({ resource, context, onClose, onNavigate, compareNonce = 0, onOpenProblems, problemsVisible = true, onOpenMap }: Props) {
+export function ResourceDetailPanel({ resource, context, onClose, onNavigate, compareNonce = 0, onOpenProblems, problemsVisible = true, onOpenMap, onRequestNamespaceDelete }: Props) {
   const identity = useClusterIdentity(context);
   const { width, startResize } = useResizablePanel("detail-panel-width");
   const [tab, setTab] = useState<Tab>("Overview");
@@ -3023,7 +3101,9 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
   // deleting one is a no-op that looks like it worked), so the panel header's
   // delete button must exclude them the same way GenericResourceTable's
   // per-row onDelete already does by simply never being wired for those kinds.
-  const canDelete = resource.kind !== "nodes" && resource.kind !== "ep" && resource.kind !== "eps";
+  // A Namespace deletes through the host's typed confirm (delete_namespace, no delete_resource arm), so its button exists only when the host passed the opener.
+  const canDelete = resource.kind !== "nodes" && resource.kind !== "ep" && resource.kind !== "eps"
+    && (resource.kind !== "ns" || !!onRequestNamespaceDelete);
   // Adds "nodes" vs the old chain; harmless: canDelete already excludes nodes.
   const clusterScopedObject = CLUSTER_SCOPED_KINDS.has(resource.kind);
   // Same predicate tabsFor() uses to decide whether "TLS" belongs in `tabs`.
@@ -3065,10 +3145,13 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
     readOnly: identity.readOnly,
     rbac: perm.canPatch ? undefined : "You don't have permission to update this resource",
   });
-  const deleteHeaderReason = pickDisabledReason({
-    readOnly: identity.readOnly,
-    rbac: perm.canDelete ? undefined : "You don't have permission to delete this resource",
-  });
+  // Namespaces add the built-in and already-deleting reasons, in the same precedence (utils/namespaces.ts).
+  const deleteHeaderReason = resource.kind === "ns"
+    ? namespaceDeleteReason(resource.item, { readOnly: identity.readOnly, canDelete: perm.canDelete })
+    : pickDisabledReason({
+        readOnly: identity.readOnly,
+        rbac: perm.canDelete ? undefined : "You don't have permission to delete this resource",
+      });
 
   // #33 (B-3, B-4): reveal state and fetches live in the ROOT, never in a tab body (the tab body is
   // keyed and remounts; an unobserved gcTime: 0 query would be dropped at once). Reveal is keyed to the
@@ -3249,9 +3332,14 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                   <ArgoStatusChip which="Sync" pill={argoSyncPill(resource.item.sync_status)} />
                 </>
               ) : (
-                <span className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] ring-1 font-medium ${chip.tone === "ok" ? "text-ok bg-ok/10 ring-ok/30" : "text-bad bg-bad/10 ring-bad/30"}`}
+                <span className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] ring-1 font-medium ${CHIP_STYLE[chip.tone].cls}`}
                 >
-                  <StatusDot healthy={chip.tone === "ok"} />
+                  <span className="relative flex h-2 w-2 shrink-0" aria-hidden>
+                    {CHIP_STYLE[chip.tone].pulse && (
+                      <span className={`absolute inset-0 rounded-full opacity-60 animate-blink ${CHIP_STYLE[chip.tone].dot}`} />
+                    )}
+                    <span className={`relative inline-block h-2 w-2 rounded-full ${CHIP_STYLE[chip.tone].dot}`} />
+                  </span>
                   {chip.label}
                 </span>
               )}
@@ -3298,7 +3386,16 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
           {canDelete && (
             <button
               type="button"
-              onClick={() => { if (deleteHeaderReason) return; setShowDeleteConfirm(true); setDeleteError(""); setCascadeDelete(true); }}
+              onClick={(e) => {
+                if (deleteHeaderReason) return;
+                if (resource.kind === "ns") {
+                  // Focus the opener first: the confirm returns focus to what was focused when it opened (WebKit does not focus on click).
+                  e.currentTarget.focus();
+                  onRequestNamespaceDelete?.(name);
+                  return;
+                }
+                setShowDeleteConfirm(true); setDeleteError(""); setCascadeDelete(true);
+              }}
               aria-label={resource.kind === "helm" ? `Uninstall ${kindLabel(resource)}` : `Delete ${kindLabel(resource)}`}
               title={resource.kind === "helm" ? `Uninstall ${kindLabel(resource)}` : `Delete ${kindLabel(resource)}`}
               {...disabledAttrs(deleteHeaderReason)}
@@ -3365,7 +3462,7 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
             )}
             <div className="p-4">
               <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3 pt-2">
-                <OverviewContent resource={resource} context={context} onNavigate={onNavigate} secretReveal={secretReveal} />
+                <OverviewContent resource={resource} context={context} onNavigate={onNavigate} onShowTab={setTab} secretReveal={secretReveal} />
               </div>
             </div>
           </div>
@@ -3840,7 +3937,7 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
       )}
 
       {/* Delete confirmation — all other resource kinds */}
-      {showDeleteConfirm && resource.kind !== "argocd" && resource.kind !== "helm" && resource.kind !== "nodes" && (
+      {showDeleteConfirm && resource.kind !== "argocd" && resource.kind !== "helm" && resource.kind !== "nodes" && resource.kind !== "ns" && (
         <ConfirmModal
           contextLabel={identity.label}
           contextColor={identity.color}

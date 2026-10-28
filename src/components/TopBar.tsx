@@ -8,13 +8,13 @@ import { viewHidesNamespacePicker } from "../utils/scope";
 import { RESOURCE_LABELS } from "../utils/kindToResourceType";
 import { HEALTH_PAGES, type HealthPage, type MainView } from "../utils/resourceQueryKey";
 import { Popover } from "./Popover";
+import { NamespacePicker } from "./NamespacePicker";
 import { SavedSearchMenu } from "./SavedSearchMenu";
 import { ReadOnlyChip, TurnOffReadOnlyConfirm } from "./ReadOnlyBadge";
 
 interface TopBarProps {
   ns: string;
   setNs: (ns: string) => void;
-  namespaces: string[];
   activeResource: ResourceType;
   /** Non-resource views (A-6): Health pages and Settings hide New; Health also renames the breadcrumb and search. */
   mainView?: MainView;
@@ -33,6 +33,8 @@ interface TopBarProps {
   onSearch: (s: string) => void;
   onCreateResource?: () => void;
   onMergeFromFile?: () => void;
+  /** The picker's "Manage namespaces" footer link: opens the Namespaces page. Absent: no link. */
+  onManageNamespaces?: () => void;
   /** Bumped by App when ⌘N is pressed while read-only: the badge shows a static 2 s ring (no motion). */
   blockedRing?: number;
 }
@@ -46,13 +48,11 @@ const Kbd = memo(function Kbd({ children }: { children: React.ReactNode }) {
 });
 
 export const TopBar = memo(function TopBar({
-  ns, setNs, namespaces, activeResource, mainView = "resources", healthPage = "problems", crdNamespaced, savedSearchKey, savedSearchLabel, currentContext,
-  isFetching, onOpenSwitcher, onRefresh, lastUpdated, search, onSearch, onCreateResource, onMergeFromFile, blockedRing = 0,
+  ns, setNs, activeResource, mainView = "resources", healthPage = "problems", crdNamespaced, savedSearchKey, savedSearchLabel, currentContext,
+  isFetching, onOpenSwitcher, onRefresh, lastUpdated, search, onSearch, onCreateResource, onMergeFromFile, onManageNamespaces, blockedRing = 0,
 }: TopBarProps) {
   const searchRef = useRef<HTMLInputElement>(null);
-  const nsRef = useRef<HTMLDivElement>(null);
   const newRef = useRef<HTMLDivElement>(null);
-  const [nsOpen, setNsOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const identity = useClusterIdentity(currentContext);
   const [roPopover, setRoPopover] = useState(false);
@@ -75,17 +75,6 @@ export const TopBar = memo(function TopBar({
     (e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value),
     [onSearch],
   );
-
-  useEffect(() => {
-    if (!nsOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (nsRef.current && !nsRef.current.contains(e.target as Node)) {
-        setNsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [nsOpen]);
 
   useEffect(() => {
     if (!newOpen) return;
@@ -171,31 +160,7 @@ export const TopBar = memo(function TopBar({
         {!clusterScoped && (
           <>
             <span className="text-dim">/</span>
-            <div ref={nsRef} className="relative">
-              <button
-                onClick={() => setNsOpen((v) => !v)}
-                className="group flex items-center gap-1 px-1.5 py-1 rounded-sm hover:bg-surface-tint/4"
-              >
-                <span className="mono text-[12px] text-ink">{ns}</span>
-                <ChevronDown size={12} className={`text-dim transition-transform ${nsOpen ? "rotate-180" : ""}`} />
-              </button>
-              {nsOpen && (
-                <div className="absolute left-0 top-8 z-20 w-52 rounded-lg bg-panel border border-edge shadow-xl py-1 max-h-64 overflow-y-auto">
-                  {["all", ...namespaces].map((n) => (
-                    <button
-                      key={n}
-                      onClick={() => { setNs(n); setNsOpen(false); }}
-                      className={`w-full text-left px-3 py-1.5 mono text-[12px] hover:bg-surface-tint/6 flex items-center gap-2
-                        ${n === ns ? "text-ink" : "text-mute"}`}
-                    >
-                      {n === ns && <span className="h-1.5 w-1.5 rounded-full bg-accent shrink-0" />}
-                      {n !== ns && <span className="h-1.5 w-1.5 shrink-0" />}
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <NamespacePicker context={currentContext} ns={ns} setNs={setNs} onManage={onManageNamespaces} />
           </>
         )}
         <span className="text-dim">/</span>
@@ -275,7 +240,7 @@ export const TopBar = memo(function TopBar({
                   onClick={() => { setNewOpen(false); onCreateResource(); }}
                   className="w-full text-left px-3 py-1.5 text-[12px] text-ink hover:bg-surface-tint/6 flex items-center justify-between gap-2"
                 >
-                  <span>{activeResource === "helm" ? "Install release…" : "New resource…"}</span>
+                  <span>{activeResource === "helm" ? "Install release…" : activeResource === "ns" ? "New namespace…" : "New resource…"}</span>
                   <span className="mono text-[10px] text-dim">⌘N</span>
                 </button>
               )}

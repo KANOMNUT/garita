@@ -7,12 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A Namespaces page.** "Namespaces" is the first item in the sidebar's Cluster section (and in the command palette). It lists every namespace with its status (Active, or Terminating with how long it has been deleting), age and labels, and opens the usual detail panel: Overview, Summary (labels and annotations), Events and YAML, plus Compare and field managers. For a namespace that is stuck in Terminating, the Overview explains what is blocking it (the namespace's own conditions) and points to Events and YAML. **New** and Ctrl/Cmd+N create a namespace here, and the trash button deletes one after you type its name. A deleted namespace usually stays Terminating for a while; the page refreshes every 5 seconds until it is gone. "Show pods in this namespace" in the panel jumps to the Pods list for it.
+
 ### Changed
 
+- **The namespace picker in the top bar has a filter.** It opens as a panel with a "Filter namespaces" field (Enter picks the first match), a check mark on the current namespace, a "Terminating" tag on namespaces that are being deleted, and a "Manage namespaces" link to the new page. When your account cannot list namespaces, it says so instead of showing an empty list.
+- **The namespace list is gone from the sidebar.** Pick a namespace in the top bar; create and delete namespaces on the Namespaces page. Deleting the namespace the picker was set to resets the picker to "All namespaces".
+- **`kube-node-lease` can no longer be deleted from the app,** like `default`, `kube-system` and `kube-public`. Its delete button is dimmed and gives the reason in its tooltip.
+- **A list you may not read says so.** When your account is not allowed to list a resource (a 403), every resource list now shows "You don't have access to …" instead of the raw error text.
 - **ArgoCD: the Actions card comes first.** An Application's Overview now opens with Actions (the Prune, Dry run and Force options, Sync, Refresh and Hard Refresh) instead of ending with them below the field list, and the field list gains a **Sync policy** row that reads Automated or Manual.
 
 ### Fixed
 
+- **Deleting a namespace works from the keyboard.** The old sidebar trash button was invisible until the pointer hovered it, so Tab skipped it. The row delete buttons in resource lists now appear while any control in the row has focus, they carry names ("Delete namespace payments"), and a delete that is not allowed (read-only mode, no permission, a built-in or already-deleting namespace) shows dimmed with its reason instead of acting enabled.
 - **ArgoCD: Health and Sync are no longer folded into one word.** The panel header called an Application "Degraded" in red when it was Healthy but OutOfSync, Progressing, Suspended or Missing, directly above an Overview that said Healthy. The header now shows a Health chip and a Sync chip, and the Overview's operation badge reads "Last operation: …". On the Resources tab the filter chips are two groups, Health and Sync, with a count per status: "Healthy" means Healthy whatever its sync state, Missing is counted apart from Degraded, and Suspended and Unknown get their own chips when a resource has them.
 - **ArgoCD: Sync, Refresh and Hard Refresh look disabled in read-only mode and say why.** They used to look active and do nothing. The reason now shows under the buttons, and a pending request no longer takes focus away from the button.
 - **ArgoCD: an action's error stays until you start the next one.** An error from Sync or Refresh (an RBAC refusal, "operation already in progress") used to vanish after 6 seconds and was never announced to a screen reader. It now stays, starts with "Couldn't sync <app>:" or "Couldn't refresh <app>:", and is announced; a success clears itself after 4 seconds.

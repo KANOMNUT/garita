@@ -4,7 +4,7 @@ import { ReadOnlyStrip } from "./ReadOnlyBadge";
 import { useClusterIdentity } from "../utils/clusterIdentity";
 import { ViewState } from "./ViewState";
 import { useApiPresence } from "../hooks/useResources";
-import { viewState } from "../utils/viewState";
+import { isForbidden, viewState } from "../utils/viewState";
 import { disabledAttrs, READ_ONLY_REASON_SHORT } from "../utils/guardrails";
 import { searchRows, sortRows, type SortState } from "../utils/tableRows";
 
@@ -40,8 +40,17 @@ interface Props<T> {
   search?: string;
   storageKey?: string;
   onDelete?: (item: T) => void;
-  /** Tooltip label for the per-row delete button (default "Delete"). */
-  deleteLabel?: string;
+  /**
+   * Name of the per-row delete button (default "Delete"): its `aria-label` always, and its `title` while it is enabled.
+   * A function gives each row its own name ("Delete namespace payments").
+   */
+  deleteLabel?: string | ((item: T) => string);
+  /**
+   * Why this row cannot be deleted, or undefined when it can. Checked after read-only mode, which always wins
+   * (DISABLE-PRECEDENCE). A row with a reason keeps its trash present, focusable and dimmed with the reason as
+   * its description, never hidden. Needs `onDelete`.
+   */
+  deleteReason?: (item: T) => string | undefined;
   /** Icon for the per-row delete button (default <Trash2 size={12} />). */
   deleteIcon?: React.ReactNode;
   /**
@@ -80,7 +89,7 @@ export function GenericResourceTable<T>({
   columns, data, isLoading, error, onRetry, keyFn,
   selectedKey, onSelect, emptyIcon, emptyText = "No resources found",
   title, count, extra, extraLeft, search, storageKey, onDelete,
-  deleteLabel = "Delete", deleteIcon, context, presenceKey, defaultHidden,
+  deleteLabel = "Delete", deleteReason, deleteIcon, context, presenceKey, defaultHidden,
   sort, onSortChange,
 }: Props<T>) {
   const identity = useClusterIdentity(context ?? "");
@@ -164,15 +173,22 @@ export function GenericResourceTable<T>({
           </div>
         )}
         <div className="rounded-xl bg-card/70 ring-1 ring-edge flex-1 min-h-0 flex items-center justify-center flex-col gap-4 p-8">
-          <div className="w-full max-w-2xl rounded-lg bg-bad/6 ring-1 ring-bad/20 p-4 overflow-auto max-h-64">
-            <p className="text-[11.5px] text-bad whitespace-pre-wrap font-mono leading-relaxed">{(error as any)?.message ?? String(error)}</p>
-          </div>
-          <button
-            onClick={onRetry}
-            className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25"
-          >
-            Retry
-          </button>
+          {errorMessage !== null && isForbidden(errorMessage) ? (
+            // Q21: a 403 on a core list is "no access", not a raw error box. No Retry: a 403 repeats (the TopBar refresh re-queries).
+            <ViewState state={{ kind: "no-access", unconfirmed: false }} things={title ?? "resources"} onRetry={onRetry} />
+          ) : (
+            <>
+              <div className="w-full max-w-2xl rounded-lg bg-bad/6 ring-1 ring-bad/20 p-4 overflow-auto max-h-64">
+                <p className="text-[11.5px] text-bad whitespace-pre-wrap font-mono leading-relaxed">{(error as any)?.message ?? String(error)}</p>
+              </div>
+              <button
+                onClick={onRetry}
+                className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25"
+              >
+                Retry
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -296,6 +312,13 @@ export function GenericResourceTable<T>({
                 sorted.map((item) => {
                   const key = keyFn(item);
                   const isSelected = key === selectedKey;
+                  // Read-only wins; then the view's own per-row reason. A row with a reason shows its trash dimmed,
+                  // never in the enabled look. Exclusive class strings: Tailwind's output order must not decide.
+                  const rowReason = readOnly ? READ_ONLY_REASON_SHORT : deleteReason?.(item);
+                  const trashReveal = rowReason
+                    ? "opacity-0 group-hover:opacity-50 group-focus-within:opacity-50 focus-visible:opacity-50 cursor-not-allowed"
+                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-bad hover:bg-bad/10";
+                  const rowDeleteLabel = typeof deleteLabel === "function" ? deleteLabel(item) : deleteLabel;
                   return (
                     <tr
                       key={key}
@@ -325,12 +348,19 @@ export function GenericResourceTable<T>({
                       {onDelete && (
                         <td className="px-2 py-2 align-middle w-12 pr-3" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={(e) => { e.stopPropagation(); if (readOnly) return; onDelete(item); }}
-                            {...(readOnly ? disabledAttrs(READ_ONLY_REASON_SHORT) : {})}
-                            className={`h-6 w-6 flex items-center justify-center rounded-sm text-dim hover:text-bad hover:bg-bad/10 transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/60 ${readOnly ? "cursor-not-allowed" : ""}`}
-                            {...(readOnly ? {} : { title: deleteLabel })}
+                            type="button"
+                            aria-label={rowDeleteLabel}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (rowReason) return;
+                              // WebKit does not focus a button on click; the confirm returns focus to the element focused when it opened.
+                              e.currentTarget.focus();
+                              onDelete(item);
+                            }}
+                            {...(rowReason ? disabledAttrs(rowReason) : { title: rowDeleteLabel })}
+                            className={`h-6 w-6 flex items-center justify-center rounded-sm text-mute transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${trashReveal}`}
                           >
-                            {deleteIcon ?? <Trash2 size={12} />}
+                            {deleteIcon ?? <Trash2 size={12} aria-hidden />}
                           </button>
                         </td>
                       )}

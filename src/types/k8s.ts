@@ -558,7 +558,7 @@ export type ResourceType =
   | "pods" | "deploy" | "sts" | "ds" | "cron" | "jobs" | "hpa" | "pdb" | "rs"
   | "svc" | "ing" | "netpol" | "gw" | "httproute" | "ep" | "eps"
   | "cm" | "sec" | "pv" | "pvc" | "sc" | "cert" | "rq" | "lr" | "vs"
-  | "nodes" | "events" | "crd" | "pc" | "mwc" | "vwc"
+  | "nodes" | "events" | "crd" | "pc" | "mwc" | "vwc" | "ns"
   | "sa" | "roles" | "croles" | "rbindings" | "crbindings"
   | "helm" | "argocd" | "flux-ks" | "flux-hr"
   | "argo-appsets" | "argo-projects" | "argo-repos"
@@ -608,7 +608,8 @@ export type SelectedResource =
   | { kind: "rs";  item: ReplicaSetRow; ns: string }
   | { kind: "mwc"; item: WebhookConfigRow }
   | { kind: "vwc"; item: WebhookConfigRow }
-  | { kind: "vs";  item: VolumeSnapshotRow; ns: string };
+  | { kind: "vs";  item: VolumeSnapshotRow; ns: string }
+  | { kind: "ns";  item: NamespaceRow };
 
 // ─── v0.4.0 additions ────────────────────────────────────────────────────────
 
@@ -628,6 +629,23 @@ export interface ResourceCondition {
   reason: string;
   message: string;
   last_transition: string;
+}
+
+/** Mirrors namespaces.rs NamespaceRow. */
+export interface NamespaceRow {
+  name: string;
+  /** status.phase verbatim: "Active" | "Terminating"; "" when the API sent none. */
+  phase: string;
+  /** Formatted age ("5d", "3h12m"); "—" when unknown. */
+  age: string;
+  /** metadata.labels, keys sorted. */
+  labels: Record<string, string>;
+  /** metadata.deletionTimestamp, RFC 3339; null when not being deleted. */
+  deletion_timestamp: string | null;
+  /** status.conditions in API order. */
+  conditions: ResourceCondition[];
+  /** spec.finalizers in API order. */
+  finalizers: string[];
 }
 
 export interface ServiceAccountRow {

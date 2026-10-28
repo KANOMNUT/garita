@@ -96,6 +96,12 @@ Each item carries its version tag.
     - Standard account with neither on PATH: Install shows `mkdir -p ~/.local/bin && ln -s '<exe>' ~/.local/bin/garita` and the `export PATH="$HOME/.local/bin:$PATH"` line; after running both, `garita` works in a new terminal, and Settings reads installed only after Garita is relaunched (`fix_path` reads PATH once, at startup).
     - Administrator on Apple Silicon (`/usr/local/bin` root-owned, nothing per-user on PATH): the `sudo ln -s … /usr/local/bin/garita` line as before; `mac_admin` reads true. `mac_admin` stands in for admin-group membership by testing write access to `/Applications`; a standard account must read false.
     - Administrator with a writable `/usr/local/bin` (Intel Homebrew): the link still lands in `/usr/local/bin`.
+- **Namespaces page and picker (unreleased), source-read only:**
+  - A namespace stuck in Terminating shows its `NamespaceContentRemaining` / `NamespaceFinalizersRemaining` conditions (status `True`) in the panel's "Why it is still deleting" section, and its row turns Terminating within one 5 s poll after the delete.
+  - The panel's Events tab finds events about a namespace: Kubernetes stores them in a namespace that is usually `default`, and the tab asks with `kind: "Namespace"` and an empty namespace (cluster-wide).
+  - YAML Save with its preview, Compare and Field managers on a namespace (the `ns` arms in `get_resource_yaml` / `apply_resource_yaml`, `gvk_for` and `get_resource_metadata` have unit tests only).
+  - The picker's forbidden state with a user who cannot list namespaces (the kube 403 text must classify as "no access"), and the Namespaces page's "no access" card for the same user.
+  - Visual checks (not done by sight): the picker under the 80 px header, its list height at a 600 px window, `ring-inset` focus rings inside the popover, the trash opacity reveal in the light theme, a 63-character name, the Labels column at the narrowest panel width, the Terminating pulse under reduced motion (the pulse keeps running until the `.animate-blink` reduced-motion fix lands).
 - **Edit-form transforms:** `src/components/edit/transforms.ts` is tested through `mergePatch` (`transforms.test.ts`). Transforms still inline in `.tsx` handlers are inspection-only (`check-emit.ts` cannot strip JSX).
 - On Windows the Rust tests need the MSVC `PATH` recipe (`CLAUDE.md` Development).
 

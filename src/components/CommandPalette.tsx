@@ -41,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "croles",     label: "Cluster Roles",         section: "Access Control" },
   { id: "rbindings",  label: "Role Bindings",         section: "Access Control" },
   { id: "crbindings", label: "Cluster Role Bindings", section: "Access Control" },
+  { id: "ns",         label: "Namespaces",            section: "Cluster" },
   { id: "nodes",      label: "Nodes",                 section: "Cluster" },
   { id: "events",     label: "Events",                section: "Cluster" },
   { id: "crd",        label: "CRDs",                  section: "Cluster" },

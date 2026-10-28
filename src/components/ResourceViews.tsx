@@ -3,7 +3,7 @@ import {
   Layers, Package, PackageMinus, List, Clock, Briefcase, Network, Globe,
   FileCode, Lock, Database, Server, Activity, TrendingUp, Puzzle, ShieldAlert, GitBranch,
   ShieldCheck, Boxes, FolderGit2, X, RefreshCw, RefreshCcw, GitMerge,
-  Waypoints, Split, Copy, Webhook, Camera,
+  Waypoints, Split, Copy, Webhook, Camera, FolderTree,
 } from "lucide-react";
 import { GenericResourceTable, type Column } from "./GenericResourceTable";
 import { ConfirmModal } from "./ConfirmModal";
@@ -26,7 +26,7 @@ import {
   useDeleteResource, useUninstallHelmRelease,
   useArgoCdAppSets, useArgoCdProjects, useArgoCdRepositories,
   useBulkSyncArgoCdApps, useBulkRefreshArgoCdApps,
-  usePermissions,
+  usePermissions, useNamespaceRows,
   useEndpoints, useEndpointSlices, useReplicaSets,
   useMutatingWebhooks, useValidatingWebhooks, useVolumeSnapshots, useCRDResources,
 } from "../hooks/useResources";
@@ -39,8 +39,10 @@ import type {
   FluxKustomization, FluxHelmRelease, GatewayInfo, HttpRouteInfo,
   ResourceQuotaInfo, LimitRangeInfo, PriorityClassInfo,
   ArgoCdAppSet, ArgoCdProject, ArgoCdRepository,
-  EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow, CRDResource,
+  EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow, CRDResource, NamespaceRow,
 } from "../types/k8s";
+import { podStatusStyle } from "../utils/podStatus";
+import { chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
 
 interface ViewProps { context: string; namespace: string; search?: string; selectedKey?: string | null; }
 
@@ -820,6 +822,94 @@ export const PVView = memo(function PVView({ context, search, selectedKey, onSel
         isPending={deleteResource.isPending}
       />
     </>
+  );
+});
+
+// ─── Namespaces (docs/ux/24 §4.4) ─────────────────────────────────────────────
+// Cluster-scoped kind `ns`. Create is TopBar New / ⌘N (the existing namespace form); delete is the typed confirm
+// that App hosts (DeleteNamespaceConfirm), opened from the row trash here and from the panel header.
+
+/** Quiet when normal, loud when not: forty green pills would hide the one Terminating row that matters. */
+function NamespaceStatus({ row }: { row: NamespaceRow }) {
+  if (isTerminating(row)) {
+    // The look of a Terminating pod: same table, same pulse.
+    const s = podStatusStyle("Terminating");
+    const since = deletingFor(row.deletion_timestamp);
+    return (
+      <span
+        title={since ? `Deleting for ${since}` : "This namespace is being deleted."}
+        className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] font-medium ${s.text} ${s.bg} ring-1 ${s.ring}`}
+      >
+        <span className="relative flex h-1.5 w-1.5" aria-hidden>
+          <span className={`absolute inset-0 rounded-full opacity-60 animate-blink ${s.dot}`} />
+          <span className={`relative rounded-full h-1.5 w-1.5 ${s.dot}`} />
+        </span>
+        Terminating
+      </span>
+    );
+  }
+  if (row.phase === "Active") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11.5px] text-mute">
+        <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
+        Active
+      </span>
+    );
+  }
+  if (row.phase === "") return <Mute t="—" />;
+  // A phase this app does not know: the word, neutral.
+  return (
+    <span className="inline-flex items-center px-2 py-[3px] rounded-md text-[11px] font-medium text-mute bg-surface-tint/5 ring-1 ring-edge">
+      {row.phase}
+    </span>
+  );
+}
+
+/** Up to two `key=value` chips, then `+N`. The title lists every label. */
+function NamespaceLabels({ labels }: { labels: Record<string, string> }) {
+  const all = chipLabels(labels);
+  if (all.length === 0) return <Mute t="—" />;
+  return (
+    <span className="flex items-center gap-1 min-w-0" title={all.map(([k, v]) => `${k}=${v}`).join("\n")}>
+      {all.slice(0, 2).map(([k, v]) => (
+        <span key={k} className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-mute max-w-[150px] truncate">
+          {k}={v}
+        </span>
+      ))}
+      {all.length > 2 && <span className="mono text-[10.5px] text-mute shrink-0">+{all.length - 2}</span>}
+    </span>
+  );
+}
+
+const namespaceColumns: Column<NamespaceRow>[] = [
+  { id: "name",   header: "Name",   sortable: true, sortValue: (r) => r.name,
+    cell: (r) => <span className="mono text-[12px] truncate" title={r.name}>{r.name}</span> },
+  { id: "status", header: "Status", width: 130, sortable: true, sortValue: (r) => r.phase, cell: (r) => <NamespaceStatus row={r} /> },
+  { id: "age",    header: "Age",    width: 80,  sortable: true, sortValue: (r) => parseAge(r.age), cell: (r) => <Mute t={r.age} /> },
+  { id: "labels", header: "Labels", cell: (r) => <NamespaceLabels labels={r.labels} /> },
+];
+
+export const NamespacesView = memo(function NamespacesView({ context, search, selectedKey, onSelect, onRequestDelete }: {
+  context: string;
+  search?: string;
+  selectedKey?: string | null;
+  onSelect?: (r: NamespaceRow) => void;
+  onRequestDelete: (name: string) => void;
+}) {
+  // The page polls (5 s while any row is Terminating); the picker and the forms read the same query without an interval.
+  const { data = [], isLoading, error, refetch } = useNamespaceRows(context, true);
+  const perm = usePermissions(context, "", "ns");
+  return (
+    <GenericResourceTable context={context} columns={namespaceColumns} data={data} isLoading={isLoading}
+      error={error} onRetry={refetch} keyFn={(r) => r.name}
+      selectedKey={selectedKey} onSelect={onSelect} search={search}
+      title="Namespaces" count={data.length} storageKey="ns"
+      emptyIcon={<FolderTree size={32} />} emptyText="No namespaces found."
+      onDelete={(r) => onRequestDelete(r.name)}
+      // The table checks read-only first, so only the RBAC, protected and Terminating reasons are decided here.
+      deleteReason={(r) => namespaceDeleteReason(r, { readOnly: false, canDelete: perm.canDelete })}
+      deleteLabel={(r) => `Delete namespace ${r.name}`}
+    />
   );
 });
 

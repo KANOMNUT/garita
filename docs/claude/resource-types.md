@@ -4,7 +4,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 ## Resource Types
 
-43 listable kinds. `ResourceType` (`src/types/k8s.ts`) has a 44th member, `crd-instances`: a *view* (Custom Resources sidebar tree), absent from `SelectedResource` and every per-kind table. **Scoped** = how Kubernetes scopes the object, not how Garita lists it.
+Every listable kind is a row below. `ResourceType` (`src/types/k8s.ts`) has one more member, `crd-instances`: a *view* (Custom Resources sidebar tree), absent from `SelectedResource` and every per-kind table. **Scoped** = how Kubernetes scopes the object, not how Garita lists it.
 
 | kind | Resource | Scoped |
 |------|----------|--------|
@@ -38,6 +38,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `pv` | PersistentVolume | cluster |
 | `sc` | StorageClass | cluster |
 | `nodes` | Node | cluster |
+| `ns` | Namespace | cluster; page + panel, deleted through `delete_namespace` (no `delete_resource` arm) |
 | `crd` | CRD | cluster |
 | `pc` | PriorityClass | cluster |
 | `mwc` | MutatingWebhookConfiguration | cluster |
@@ -54,7 +55,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 **`argocd` and its three siblings are namespaced objects.** Listing cluster-wide is a list strategy, not a scope. `resourceNamespace()` returns `resource.ns` for them (Events tab and guided edit depend on it); `gvk_for` marks `argocd` `namespaced: true`. Treating them as cluster-scoped sends `Api::all_with` on a write path and 404s.
 
-`resourceNamespace(resource): string | null` (`src/utils/scope.ts`) returns **`null`**, never `""`, for cluster-scoped kinds (`pv`, `sc`, `nodes`, `crd`, `croles`, `crbindings`, `pc`, `mwc`, `vwc`). `ResourceEditor` takes `namespace: string`, so callers coerce; `resource_edit.rs`'s `require_namespace()` turns a bad coercion into a readable error. `get_resource_yaml` / `apply_resource_yaml` use `fetch_all!` / `replace_all!` for these kinds.
+`resourceNamespace(resource): string | null` (`src/utils/scope.ts`) returns **`null`**, never `""`, for cluster-scoped kinds (`pv`, `sc`, `nodes`, `ns`, `crd`, `croles`, `crbindings`, `pc`, `mwc`, `vwc`). `ResourceEditor` takes `namespace: string`, so callers coerce; `resource_edit.rs`'s `require_namespace()` turns a bad coercion into a readable error. `get_resource_yaml` / `apply_resource_yaml` use `fetch_all!` / `replace_all!` for these kinds.
 
 ## Adding a New Resource Type
 
@@ -66,9 +67,9 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 6. Nav item in `Sidebar.tsx`. If the **view** should hide the namespace picker, extend `viewHidesNamespacePicker` (`src/utils/scope.ts`). Not the same question as object scope (see below).
 7. Route/case in `App.tsx`.
 8. `RESOURCE_QUERY_KEY` entry (`src/utils/resourceQueryKey.ts`). Refresh, `useDeleteResource` and `usePatchResource` read it. Missing = silent no-op invalidation.
-9. `delete_resource` arm in `pods.rs` if deletable. Omitting it is supported: `GenericResourceTable` delete is opt-in via `onDelete`. `ep` / `eps` have none (controller-owned).
+9. `delete_resource` arm in `pods.rs` if deletable. Omitting it is supported: `GenericResourceTable` delete is opt-in via `onDelete`. `ep` / `eps` have none (controller-owned). `ns` has none on purpose: a namespace deletes through `delete_namespace` (`useDeleteNamespace`, one typed `DeleteNamespaceConfirm` hosted in `App.tsx`), and the panel's generic delete confirm excludes `ns`.
 10. If the object is cluster-scoped, add it to `CLUSTER_SCOPED_KINDS` (`src/utils/scope.ts`). That one set feeds `resourceNamespace()`, the detail-panel delete confirm and `viewHidesNamespacePicker`. **It must equal the Rust `gvk_for` non-namespaced set**; `resource_edit.rs` and `scope.test.ts` test each side.
-11. `RESOURCE_LABELS` (`TopBar.tsx`), `kindLabel`, `isHealthy`, `OverviewContent` case, `NAV_ITEMS` row (`CommandPalette.tsx`). `tsc` catches the first three, not the last two.
+11. `RESOURCE_LABELS` (`src/utils/kindToResourceType.ts`), `kindLabel`, `isHealthy`, `OverviewContent` case, `NAV_ITEMS` row (`CommandPalette.tsx`). `tsc` catches the first three, not the last two.
 12. Optional create form: `CREATE_FORM` (`src/components/create/registry.ts`) + `resourceTemplates.ts`.
 13. Optional edit form: `gvk_for` row (`resource_edit.rs`) **and** `EDIT_FORM` entry (`src/components/edit/registry.ts`). A `gvk_for` row alone has no UI; an `EDIT_FORM` entry alone fails at runtime. New kinds usually need the `gvk_for` row anyway (compare, field managers).
 
@@ -101,7 +102,7 @@ Do not hard-code a total; the next kind makes it stale.
 
 | Site | Where | `tsc` catches? |
 |---|---|---|
-| `RESOURCE_LABELS` | `TopBar.tsx` | Yes (`Record<ResourceType, string>`) |
+| `RESOURCE_LABELS` | `src/utils/kindToResourceType.ts` | Yes (`Record<ResourceType, string>`); also the launcher's list of kinds the frontend accepts (`launchArgs.ts`) |
 | `kindLabel()` | `ResourceDetailPanel.tsx` | Yes (`Record<SelectedResource["kind"], string>`) |
 | `EVENT_INVOLVED_KIND` | `ResourceDetailPanel.tsx` | Yes. Kind sent to `get_resource_events`; `null` = no filter (`helm`). `flux-ks` → `Kustomization`, `flux-hr` → `HelmRelease`, `argocd` → `Application` |
 | `isHealthy()` | `ResourceDetailPanel.tsx` | Yes (explicit `: boolean`, no `default`) |
@@ -117,7 +118,7 @@ Do not hard-code a total; the next kind makes it stale.
 
 | Predicate | Members | Question |
 |---|---|---|
-| `resourceNamespace()` returns `null` | `CLUSTER_SCOPED_KINDS`: `pv`, `sc`, `nodes`, `crd`, `croles`, `crbindings`, `pc`, `mwc`, `vwc` | Is the **object** cluster-scoped? Drives the detail panel and every write path |
+| `resourceNamespace()` returns `null` | `CLUSTER_SCOPED_KINDS`: `pv`, `sc`, `nodes`, `ns`, `crd`, `croles`, `crbindings`, `pc`, `mwc`, `vwc` | Is the **object** cluster-scoped? Drives the detail panel and every write path |
 | `viewHidesNamespacePicker(view, crdNamespaced?)` (called by `TopBar.tsx`) | the set above + `argocd`, `argo-appsets`, `argo-projects`, `argo-repos`, and `crd-instances` **only when the selected CRD is cluster-scoped** | Should the **view** hide the picker? |
 
 `argocd` proves the difference: picker hidden (listed cluster-wide), object namespaced. Never use the picker predicate on a write path. Health pages use neither; their picker rule is `HEALTH_PAGES` (`resourceQueryKey.ts`).

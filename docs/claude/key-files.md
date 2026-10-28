@@ -9,13 +9,16 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions |
-| `src/components/Sidebar.tsx` | Nav, namespace list, context chip, Custom Resources tree |
-| `src/components/TopBar.tsx` | Draggable header, search, manual refresh, `RESOURCE_LABELS` |
+| `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"), context chip, Custom Resources tree. No namespace list |
+| `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu |
+| `src/components/NamespacePicker.tsx` | TopBar namespace picker: trigger + `Popover`, filter, "Terminating" tag, "Manage namespaces" link. Reads `useNamespaceRows`; no writes. See `ui.md` → Namespaces: picker and page |
+| `src/components/DeleteNamespaceConfirm.tsx` | The typed-name delete confirm for a namespace; one instance hosted in `App.tsx`, opened by the Namespaces page row trash and the panel header trash |
+| `src/utils/namespaces.ts` | Pure (with `namespaces.test.ts`): `PROTECTED_NAMESPACES`, `namespaceDeleteReason` and the reason strings, `isTerminating`, `namespaceRows` (picker rows), `namespaceNames`, `chipLabels`, `deletingFor` |
 | `src/components/PodTable.tsx` | Pod list: sort, status tabs, restart pill, bulk ops, CPU/MEM sparklines |
 | `src/components/DetailPanel.tsx` | Pod panel (Overview / Summary / Containers / Events / Logs / Shell / YAML / Metrics / Forward). Owns `useDebugSession` and `logView`. Content keyed `pod.name + "-" + tab` (remount on pod or tab change) |
 | `src/components/ResourceDetailPanel.tsx` | Panel for every other kind; tabs from `tabsFor()`. Default Overview / Summary / Events / YAML; ArgoCD Overview / Resources / History / Events; Helm Overview / Values / History / Events; workloads add Pods, Logs, Relationships; TLS Secrets add TLS; `Timeline` (v2.2.0) is added for `deploy`, `sts`, `ds`, `helm`, `argocd`. Hosts the editor pencil and delete |
 | `src/components/ResourceViews.tsx` | Table views for non-pod kinds |
-| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them) |
+| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them). Per-row `deleteReason` / function `deleteLabel` for the row trash; a forbidden list error renders the `ViewState` no-access card |
 | `src/utils/tableRows.ts` | Pure `searchRows`, `sortRows`, `shownRows`, `rangeSelect`, `SortState` (v2.3.1): the table's one search predicate and comparator, so `ArgoCDView` selects exactly the rows the table shows. See `argocd.md` |
 | `src/components/ConfirmModal.tsx` | Shared confirm dialog + `ClusterBadge`. See Confirm-on-Destructive |
 | `src/components/NodeDrainDialog.tsx` | Drain dialog on `ConfirmModal` `lg`, Override band, nested force-delete dialog |
@@ -118,7 +121,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/apply_file.rs` | Merge from file; `split_yaml_documents`; plurals via discovery |
 | `src-tauri/src/commands/access.rs` | `can_i` (fails open) |
 | `src-tauri/src/commands/admission.rs` | Mutating/validating webhooks; `WebhookConfigRow.matches` |
-| `src-tauri/src/commands/namespaces.rs` | Namespaces |
+| `src-tauri/src/commands/namespaces.rs` | Namespaces: `list_namespace_rows` (`NamespaceRow`: phase, age, labels, deletion time, conditions, finalizers) behind the page, the picker and every names reader |
 | `src-tauri/src/commands/cluster_info.rs` | Cluster metadata, `check_cluster_access`, `list_events`, `get_resource_events(…, kind: Option<String>)` |
 | `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()` |
 | `src-tauri/src/commands/flux.rs`, `gateway.rs`, `certmanager.rs` | CRD lists via `DynamicObject`; empty on 404 |
