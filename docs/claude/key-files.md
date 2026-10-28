@@ -15,11 +15,13 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/components/DetailPanel.tsx` | Pod panel (Overview / Summary / Containers / Events / Logs / Shell / YAML / Metrics / Forward). Owns `useDebugSession` and `logView`. Content keyed `pod.name + "-" + tab` (remount on pod or tab change) |
 | `src/components/ResourceDetailPanel.tsx` | Panel for every other kind; tabs from `tabsFor()`. Default Overview / Summary / Events / YAML; ArgoCD Overview / Resources / History / Events; Helm Overview / Values / History / Events; workloads add Pods, Logs, Relationships; TLS Secrets add TLS; `Timeline` (v2.2.0) is added for `deploy`, `sts`, `ds`, `helm`, `argocd`. Hosts the editor pencil and delete |
 | `src/components/ResourceViews.tsx` | Table views for non-pod kinds |
-| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]` |
+| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them) |
+| `src/utils/tableRows.ts` | Pure `searchRows`, `sortRows`, `shownRows`, `rangeSelect`, `SortState` (v2.3.1): the table's one search predicate and comparator, so `ArgoCDView` selects exactly the rows the table shows. See `argocd.md` |
 | `src/components/ConfirmModal.tsx` | Shared confirm dialog + `ClusterBadge`. See Confirm-on-Destructive |
 | `src/components/NodeDrainDialog.tsx` | Drain dialog on `ConfirmModal` `lg`, Override band, nested force-delete dialog |
 | `src/hooks/useNodeDrain.ts` | Drain state machine, called from `NodeOverview`; hooks only, never `invoke` |
-| `src/utils/updateState.ts` | `UpdateState` and its pure transitions for Settings → Updates and the Sidebar notice (the plugin calls live in `useAppUpdate`, `useResources.ts`) |
+| `src/utils/updateState.ts` | `UpdateState` and its pure transitions for Settings → Updates and the Sidebar notice (the plugin calls live in `useAppUpdate`, `useResources.ts`); `updateMode` calls `isMacUserAgent` |
+| `src/utils/platform.ts` | `isMacUserAgent(userAgent)`: the one macOS test in the app (`updateMode`, the YAML find shortcut) |
 | `src/utils/launchArgs.ts` | Pure plan for forwarded launch args (strip lines, deferral, namespace check) |
 | `src/utils/cliStatus.ts` | Pure model of `CliStatus` for Settings → Command line |
 | `src/utils/drain.ts` | Pure drain helpers; owns the `deleting` / `force-deleted` row states (never in `EvictionOutcome`) |
@@ -28,7 +30,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/components/ObservabilityDialog.tsx` | v2.3.0 per-cluster observability dialog (discovery, Test, Save) and its `ObservabilityDialogHost`. See `pods-logs.md` (External observability), `ui.md` |
 | `src/utils/observability.ts` | Validators mirroring `observability.rs`, `LOG_LABEL_PRESETS`, `targetKey` / `probeKey`, `METRIC_RANGES` / `rangeWindow`, `samePlotExceptRange`, `isForbidden`, draft logic, `requestObservabilityDialog` pub/sub |
 | `src/components/MetricChart.tsx` / `src/utils/metricChart.ts` | Metric history chart in the pod Metrics tab, and its pure helpers (`splitSegments`, `plotSegments`, `toPercent`, stored range) |
-| `src/utils/segmented.ts` | `stepIndex`: the one-step wrap-around index `Segmented` uses for arrow keys |
+| `src/utils/segmented.ts` | `stepIndex`: the one-step wrap-around index `Segmented` uses for arrow keys; the YAML find steps matches with it too |
 | `src/utils/rightSizing.ts` | Right-sizing hints; v2.3.0 adds `p95Hints`, `percentile`, `withSessionFallback`, `P95_MIN_POINTS`. See `health.md` |
 | `src/components/LogViewer.tsx` / `MultiLogViewer.tsx` | Single-pod and workload log viewers via `startLogStream`; 5,000-line ring buffer; multi-pod caps 20 pods |
 | `src/components/LogViewBar.tsx` / `LogLine.tsx` | Log View group and row renderer. See Log viewers |
@@ -71,7 +73,8 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/viewState.ts` / `src/components/ViewState.tsx` | Not installed / No access / Nothing here |
 | `src/components/health/` / `src/utils/problems.ts` | Problems and Node capacity pages, `FindingRow`, `ExplainCard`; `RULES` table |
 | `src/components/graph/` / `src/utils/graphLayout.ts` | `GraphCanvas` (keyboard canvas), `GraphList` (list fallback); `layout`, `rankColumns`, `layoutKey`, `readingOrder` (own layered layout, no dependency) |
-| `src/components/health/MapPage.tsx` / `NetpolView.tsx` / `src/utils/resourceMap.ts` / `src/utils/netpolEval.ts` | The Map page and its Network policies (approximation) mode. Pure: `prepareMap`, `groupPods`, `MAP_COLUMN`, `SKIPPED_COPY`, `mapState`; `evaluateNetpol`, `podReach` |
+| `src/components/health/MapPage.tsx` / `NetpolView.tsx` / `src/utils/resourceMap.ts` / `src/utils/netpolEval.ts` | The Map page and its Network policies (approximation) mode. Pure: `prepareMap`, `groupPods`, `MAP_COLUMN`, `SKIPPED_COPY`, `mapState`; the kind filter (v2.3.1): `KIND_GROUPS`, `ALL_KINDS`, `KIND_SOURCE`, `countByKind`, `hideKinds`, `groupState`, `setGroupShown`, `hiddenPresent`, `zeroReason`, `groupZeroReason`, `matchLineText`, `hiddenLinks`, `hiddenLinkText`, `kindsAnnouncement`; `evaluateNetpol`, `podReach`. `KindFilter` and `GroupChip` (the group dropdowns) live in `MapPage.tsx`. See `ui.md` |
+| `src/components/YamlFind.tsx` / `src/utils/yamlFind.ts` | YAML find (v2.3.1): one component for the generic YAML tab, the Helm Values tab (`ResourceDetailPanel.tsx`) and the Pod YAML tab (`DetailPanel.tsx`), with the edit-view overlay; pure `yamlMatches`, `yamlSegments`, `findCountText`, `findStatusText`, `shortcutMatches`, `prefillFrom`, `scrollTopFor`. Reuses `logFilter.ts` matching. See `ui.md` → YAML find (v2.3.1) |
 | `src/components/WhoCanReachSection.tsx` | Pod panel section "Who can reach this pod (approximation)" |
 | `src/components/TimelineTab.tsx` / `src/utils/timeline.ts` | Change timeline tab; pure `mergeTimeline`, `groupByDay`, `parseTs`, `TIMELINE_KINDS` |
 | `src/utils/capacity.ts` / `nodeLabels.ts` / `rightSizing.ts` / `constraints.ts` | Health helpers; `SizingHint.tsx`, `ConstraintsSection.tsx` render them |

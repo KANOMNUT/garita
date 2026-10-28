@@ -117,6 +117,7 @@ How multi-agent runs work here. The Boot step in every `.claude/agents/*.md` mak
 - v2.1.3 tests: Rust `launch::tests` (parser, kind table, help names, namespace validation), `commands::launcher::tests` (take rule), `commands::cli::tests` (`CliStatus` rows, `plan_install`, quoting); TS `launchArgs`, `cliStatus`, `updateState` (Windows notice), `writeBackstop` (`install_cli_command` exempt). The `cfg(unix)` code needs a check on macOS and Linux (`open-items.md`).
 - v2.2.0 tests: Rust `map::tests` (each edge function, `limit_component`, the injected root-CA ConfigMap, forbidden Secrets, `ready_endpoints`), `netpol::tests` (peer shapes, ports, defaulted `policy_types`, `pod_labels`), plus the R3 additions (`last_timestamp` fallback in `cluster_info.rs`, `revision_info` `created_at`, `JournalFilter` in `journal.rs`); TS `graphLayout`, `resourceMap`, `netpolEval`, `timeline`, and the `journalResourceType` additions to `journal`.
 - v2.3.0 tests: Rust `observability::tests` (`proxy_path`, `classify`, `read_capped`, `valid_tenant`, discovery rules and reasons, sort order), `prometheus::tests` (each template, `parse_matrix`, caps, `outcome`, per-flavour classifiers), `logs_backend::tests` (presets, queries, Loki and VictoriaLogs parsing); TS `observability`, `metricChart`, `segmented`, `lineage`, `focusBanner` (`resourceMap`), `elbow`, `spreadLabels`, `clampToGap` and the routing invariant (`graphLayout`), plus additions to `clusterIdentity`, `logSource` and `rightSizing`.
+- v2.3.1 tests (TS only, no Rust change): `tableRows`, `yamlFind`, `platform`, plus additions to `resourceMap` (the kind filter helpers, and `prepareMap` grouping pods before hiding kinds).
 
 ## Requirements
 
@@ -131,7 +132,7 @@ Per-feature contracts live in `docs/claude/`. Most carry "do not simplify this b
 | Where a file lives | `key-files.md` |
 | Resource kinds, per-kind tables, cluster scope | `resource-types.md` |
 | Pods, containers, logs (filters, JSON, multi-pod narrowing), shell, debug containers, metrics | `pods-logs.md` |
-| TopBar, panels, ⌘K, `ConfirmModal`, keyboard/Esc, cluster identity, theme/accent/colour tokens, read-only/guardrails, Settings, compare, field managers, app views (Journal, Who can, Health pages), resource map, NetworkPolicy view, change timeline | `ui.md` |
+| TopBar, panels, ⌘K, `ConfirmModal`, keyboard/Esc, cluster identity, theme/accent/colour tokens, read-only/guardrails, Settings, compare, field managers, app views (Journal, Who can, Health pages), resource map (incl. the Kinds filter), NetworkPolicy view, change timeline, YAML find (`⌘F` / `Ctrl+F` in the YAML views) | `ui.md` |
 | Create/edit forms, `patch.ts`, validators, merge-from-file, delete, neat YAML, TLS, previews, diff rows, kubectl equivalents, rollout diff, Secret values in the webview | `writes.md` |
 | App log, Diagnostics, action journal (`app_log.rs`, `journal.rs`, `commands/diagnostics.rs`) | `diagnostics.md` |
 | Helm (incl. redacted Values, release decoding) | `helm.md` |
