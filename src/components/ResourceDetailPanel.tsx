@@ -47,6 +47,11 @@ import { NodeDrainDialog, DrainResultCard } from "./NodeDrainDialog";
 import { useNodeDrain } from "../hooks/useNodeDrain";
 import { defaultLogView } from "../utils/logFilter";
 import { podStatusStyle } from "../utils/podStatus";
+import {
+  ARGO_CHIP_CLS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount,
+  argoSyncPill, filterArgoResources, isArgoHealthy, isDegradedOrMissing, visibleHealthFilters,
+  type ArgoHealthStatus, type ArgoPill, type ArgoSyncStatus,
+} from "../utils/argoStatus";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -67,43 +72,9 @@ function StatusDot({ healthy }: { healthy: boolean }) {
   );
 }
 
-// ─── ArgoCD status pills (ARGO-1) ─────────────────────────────────────────────
-// One definition for the panel header, the Overview and the Resources tab. Health and Sync are independent
-// (argocd.md): a Healthy but OutOfSync Application is normal, so neither one may be folded into the other.
-
-interface ArgoPill { label: string; icon: string; cls: string }
-
-const ARGO_NEUTRAL_CLS = "bg-surface-tint/5 text-mute ring-edge";
-
-const ARGO_HEALTH_PILL: Record<string, ArgoPill> = {
-  Healthy:     { label: "Healthy",     icon: "●", cls: "bg-ok/10 text-ok ring-ok/30" },
-  Degraded:    { label: "Degraded",    icon: "✕", cls: "bg-bad/10 text-bad ring-bad/30" },
-  Progressing: { label: "Progressing", icon: "↻", cls: "bg-status-progress/10 text-status-progress ring-status-progress/30" },
-  Missing:     { label: "Missing",     icon: "?", cls: "bg-warn/10 text-warn ring-warn/30" },
-  Suspended:   { label: "Suspended",   icon: "⏸", cls: ARGO_NEUTRAL_CLS },
-  Unknown:     { label: "Unknown",     icon: "?", cls: ARGO_NEUTRAL_CLS },
-};
-const ARGO_SYNC_PILL: Record<string, ArgoPill> = {
-  Synced:    { label: "Synced",    icon: "✓", cls: "bg-ok/10 text-ok ring-ok/30" },
-  OutOfSync: { label: "OutOfSync", icon: "↑", cls: "bg-warn/10 text-warn ring-warn/30" },
-  Unknown:   { label: "Unknown",   icon: "?", cls: ARGO_NEUTRAL_CLS },
-};
-const ARGO_PHASE_PILL: Record<string, ArgoPill> = {
-  Succeeded: { label: "Succeeded", icon: "✓", cls: "bg-ok/10 text-ok ring-ok/30" },
-  Running:   { label: "Running",   icon: "↻", cls: "bg-status-progress/10 text-status-progress ring-status-progress/30" },
-  Failed:    { label: "Failed",    icon: "✕", cls: "bg-bad/10 text-bad ring-bad/30" },
-  Error:     { label: "Error",     icon: "✕", cls: "bg-bad/10 text-bad ring-bad/30" },
-};
-
-function argoHealthPill(status: string): ArgoPill {
-  return ARGO_HEALTH_PILL[status] ?? { label: status || "Unknown", icon: "?", cls: ARGO_NEUTRAL_CLS };
-}
-function argoSyncPill(status: string): ArgoPill {
-  return ARGO_SYNC_PILL[status] ?? { label: status || "Unknown", icon: "?", cls: ARGO_NEUTRAL_CLS };
-}
-function argoPhasePill(phase: string): ArgoPill {
-  return ARGO_PHASE_PILL[phase] ?? { label: phase, icon: "?", cls: ARGO_NEUTRAL_CLS };
-}
+// ─── ArgoCD status chip (ARGO-1) ──────────────────────────────────────────────
+// The pill tables and the Resources-tab filter logic are pure and live in utils/argoStatus.ts, shared by the panel
+// header, the Overview and the Resources tab. Health and Sync are independent (argocd.md).
 
 /** A Health or Sync chip in the panel header. The glyph is decoration; the sr-only prefix names the status. */
 function ArgoStatusChip({ which, pill }: { which: "Health" | "Sync"; pill: ArgoPill }) {
@@ -1728,7 +1699,7 @@ function isHealthy(resource: SelectedResource): boolean {
     case "sc":        return true;
     case "pdb":       return resource.item.disruptions_allowed > 0;
     case "cert":      return resource.item.ready;
-    case "argocd":    return resource.item.health_status === "Healthy";
+    case "argocd":    return isArgoHealthy(resource.item.health_status);
     case "argo-appsets":  return resource.item.status === "Healthy";
     case "argo-projects": return !resource.item.orphaned_warn;
     case "gw":        return resource.item.status === "Healthy";
@@ -1765,27 +1736,6 @@ function resourceName(resource: SelectedResource): string {
 type Tab = "Overview" | "Summary" | "Events" | "YAML" | "Values" | "Resources" | "Pods" | "Logs" | "Relationships" | "History" | "TLS" | "Timeline";
 
 // ─── ArgoCD managed resources tab ────────────────────────────────────────────
-
-type ArgoHealthStatus = "Healthy" | "Progressing" | "Degraded" | "Missing" | "Suspended" | "Unknown";
-type ArgoSyncStatus = "Synced" | "OutOfSync";
-
-const HEALTH_FILTERS: ArgoHealthStatus[] = ["Healthy", "Progressing", "Degraded", "Missing", "Suspended", "Unknown"];
-// Suspended and Unknown chips appear only while some resource has that status (or the filter is on).
-const ALWAYS_HEALTH_CHIPS: ArgoHealthStatus[] = ["Healthy", "Progressing", "Degraded", "Missing"];
-const SYNC_FILTERS: ArgoSyncStatus[] = ["Synced", "OutOfSync"];
-
-// Filter chip classes per status. Literal strings so Tailwind sees them. The inactive look comes from the
-// background and ring, never from fading the text (X-2).
-const ARGO_CHIP_CLS: Record<ArgoHealthStatus | ArgoSyncStatus, { on: string; off: string }> = {
-  Healthy:     { on: "bg-ok/20 text-ok ring-ok/40",                                   off: "bg-ok/10 text-ok ring-ok/20 hover:bg-ok/20" },
-  Progressing: { on: "bg-status-progress/20 text-status-progress ring-status-progress/40", off: "bg-status-progress/10 text-status-progress ring-status-progress/20 hover:bg-status-progress/20" },
-  Degraded:    { on: "bg-bad/20 text-bad ring-bad/40",                                off: "bg-bad/10 text-bad ring-bad/20 hover:bg-bad/20" },
-  Missing:     { on: "bg-warn/20 text-warn ring-warn/40",                             off: "bg-warn/10 text-warn ring-warn/20 hover:bg-warn/20" },
-  Suspended:   { on: "bg-surface-tint/10 text-mute ring-edge-strong",                 off: "bg-surface-tint/5 text-mute ring-edge hover:bg-surface-tint/10" },
-  Unknown:     { on: "bg-surface-tint/10 text-mute ring-edge-strong",                 off: "bg-surface-tint/5 text-mute ring-edge hover:bg-surface-tint/10" },
-  Synced:      { on: "bg-ok/20 text-ok ring-ok/40",                                   off: "bg-ok/10 text-ok ring-ok/20 hover:bg-ok/20" },
-  OutOfSync:   { on: "bg-warn/20 text-warn ring-warn/40",                             off: "bg-warn/10 text-warn ring-warn/20 hover:bg-warn/20" },
-};
 
 /**
  * The kind cell of a managed-resource row (X-1). The row's onClick stays for the mouse; a clickable kind is a native
@@ -1864,21 +1814,13 @@ function ArgoCdResourcesTab({
 
   // Counts are per status and always taken from the full unfiltered list: a Missing resource is counted
   // under Missing, not Degraded, and a Healthy but OutOfSync one is counted under both Healthy and OutOfSync.
-  const healthCount = (st: ArgoHealthStatus) => resources.filter(r => r.health_status === st).length;
-  const syncCount = (st: ArgoSyncStatus) => resources.filter(r => r.sync_status === st).length;
+  const healthCount = (st: ArgoHealthStatus) => argoHealthCount(resources, st);
+  const syncCount = (st: ArgoSyncStatus) => argoSyncCount(resources, st);
 
   // Filter, then sort so problematic rows come first
-  const displayed = resources.filter(r =>
-    (healthFilter === "all" || r.health_status === healthFilter) &&
-    (syncFilter === "all" || r.sync_status === syncFilter));
+  const displayed = filterArgoResources(resources, healthFilter, syncFilter);
 
-  const sortScore = (r: ArgoCdResource) =>
-    (r.health_status === "Degraded" || r.health_status === "Missing") ? 0
-    : r.sync_status === "OutOfSync" ? 1
-    : r.health_status === "Progressing" ? 2
-    : 3;
-
-  const sorted = [...displayed].sort((a, b) => sortScore(a) - sortScore(b));
+  const sorted = [...displayed].sort((a, b) => argoSortScore(a) - argoSortScore(b));
 
   // Grouped view: group by kind, within each kind sort by health priority
   const groupedRows: Array<{ kind: string; items: ArgoCdResource[] }> = [];
@@ -1890,7 +1832,7 @@ function ArgoCdResourcesTab({
       byKind.set(r.kind, list);
     }
     for (const [kind, items] of byKind) {
-      groupedRows.push({ kind, items: [...items].sort((a, b) => sortScore(a) - sortScore(b)) });
+      groupedRows.push({ kind, items: [...items].sort((a, b) => argoSortScore(a) - argoSortScore(b)) });
     }
   }
 
@@ -1902,7 +1844,7 @@ function ArgoCdResourcesTab({
           {resources.length} resources
         </span>
         <div role="group" aria-label="Health" className="flex items-center gap-1.5 flex-wrap">
-          {HEALTH_FILTERS.filter(st => healthCount(st) > 0 || st === healthFilter || ALWAYS_HEALTH_CHIPS.includes(st)).map((st) => (
+          {visibleHealthFilters(resources, healthFilter).map((st) => (
             <button
               key={st}
               type="button"
@@ -1990,7 +1932,7 @@ function ArgoCdResourcesTab({
         <tbody>
           {grouped ? (
             groupedRows.map(({ kind, items }) => {
-              const degradedInKind = items.filter(r => r.health_status === "Degraded" || r.health_status === "Missing").length;
+              const degradedInKind = items.filter(isDegradedOrMissing).length;
               return (
                 <Fragment key={`group-${kind}`}>
                   <tr className="bg-surface-tint/2 border-b border-edge">
@@ -2005,7 +1947,7 @@ function ArgoCdResourcesTab({
                   {items.map((r, i) => {
                     const targetKind = KIND_TO_RESOURCE_TYPE[r.kind];
                     const clickable = !!targetKind && !!onNavigate;
-                    const isDegraded = r.health_status === "Degraded" || r.health_status === "Missing";
+                    const isDegraded = isDegradedOrMissing(r);
                     const isOutOfSync = !isDegraded && r.sync_status === "OutOfSync";
                     const rowKey = `${kind}-${i}`;
                     const isExpanded = expandedOutOfSync.has(rowKey);
@@ -2069,7 +2011,7 @@ function ArgoCdResourcesTab({
             sorted.map((r, i) => {
               const targetKind = KIND_TO_RESOURCE_TYPE[r.kind];
               const clickable = !!targetKind && !!onNavigate;
-              const isDegraded = r.health_status === "Degraded" || r.health_status === "Missing";
+              const isDegraded = isDegradedOrMissing(r);
               const isOutOfSync = !isDegraded && r.sync_status === "OutOfSync";
               const firstTdBorder = isDegraded
                 ? "border-l-2 border-bad/60"
@@ -3390,9 +3332,9 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
               ? <>
                   {t}
                   <span className="ml-1 px-1.5 py-px rounded-full bg-surface-tint/8 text-[10px] text-mute">{argoResources.length}</span>
-                  {argoResources.filter(r => r.health_status === "Degraded" || r.health_status === "Missing").length > 0 && (
+                  {argoResources.filter(isDegradedOrMissing).length > 0 && (
                     <span className="ml-1 px-1 py-px rounded-full bg-bad/80 text-on-accent text-[9px]">
-                      {argoResources.filter(r => r.health_status === "Degraded" || r.health_status === "Missing").length}
+                      {argoResources.filter(isDegradedOrMissing).length}
                     </span>
                   )}
                 </>

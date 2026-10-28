@@ -1803,7 +1803,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
 
   const columns = useMemo<Column<ArgoCdApp>[]>(() => [
     {
-      id: "sel", header: "", width: 28,
+      id: "sel", header: "", width: 28, interactive: true,
       cell: (a) => {
         const key = argoKey(a);
         return (

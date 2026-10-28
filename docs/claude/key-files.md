@@ -26,6 +26,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/cliStatus.ts` | Pure model of `CliStatus` for Settings → Command line |
 | `src/utils/drain.ts` | Pure drain helpers; owns the `deleting` / `force-deleted` row states (never in `EvictionOutcome`) |
 | `src/utils/podStatus.ts` | `POD_STATUS_STYLE`, `podStatusStyle`: the one pod status vocabulary and its token classes, read by `PodTable`, `DetailPanel` and the workload Pods tab. See `pods-logs.md` |
+| `src/utils/argoStatus.ts` | Pure ArgoCD status logic (with `argoStatus.test.ts`): the Health, Sync and operation pill tables (`argoHealthPill`, `argoSyncPill`, `argoPhasePill`), `isArgoHealthy`, the Resources tab filter groups (`filterArgoResources`, `argoHealthCount`, `argoSyncCount`, `visibleHealthFilters`, `ARGO_CHIP_CLS`) and row order (`argoSortScore`, `isDegradedOrMissing`). See `argocd.md` |
 | `src/utils/modalLayer.ts` | `useModalLayer`, `isModalOpen`, `isEditableTarget`. See Keyboard layering |
 | `src/components/Popover.tsx` | The one popover primitive; registers a modal layer |
 | `src/components/ObservabilityDialog.tsx` | v2.3.0 per-cluster observability dialog (discovery, Test, Save) and its `ObservabilityDialogHost`. See `pods-logs.md` (External observability), `ui.md` |

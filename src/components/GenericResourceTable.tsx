@@ -15,6 +15,11 @@ export interface Column<T> {
   sortable?: boolean;
   sortValue?: (item: T) => string | number;
   cell: (item: T) => React.ReactNode;
+  /**
+   * The cell holds a control (a checkbox, button or link). A button cannot contain another control, so the
+   * row's name button (X-1) goes in the first visible column that is not `interactive`.
+   */
+  interactive?: boolean;
 }
 
 interface Props<T> {
@@ -145,6 +150,10 @@ export function GenericResourceTable<T>({
   const visibleColumns = columns.filter(
     (col, i) => i === 0 || !hiddenCols.has(col.id),
   );
+  // X-1: the one keyboard stop of a row. The <tr onClick> stays for the mouse; the name cell holds a native
+  // button with no handler, and Enter / Space dispatch a click that bubbles to the row. It cannot wrap a cell
+  // that holds a control, so it goes in the first column that is not `interactive` (-1: none, no button).
+  const nameColIndex = visibleColumns.findIndex((col) => !col.interactive);
 
   if (error && !presenceKey) {
     return (
@@ -300,7 +309,17 @@ export function GenericResourceTable<T>({
                           key={col.id}
                           className={`px-2 py-2 align-middle ${ci === 0 ? "pl-3 row-bar" : ""} ${!onDelete && ci === visibleColumns.length - 1 ? "pr-3" : ""}`}
                         >
-                          {col.cell(item)}
+                          {onSelect && ci === nameColIndex ? (
+                            <button
+                              type="button"
+                              aria-current={isSelected ? "true" : undefined}
+                              className="max-w-full text-left rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                            >
+                              {col.cell(item)}
+                            </button>
+                          ) : (
+                            col.cell(item)
+                          )}
                         </td>
                       ))}
                       {onDelete && (
