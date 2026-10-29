@@ -319,6 +319,7 @@ details[open] > summary .chev {
 
 @media (prefers-reduced-motion: reduce) {
   .animate-spin,
+  .animate-blink,
   .slide-in,
   .fade-in {
     animation: none;

@@ -155,6 +155,10 @@ export interface Pod {
   ephemeral_containers?: EphemeralContainerInfo[];
   /** spec.priorityClassName (v1.4.0). Optional so MOCK_PODS compiles. */
   priority_class?: string | null;
+  /** spec.serviceAccountName; null when absent. Optional so fixtures compile. */
+  service_account?: string | null;
+  /** status.conditions in API order (shape shared with get_workload_conditions). Optional so fixtures compile. */
+  conditions?: ResourceCondition[];
 }
 
 // v1.3.1 — ephemeral debug containers (mirrors pods.rs EphemeralContainerInfo).

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A Namespaces page.** "Namespaces" is the first item in the sidebar's Cluster section (and in the command palette). It lists every namespace with its status (Active, or Terminating with how long it has been deleting), age and labels, and opens the usual detail panel: Overview, Summary (labels and annotations), Events and YAML, plus Compare and field managers. For a namespace that is stuck in Terminating, the Overview explains what is blocking it (the namespace's own conditions) and points to Events and YAML. **New** and Ctrl/Cmd+N create a namespace here, and the trash button deletes one after you type its name. A deleted namespace usually stays Terminating for a while; the page refreshes every 5 seconds until it is gone. "Show pods in this namespace" in the panel jumps to the Pods list for it.
 - **`garita ns` opens the Namespaces page.** On the command line, `ns`, `namespace` and `namespaces` now name the Namespaces page, like `garita nodes`. They used to be ignored. A `-n` namespace given with it is dropped, because the page lists all namespaces.
+- **Pods table: sort by CPU and Memory, and a count on every status.** Both columns sort by the number they show (usage when metrics are available, otherwise the request), from the header or the Sort menu ("CPU most first"). Each status button shows how many pods have that status under the current label and search filters. When a status or label filter leaves nothing, the empty state offers "Clear status and label filters".
+- **Copy buttons say what happened.** "Copy pod name", the YAML "Copy" and "Copy neat", and the Pods table's "Copy names" switch to "Copied …" for a moment, or to "Couldn't copy" when the clipboard is denied. Screen readers announce the same text.
 
 ### Changed
 
@@ -19,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`kube-node-lease` can no longer be deleted from the app,** like `default`, `kube-system` and `kube-public`. Its delete button is dimmed and gives the reason in its tooltip.
 - **A list you may not read says so.** When your account is not allowed to list a resource (a 403), every resource list except Pods now shows "You don't have access to …" instead of the raw error text.
 - **ArgoCD: the Actions card comes first.** An Application's Overview now opens with Actions (the Prune, Dry run and Force options, Sync, Refresh and Hard Refresh) instead of ending with them below the field list, and the field list gains a **Sync policy** row that reads Automated or Manual.
+- **The Pod panel's Overview and Summary tabs are one Summary tab.** They repeated each other (labels twice in two styles, the phase and node three times). Summary is now the first tab and holds Metadata, Conditions, Container States and Labels, followed by the existing Constraints, "Who can reach this pod" and field managers.
+- **Pods table: "Copy names" keeps your selection,** so you can copy the names and then delete or restart the same pods.
+- **A Running pod that is not ready stands out.** In the Pods table and the panel header the ready count (such as 0/1) turns amber, with "Running but not ready" as its tooltip.
+- **The Pod Events tab matches the other panels' Events tab.** It has a Warnings-only filter, an event count, "Warning" or "Normal" written out beside the colour, and a note that Kubernetes keeps events for about an hour.
+- **The log toolbar has less chrome.** The "View" heading is gone, and the note about what filters match shows only while a filter is set. Previous and Follow are written in sentence case and report whether they are on.
+- **Pod panel text is never smaller than 10.5 px,** and sentences are no longer set in the monospace font (names, ports, numbers and commands still are). Text fields in the port-forward form and the log toolbar have a visible outline, and the focus rings on the Pod panel's own controls, the Pods table and the log toolbar are strong enough to see in both themes.
 
 ### Fixed
 
@@ -35,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Keyboard: the ENV, MOUNTS and PROBES sections keep focus.** Opening one used to drop keyboard focus, so you had to Tab from the top again; focus now stays on the header, which also reports whether it is expanded.
 - **Icon-only controls have names.** The close buttons, the pod Actions menu, the pod row checkboxes, the port-forward stop button and the panel's Edit and Delete buttons are announced by screen readers.
 - **Text contrast in the Pod panel, the resource panels and the ArgoCD Applications list.** Secondary text (field names, dates, "req / lim" lines, log toolbar labels, the Unknown and Suspended badges) and the faded status text on filter chips used a colour below the 4.5:1 minimum in both themes, as did the "no access" and "not installed" messages in resource lists. They now use the readable secondary colour or the full status colour.
+- **The Pod panel no longer shows made-up data.** The Service account was always "default", and the Conditions were guessed from the pod's phase, so a Running pod whose readiness probe was failing read "Ready: True" next to a header that said 0/1 ready. Both now come from the pod itself: the real service account and the real conditions with their reasons and messages (the card is hidden when the pod has none).
+- **Pods table: CPU and Memory say whether they show usage or a request.** Without metrics the numbers were the request but looked like usage; they now end in "req", and the column tooltip explains it. A pod without a limit is no longer drawn against an invented 500 m / 512 Mi, so it no longer shows a full red bar: the bar uses the limit, or twice the request for usage, or is left out and only the number is shown. The Metrics tab's fallback lists the request and limit the same way.
+- **The Shell tab, Exec shell and a container's exec link explain themselves in read-only mode.** Clicking them did nothing. They now open the Shell tab, which says why shells are blocked.
+- **Events and YAML tabs show a load error.** A failed request used to read "No events found" or leave the YAML blank. They now say "Couldn't load …" with the message and a Retry button.
+- **The pod Actions menu, and the Pods table Labels and Sort menus, close with Esc without closing the panel.** Esc used to deselect the pod underneath an open menu. Focus returns to the button, and a click elsewhere closes the menu.
+- **Screen readers: tab, filter and sort state is announced.** The Pod panel tabs, the status filter, the label chips, the sortable column headers (now buttons, with their sort direction), and the log toolbar's Previous and Follow report which one is selected.
+- **The port-forward form has labelled fields and checks the ports.** "Pod port" and "Local port" are labelled, an empty or out-of-range port (not 1 to 65535) is flagged, and Start forward stays disabled with the reason instead of sending a bad value. The Stop button is larger and says which forward it stops.
+- **The pulsing status dot respects "reduce motion".** Pending, CrashLoopBackOff, ImagePullBackOff and Terminating pods, and the log "Following" dot, no longer pulse for people who asked the system for less motion.
 
 ## [2.3.1] - 2026-10-27
 

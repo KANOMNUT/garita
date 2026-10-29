@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResizablePanel } from "../hooks/useResizablePanel";
-import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, CheckCircle2, ArrowUpRight, ChevronRight, StepBack, Network } from "lucide-react";
+import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, ArrowUpRight, ChevronRight, StepBack, Network } from "lucide-react";
 import { useResourceYaml, useResourceEvents, useApplyResource, useCRDResources, useNodePods, useCordonNode, useUncordonNode, useDeleteNode, useAddNodeTaint, useRemoveNodeTaint, useStartServicePortForward, usePortForwards, useStopPortForward, useHelmValues, useUpgradeHelmRelease, useHelmHistory, useRollbackHelmRelease, useSyncArgoCdApp, useRollbackArgoCdApp, useRefreshArgoCdApp, useArgoCdCommitInfo, useArgoCdAppResources, useWorkloadPods, useResourceMetadata, useWorkloadConditions, useResourceGraph, useDeleteResource, useDeleteArgoCdApp, useUninstallHelmRelease, useTlsCertificateInfo, usePermissions, useResourceYamlNeat } from "../hooks/useResources";
 import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision, NamespaceRow } from "../types/k8s";
 import { useRevealedSecret, forgetSecret, forgetHelmValues, useAccessChecks } from "../hooks/useResources";
@@ -38,6 +38,8 @@ import { canCompare } from "../utils/resourceCompare";
 import { MAP_PANEL_KINDS } from "../utils/resourceMap";
 import { TIMELINE_KINDS } from "../utils/timeline";
 import { TimelineTab } from "./TimelineTab";
+import { ConditionsTable } from "./ConditionsTable";
+import { EventsTabContent } from "./EventsTabContent";
 import { useGuardedAction } from "./GuardedActionConfirm";
 import { EDIT_FORM } from "./edit/registry";
 import { ResourceEditor } from "./edit/ResourceEditor";
@@ -2282,33 +2284,7 @@ function ResourceSummaryTab({
       )}
 
       {/* Conditions (workloads only) */}
-      {conditions.length > 0 && (
-        <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3 overflow-hidden">
-          <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Conditions</h3>
-          <table className="w-full text-[11.5px] table-fixed">
-            <thead>
-              <tr className="text-mute text-[10.5px] uppercase">
-                <th className="text-left pb-1 pr-3 w-[28%]">Type</th>
-                <th className="text-left pb-1 pr-3 w-[14%]">Status</th>
-                <th className="text-left pb-1 pr-3 w-[22%]">Reason</th>
-                <th className="text-left pb-1 w-[36%]">Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              {conditions.map((c) => (
-                <tr key={c.type_} className="border-t border-edge-raw/40">
-                  <td className="py-1 pr-3 mono truncate" title={c.type_}>{c.type_}</td>
-                  <td className={`py-1 pr-3 ${c.status === "True" ? "text-ok" : c.status === "False" ? "text-bad" : "text-warn"}`}>
-                    {c.status}
-                  </td>
-                  <td className="py-1 pr-3 text-mute truncate" title={c.reason}>{c.reason}</td>
-                  <td className="py-1 text-mute wrap-break-word leading-snug">{c.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <ConditionsTable conditions={conditions} />
 
       {/* Pod Template section — workloads only, when backend provides it */}
       {isWorkload && (() => {
@@ -2474,132 +2450,6 @@ function RelationshipsTab({ nodes, isLoading }: { nodes: GraphNode[]; isLoading:
           <GraphNodeRow key={node.uid || node.name} node={node} />
         ))}
       </div>
-    </div>
-  );
-}
-
-// ─── Events tab with severity filter ─────────────────────────────────────────
-
-function EventsTabContent({
-  events, isLoading, error, onRetry, kind, scopedToKind,
-}: {
-  events: import("../types/k8s").K8sEvent[];
-  isLoading: boolean;
-  error: Error | null;
-  onRetry: () => void;
-  /** Display Kind for the empty state ("No events for this Deployment."). */
-  kind: string;
-  /** False for Helm: events are matched on name only, so the "this Kind only" note would be untrue. */
-  scopedToKind: boolean;
-}) {
-  const [eventFilter, setEventFilter] = useState<"all" | "warning">("all");
-
-  const displayed = eventFilter === "warning" ? events.filter(e => e.type_ === "Warning") : events;
-  const warningCount = events.filter(e => e.type_ === "Warning").length;
-  const hiddenNormal = events.length - warningCount;
-
-  return (
-    <div className="p-4 flex flex-col gap-1">
-      {!isLoading && !error && events.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-2">
-          <button
-            onClick={() => setEventFilter("all")}
-            aria-pressed={eventFilter === "all"}
-            className={`px-2 py-0.5 rounded text-[10.5px] mono ring-1 transition-colors ${
-              eventFilter === "all" ? "bg-surface-tint/8 text-ink ring-edge-raw/60" : "text-mute ring-edge hover:text-ink"
-            }`}
-          >
-            All
-            <span className="ml-1 text-mute text-[9.5px]">{events.length}</span>
-          </button>
-          {warningCount > 0 && (
-            <button
-              onClick={() => setEventFilter(f => f === "warning" ? "all" : "warning")}
-              aria-pressed={eventFilter === "warning"}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10.5px] mono ring-1 transition-colors ${
-                eventFilter === "warning" ? "bg-warn/20 text-warn ring-warn/40" : "bg-warn/10 text-warn ring-warn/30 hover:bg-warn/20 hover:text-warn"
-              }`}
-            >
-              Warnings only
-              <span className="px-1 py-px rounded-full bg-warn/20 text-warn text-[9.5px]">{warningCount}</span>
-            </button>
-          )}
-        </div>
-      )}
-      {isLoading ? (
-        <div role="status" aria-label="Loading events.">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex gap-2.5 py-2 border-b border-edge-raw/60">
-              <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-surface-tint/4 animate-pulse shrink-0" />
-              <div className="flex-1 flex flex-col gap-1.5">
-                <div className="h-2.5 rounded-sm bg-surface-tint/4 animate-pulse w-32" />
-                <div className="h-2.5 rounded-sm bg-surface-tint/4 animate-pulse w-full" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : error ? (
-        <div role="alert" className="py-12 flex flex-col items-center gap-3 text-center">
-          <p className="text-[13px] text-bad wrap-break-word max-w-full">
-            Couldn&apos;t load events: {(error as any)?.message ?? String(error)}.
-          </p>
-          <button
-            onClick={onRetry}
-            className="h-7 px-3 rounded-md bg-card/80 ring-1 ring-edge text-[11px] text-mute hover:text-ink mono"
-          >
-            Retry
-          </button>
-        </div>
-      ) : events.length === 0 ? (
-        <div role="status" className="py-12 flex flex-col items-center gap-1.5 text-center">
-          <p className="text-[13px] text-mute">No events for this {kind}.</p>
-          <p className="text-[12px] text-mute">Kubernetes keeps events for about 1 hour, so older causes may not appear.</p>
-        </div>
-      ) : displayed.length === 0 ? (
-        <div role="status" className="py-12 flex flex-col items-center gap-2 text-center">
-          <CheckCircle2 size={24} className="text-ok" />
-          <p className="text-[13px] text-mute">No warning events.</p>
-          <p className="text-[12px] text-mute">{hiddenNormal} normal {hiddenNormal === 1 ? "event is" : "events are"} hidden.</p>
-          <button
-            onClick={() => setEventFilter("all")}
-            className="h-7 px-3 rounded-md bg-card/80 ring-1 ring-edge text-[11px] text-mute hover:text-ink mono"
-          >
-            Show all
-          </button>
-        </div>
-      ) : (
-        <>
-          {displayed.map((e, i) => (
-            <div key={i} className={`flex gap-2.5 py-2 border-b border-edge-raw/60 last:border-b-0 rounded-sm px-1 ${e.type_ === "Warning" ? "bg-warn/3" : ""}`}>
-              <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${e.type_ === "Warning" ? "bg-warn" : "bg-mute/60"}`} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  {/* Severity is glyph + word, never colour alone. */}
-                  <span className={`text-[10px] uppercase tracking-wider shrink-0 ${e.type_ === "Warning" ? "text-warn" : "text-mute"}`}>
-                    <span aria-hidden>{e.type_ === "Warning" ? "⚠ " : "● "}</span>
-                    {e.type_ === "Warning" ? "Warning" : "Normal"}
-                  </span>
-                  <span className={`text-[11px] font-semibold ${e.type_ === "Warning" ? "text-warn" : "text-mute"}`}>
-                    {e.reason}
-                  </span>
-                  <span className="mono text-[10.5px] text-mute">{e.source}</span>
-                  {e.count > 1 && (
-                    <span className="mono text-[10px] px-1.5 py-px rounded-full bg-surface-tint/5 text-mute shrink-0">
-                      ×{e.count}
-                    </span>
-                  )}
-                  <span className="ml-auto mono text-[10.5px] text-mute">{e.age}</span>
-                </div>
-                <div className="text-[11.5px] text-ink/85 mt-0.5">{e.message}</div>
-              </div>
-            </div>
-          ))}
-          <p className="mt-3 pt-2 border-t border-edge-raw/60 text-[11px] text-mute">
-            {scopedToKind ? `Events about this ${kind} only. Its pods and ReplicaSets have their own events. ` : ""}
-            Kubernetes keeps events for about 1 hour.
-          </p>
-        </>
-      )}
     </div>
   );
 }

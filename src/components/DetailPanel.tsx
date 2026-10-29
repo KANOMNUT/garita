@@ -30,10 +30,20 @@ import { selectShellContainer } from "../utils/containerSelect";
 import { loadNeatPref, saveNeatPref } from "../utils/neatYaml";
 import { defaultLogView } from "../utils/logFilter";
 import { podStatusStyle } from "../utils/podStatus";
+import { barDenominator, isNotReady, validPort } from "../utils/podTableView";
+import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { Popover } from "./Popover";
+import { EventsTabContent } from "./EventsTabContent";
+import { ConditionsTable } from "./ConditionsTable";
 import { NeatChip, NeatNote } from "./NeatYaml";
 import { YamlFind } from "./YamlFind";
 import { NEAT_NO_MATCH_HINT } from "../utils/yamlFind";
 import type { MetricRangeId, Pod, Container, ContainerStatus, ContainerEnvVar, ContainerEnvFrom, ContainerVolumeMount, ContainerProbe, ResourceType } from "../types/k8s";
+
+// The one focus-visible ring of the app's controls (docs/ux/24 X-8: at least 3:1 against the panel in both themes).
+const FOCUS_RING = "outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
+// The same ring for a row inside a menu: inset, so the panel's rounded edge does not clip it.
+const ITEM_RING = "outline-hidden focus-visible:bg-surface-tint/6 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70";
 
 function StatusPill({ status }: { status: string }) {
   const s = podStatusStyle(status);
@@ -63,18 +73,19 @@ function AccordionHeader({ label, count, open, onToggle, controls }: {
       aria-controls={controls}
       className="flex items-center gap-1.5 w-full min-h-7 py-1.5 mt-2 text-left border-t border-edge-raw/40 hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
     >
-      <span className="text-[10px] uppercase tracking-wider text-mute font-semibold flex-1">{label}</span>
-      <span className="mono text-[10px] text-mute">({count})</span>
+      <span className="text-[10.5px] uppercase tracking-wider text-mute font-semibold flex-1">{label}</span>
+      <span className="mono text-[10.5px] text-mute">({count})</span>
       <ChevronRight size={12} aria-hidden className={`text-mute transition-transform ${open ? "rotate-90" : ""}`} />
     </button>
   );
 }
 
-function KV({ k, v, mono = true }: { k: string; v: string; mono?: boolean }) {
+/** `wrap` lets a long identifier break instead of being cut with an ellipsis; the full value is always in `title`. */
+function KV({ k, v, mono = true, wrap = false }: { k: string; v: string; mono?: boolean; wrap?: boolean }) {
   return (
-    <div className="flex items-baseline gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0">
+    <div className={`flex ${wrap ? "items-start" : "items-baseline"} gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0`}>
       <span className="text-[11px] text-mute w-[110px] shrink-0">{k}</span>
-      <span className={`text-[12px] text-ink ${mono ? "mono" : ""} truncate`}>{v}</span>
+      <span title={v} className={`text-[12px] text-ink ${mono ? "mono" : ""} ${wrap ? "break-all" : "truncate"}`}>{v}</span>
     </div>
   );
 }
@@ -143,19 +154,19 @@ function DualZoneBar({
         )}
       </div>
       <div className="flex justify-between mt-0.5">
-        <span className="mono text-[10px] text-mute">req: {requestM != null ? `${requestM}${unitSuffix}` : '—'}</span>
+        <span className="mono text-[10.5px] text-mute">req: {requestM != null ? `${requestM}${unitSuffix}` : '—'}</span>
         {limitM != null && (
-          <span className="mono text-[10px] text-mute">lim: {limitM}{unitSuffix}</span>
+          <span className="mono text-[10.5px] text-mute">lim: {limitM}{unitSuffix}</span>
         )}
       </div>
       <div className="flex gap-3 mt-0.5">
         {requestM != null && usageM != null && (
-          <span className={`mono text-[10px] ${usagePct >= 85 ? 'text-bad' : usagePct >= 65 ? 'text-warn' : 'text-mute'}`}>
+          <span className={`mono text-[10.5px] ${usagePct >= 85 ? 'text-bad' : usagePct >= 65 ? 'text-warn' : 'text-mute'}`}>
             {Math.round((usageM / requestM) * 100)}% of req
           </span>
         )}
         {limitM != null && (
-          <span className="mono text-[10px] text-mute">{usagePct}% of lim</span>
+          <span className="mono text-[10.5px] text-mute">{usagePct}% of lim</span>
         )}
       </div>
     </div>
@@ -166,7 +177,7 @@ function DualZoneBar({
 
 function TimingChip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="flex items-baseline gap-1 text-[10px] leading-none">
+    <span className="flex items-baseline gap-1 text-[10.5px] leading-none">
       <span className="text-mute">{label}</span>
       <span className="mono text-mute font-medium tabular-nums">{value}</span>
     </span>
@@ -177,7 +188,7 @@ function TimingChip({ label, value }: { label: string; value: string }) {
 
 function SaveIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
       <polyline points="17 21 17 13 7 13 7 21" />
       <polyline points="7 3 7 8 15 8" />
@@ -193,8 +204,6 @@ function MetricsTab({ pod, podMetrics, isLoading, error, context }: {
   isLoading: boolean;
   error: Error | null;
 }) {
-  const cpuLim = pod.cpu_lim ?? 500;
-  const memLim = pod.mem_lim ?? 512;
   const metrics = podMetrics;
 
   // History (v2.3.0): Prometheus through the service proxy. The bars above stay metrics-server data.
@@ -251,7 +260,7 @@ function MetricsTab({ pod, podMetrics, isLoading, error, context }: {
               type="button"
               aria-disabled={cpuQ.isFetching || memQ.isFetching || undefined}
               onClick={() => { if (cpuQ.isFetching || memQ.isFetching) return; retried.current = true; cpuQ.refetch(); memQ.refetch(); }}
-              className="text-mute hover:text-ink shrink-0 inline-flex items-center min-h-6 px-2 rounded-sm focus-visible:ring-2 focus-visible:ring-accent/60 outline-hidden"
+              className="text-mute hover:text-ink shrink-0 inline-flex items-center min-h-6 px-2 rounded-sm focus-visible:ring-2 focus-visible:ring-accent/70 outline-hidden"
             >
               {cpuQ.isFetching || memQ.isFetching ? "Retrying…" : "Retry"}
             </button>
@@ -271,7 +280,7 @@ function MetricsTab({ pod, podMetrics, isLoading, error, context }: {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-mute">
       <span>Source: metrics-server · this session</span>
       <span>History beyond this session needs Prometheus. Not set for this cluster.</span>
-      <button type="button" onClick={() => requestObservabilityDialog(context)} className="inline-flex items-center min-h-6 px-2 rounded-sm focus-visible:ring-2 focus-visible:ring-accent/60 outline-hidden ring-1 ring-edge hover:text-ink">Configure…</button>
+      <button type="button" onClick={() => requestObservabilityDialog(context)} className="inline-flex items-center min-h-6 px-2 rounded-sm focus-visible:ring-2 focus-visible:ring-accent/70 outline-hidden ring-1 ring-edge hover:text-ink">Configure…</button>
     </div>
   );
 
@@ -292,21 +301,25 @@ function MetricsTab({ pod, podMetrics, isLoading, error, context }: {
     return (
       <div className="p-4 flex flex-col gap-3">
         {historyHeader}
-        <div className="mono text-[10.5px] text-warn px-2 py-1.5 rounded-sm bg-warn/10 ring-1 ring-warn/20">
-          Metrics server unavailable — showing resource requests
+        <div className="text-[11px] text-warn px-2 py-1.5 rounded-sm bg-warn/10 ring-1 ring-warn/20">
+          Metrics server isn&apos;t available. Showing resource requests.
         </div>
         {[
-          { label: "CPU (millicores)", color: "bg-metric-cpu", value: pod.cpu_m ?? 0, limit: cpuLim },
-          { label: "Memory (MiB)",     color: "bg-metric-mem", value: pod.mem_mi ?? 0, limit: memLim },
-        ].map((m) => (
-          <div key={m.label} className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11.5px] text-mute">{m.label}</span>
-              <span className="mono text-[11px] text-ink">{m.value} / {m.limit}</span>
+          { label: "CPU (millicores)", unit: "m",  color: "bg-metric-cpu", value: pod.cpu_m ?? 0,  limit: pod.cpu_lim },
+          { label: "Memory (MiB)",     unit: "Mi", color: "bg-metric-mem", value: pod.mem_mi ?? 0, limit: pod.mem_lim },
+        ].map((m) => {
+          // The value is the request, so it is drawn against the limit only. No limit means the number alone, never an invented one.
+          const den = barDenominator(m.limit, m.value, "request");
+          return (
+            <div key={m.label} className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11.5px] text-mute">{m.label}</span>
+                <span className="mono text-[11px] text-ink">{m.value}{m.unit} request · {den != null ? `${den}${m.unit} limit` : "no limit"}</span>
+              </div>
+              {den != null && <Bar value={m.value} limit={den} color={m.color} label={`${Math.round((m.value / den) * 100)}%`} />}
             </div>
-            <Bar value={m.value} limit={m.limit} color={m.color} label={`${Math.round((m.value / (m.limit || 1)) * 100)}%`} />
-          </div>
-        ))}
+          );
+        })}
         {hist && [...new Set([...(cpuQ.data?.series ?? []), ...(memQ.data?.series ?? [])].map((s) => s.label))].map((label) => (
           <div key={label} className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
             <div className="text-[11px] text-mute mono mb-1">{label}</div>
@@ -363,7 +376,11 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
   const { data: forwards = [] } = usePortForwards();
   const myForwards = forwards.filter((f) => f.name === pod.name && f.namespace === pod.namespace && f.target_type === "pod");
 
+  const portsOk = validPort(podPort) && validPort(localPort);
+  const portsReason = portsOk ? undefined : "Enter ports from 1 to 65535.";
+
   const handleStart = async () => {
+    if (portsReason) return;
     setError("");
     try {
       await startForward.mutateAsync({
@@ -380,7 +397,7 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
       <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
         <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-3">Active Forwards</div>
         {myForwards.length === 0 ? (
-          <div className="text-[12px] text-mute py-4 text-center">No active port-forwards for this pod</div>
+          <div className="text-[12px] text-mute py-4 text-center">No active port-forwards for this pod.</div>
         ) : (
           <div className="flex flex-col gap-1.5 mb-3">
             {myForwards.map((f) => (
@@ -391,9 +408,9 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
                   type="button"
                   onClick={() => stopForward.mutate({ forwardId: f.id })}
                   aria-label={`Stop forward localhost:${f.local_port}`}
-                  className="h-5 px-2 rounded-sm text-[10px] mono text-mute hover:text-bad transition-colors"
+                  className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-bad transition-colors ${FOCUS_RING}`}
                 >
-                  stop
+                  Stop
                 </button>
               </div>
             ))}
@@ -404,29 +421,39 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
           <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">New Forward</div>
           <div className="flex items-end gap-2">
             <div className="flex flex-col gap-1">
-              <span className="mono text-[9.5px] text-mute">Pod port</span>
+              <label htmlFor="pf-pod-port" className="text-[11px] text-mute">Pod port</label>
               <input
-                type="number" value={podPort} onChange={(e) => setPodPort(e.target.value)}
-                className="h-7 w-24 rounded-md bg-base ring-1 ring-edge mono text-[11px] text-ink px-2 focus:ring-accent focus:outline-hidden"
+                id="pf-pod-port"
+                type="number" min={1} max={65535} inputMode="numeric"
+                value={podPort} onChange={(e) => setPodPort(e.target.value)}
+                aria-invalid={!validPort(podPort) || undefined}
+                className="h-7 w-24 rounded-md bg-base ring-1 ring-mute/70 mono text-[11px] text-ink px-2 focus:ring-2 focus:ring-accent/70 focus:outline-hidden"
               />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="mono text-[9.5px] text-mute">Local port</span>
+              <label htmlFor="pf-local-port" className="text-[11px] text-mute">Local port</label>
               <input
-                type="number" value={localPort} onChange={(e) => setLocalPort(e.target.value)}
-                className="h-7 w-24 rounded-md bg-base ring-1 ring-edge mono text-[11px] text-ink px-2 focus:ring-accent focus:outline-hidden"
+                id="pf-local-port"
+                type="number" min={1} max={65535} inputMode="numeric"
+                value={localPort} onChange={(e) => setLocalPort(e.target.value)}
+                aria-invalid={!validPort(localPort) || undefined}
+                className="h-7 w-24 rounded-md bg-base ring-1 ring-mute/70 mono text-[11px] text-ink px-2 focus:ring-2 focus:ring-accent/70 focus:outline-hidden"
               />
             </div>
             <button
+              type="button"
               onClick={handleStart}
               disabled={startForward.isPending}
-              className="h-7 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-[11px] text-accent hover:bg-accent/25 mono disabled:opacity-50"
+              {...disabledAttrs(portsReason)}
+              className={`h-7 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-[11px] text-accent hover:bg-accent/25 disabled:opacity-50 ${FOCUS_RING} ${portsReason ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              {startForward.isPending ? "Starting…" : "Start Forward"}
+              {startForward.isPending ? "Starting…" : "Start forward"}
             </button>
           </div>
+          {/* The reason is also printed, not only a tooltip, so a sighted keyboard user sees why Start is dimmed. */}
+          {portsReason && <p className="text-[10.5px] text-mute mt-2">{portsReason}</p>}
           {error && (
-            <div className="mono text-[10.5px] text-bad px-2 py-1 mt-2 rounded-sm bg-bad/10 ring-1 ring-bad/20">{error}</div>
+            <div role="alert" className="mono text-[10.5px] text-bad px-2 py-1 mt-2 rounded-sm bg-bad/10 ring-1 ring-bad/20">{error}</div>
           )}
         </div>
       </div>
@@ -436,35 +463,24 @@ function PodPortForward({ pod, context }: { pod: Pod; context: string }) {
 
 // ─── Summary Tab ─────────────────────────────────────────────────────────────
 
+// The merged Overview + Summary (Q6, D7): Metadata with the real service account, Conditions, Container States, Labels.
+// The Explain card sits above it and Constraints, Who can reach and Field managers below it (see the render).
 function SummaryTab({ pod }: { pod: Pod }) {
   const labels = Object.entries(pod.labels ?? {});
   return (
     <div className="p-4 flex flex-col gap-4 overflow-auto">
-      {/* Status summary */}
       <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3">
-        <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Status</h3>
-        <KV k="Phase" v={pod.status} />
-        <KV k="Ready" v={pod.ready} />
-        <KV k="Node" v={pod.node || "—"} />
-        <KV k="Restarts" v={String(pod.restarts)} />
-        <KV k="Age" v={pod.age} />
+        <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Metadata</h3>
+        <KV k="Name"            v={pod.name} wrap />
+        <KV k="Namespace"       v={pod.namespace} />
+        <KV k="Owner"           v={pod.owner ?? "—"} wrap />
+        <KV k="Node"            v={pod.node || "—"} wrap />
+        <KV k="Service account" v={pod.service_account ?? "—"} />
+        <KV k="Created"         v={`${pod.age} ago`} mono={false} />
       </div>
 
-      {/* Labels */}
-      {labels.length > 0 && (
-        <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3">
-          <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Labels</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {labels.map(([k, v]) => (
-              <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-accent/10 ring-1 ring-accent/20 text-[11px] mono">
-                <span className="text-accent">{k}</span>
-                <span className="text-mute">=</span>
-                <span className="text-ink">{v}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Hidden when the pod has no conditions, like a workload. These are status.conditions from the API, not derived. */}
+      <ConditionsTable conditions={pod.conditions ?? []} />
 
       {/* Container statuses */}
       {pod.containers_status && pod.containers_status.length > 0 && (
@@ -481,14 +497,27 @@ function SummaryTab({ pod }: { pod: Pod }) {
           ))}
         </div>
       )}
+
+      <div className="rounded-lg bg-card/70 ring-1 ring-edge p-3">
+        <h3 className="text-[11px] uppercase tracking-wider text-mute mb-2">Labels</h3>
+        <div className="flex flex-wrap gap-1.5">
+          {labels.length > 0
+            ? labels.map(([k, v]) => (
+              <span key={k} className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-mute">
+                {k}={v}
+              </span>
+            ))
+            : <span className="text-[11px] text-mute">No labels</span>}
+        </div>
+      </div>
     </div>
   );
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-type Tab = "Overview" | "Summary" | "Containers" | "Events" | "Logs" | "Shell" | "YAML" | "Metrics" | "Forward";
-const TABS: Tab[] = ["Overview", "Summary", "Containers", "Events", "Logs", "Shell", "YAML", "Metrics", "Forward"];
+type Tab = "Summary" | "Containers" | "Events" | "Logs" | "Shell" | "YAML" | "Metrics" | "Forward";
+const TABS: Tab[] = ["Summary", "Containers", "Events", "Logs", "Shell", "YAML", "Metrics", "Forward"];
 
 interface DetailPanelProps {
   pod: Pod;
@@ -515,7 +544,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
   const constraintPod = useMemo(() => ({ labels: pod.labels ?? {}, priorityClass: pod.priority_class ?? null }), [pod.labels, pod.priority_class]);
   const [explainNonce, setExplainNonce] = useState(0);
   const { width, startResize } = useResizablePanel("detail-panel-width");
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>("Summary");
   // 24 h series for the p95 hint: the same cache entry as the Metrics tab's 24 h chart. Silent on failure.
   const promTarget = identity.observability?.prometheus;
   const p95Cpu = useMetricRange(context, promTarget, "pod-cpu", pod.namespace, pod.name, "24h", tab === "Containers");
@@ -532,7 +561,9 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
   // View filters survive tab switches, but reset with this pod. Never persist them.
   const [logView, setLogView] = useState(() => defaultLogView("single"));
   const [openSections, setOpenSections] = useState<Record<string, Set<string>>>({});
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const copyName = useCopyFeedback();
+  const copyYaml = useCopyFeedback();
 
   const toggleSection = (containerName: string, section: string) => {
     setOpenSections(prev => {
@@ -545,10 +576,10 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
   const isOpen = (containerName: string, section: string) =>
     openSections[containerName]?.has(section) ?? false;
 
-  const { data: podEvents = [], isLoading: eventsLoading } = usePodEvents(
+  const { data: podEvents = [], isLoading: eventsLoading, error: eventsError, refetch: refetchEvents } = usePodEvents(
     context, pod.namespace, pod.name, tab === "Events"
   );
-  const { data: yamlContent = "", isLoading: yamlLoading } = useResourceYaml(
+  const { data: yamlContent = "", isLoading: yamlLoading, error: yamlError, refetch: refetchYaml } = useResourceYaml(
     "pods", context, pod.namespace, pod.name, tab === "YAML"
   );
   // #6 neat YAML: DISPLAY ONLY. The editor seed (setEditContent(yamlContent)) and Save always use
@@ -587,21 +618,12 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
   }, [tab]);
 
   useEffect(() => {
-    setTab("Overview");
+    setTab("Summary");
     setSelectedContainer("");
     setLogPick(null);
     setShellFailure(null);
     setLogView(defaultLogView("single"));
   }, [pod.name]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
 
   const containers: Container[] = pod.containers.length > 0
     ? pod.containers
@@ -635,6 +657,12 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
     ? selectedContainer
     : selectShellContainer(podSelectable);
 
+  const notReady = isNotReady(pod.status, pod.ready);
+  const copyNameLabel = copyName.state === "copied" ? "Copied pod name" : copyName.state === "failed" ? "Couldn't copy" : "Copy pod name";
+  const yamlCopyLabel = copyYaml.state === "copied"
+    ? (neatShown ? "Copied neat YAML" : "Copied")
+    : copyYaml.state === "failed" ? "Couldn't copy" : neatShown ? "Copy neat" : "Copy";
+
   return (
     <aside className="slide-in shrink-0 bg-panel/95 border-l border-edge flex flex-col relative" style={{ width: `${width}px` }}>
       {/* Resize handle */}
@@ -660,7 +688,8 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
               {identity.readOnly && <ReadOnlyChip />}
               <ProblemChip model={explain.model} onClick={() => { setTab("Summary"); setExplainNonce((n) => n + 1); }} />
               <span className="text-[11px] text-mute mono">
-                {pod.ready} ready · {pod.restarts} restarts · {pod.age} old
+                <span className={notReady ? "text-warn" : undefined} title={notReady ? "Running but not ready" : undefined}>{pod.ready} ready</span>
+                {" "}· {pod.restarts} restarts · {pod.age} old
               </span>
             </div>
           </div>
@@ -669,65 +698,72 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
             onClick={onClose}
             aria-label="Close pod panel"
             title="Close (Esc)"
-            className="h-7 w-7 -mr-1 rounded-md hover:bg-surface-tint/6 text-mute hover:text-ink flex items-center justify-center"
+            className={`h-7 w-7 -mr-1 rounded-md hover:bg-surface-tint/6 text-mute hover:text-ink flex items-center justify-center ${FOCUS_RING}`}
           >
             <X size={14} aria-hidden />
           </button>
         </div>
         {/* actions */}
         <div className="flex items-center gap-1.5 mt-3">
+          {/* Q5: while read-only blocks shells this still opens the Shell tab, which prints the reason (ui.md DISABLE-PRECEDENCE). */}
           <button
-            onClick={() => { if (shellReason) return; setTab("Shell"); }}
+            type="button"
+            onClick={() => setTab("Shell")}
             {...disabledAttrs(shellReason)}
-            className={`h-7 px-2.5 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[11.5px] flex items-center gap-1.5 hover:bg-accent/25 ${shellReason ? "opacity-50 cursor-not-allowed" : ""}`}
+            className={`h-7 px-2.5 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[11.5px] flex items-center gap-1.5 hover:bg-accent/25 ${FOCUS_RING} ${shellReason ? "opacity-50" : ""}`}
           >
-            <Terminal size={12} /> Exec shell
+            <Terminal size={12} aria-hidden /> Exec shell
           </button>
           <button
+            type="button"
             onClick={() => setTab("Logs")}
-            className="h-7 px-2.5 rounded-md bg-card/80 ring-1 ring-edge text-[11.5px] text-mute hover:text-ink flex items-center gap-1.5"
+            className={`h-7 px-2.5 rounded-md bg-card/80 ring-1 ring-edge text-[11.5px] text-mute hover:text-ink flex items-center gap-1.5 ${FOCUS_RING}`}
           >
-            <FileCode size={12} /> Logs
+            <FileCode size={12} aria-hidden /> Logs
           </button>
           <button
+            type="button"
             onClick={() => { if (roReason) return; setRestartError(""); setConfirmRestart(true); }}
             disabled={deletePod.isPending}
             title="Deletes the pod; its controller creates a replacement"
             {...disabledAttrs(roReason)}
-            className={`h-7 px-2.5 rounded-md bg-card/80 ring-1 ring-edge text-[11.5px] text-mute hover:text-ink flex items-center gap-1.5 disabled:opacity-50 ${roReason ? "opacity-50 cursor-not-allowed" : ""}`}
+            className={`h-7 px-2.5 rounded-md bg-card/80 ring-1 ring-edge text-[11.5px] text-mute hover:text-ink flex items-center gap-1.5 disabled:opacity-50 ${FOCUS_RING} ${roReason ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            <RefreshCw size={12} className={deletePod.isPending ? "animate-spin" : ""} /> Restart
+            <RefreshCw size={12} aria-hidden className={deletePod.isPending ? "animate-spin" : ""} /> Restart
           </button>
           <div className="flex-1" />
-          <div ref={menuRef} className="relative">
+          <div className="relative">
             <button
+              ref={menuBtnRef}
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
               aria-label="Pod actions"
               aria-haspopup="dialog"
               aria-expanded={menuOpen}
-              className="h-7 w-7 rounded-md bg-card/80 ring-1 ring-edge text-mute hover:text-ink flex items-center justify-center"
+              className={`h-7 w-7 rounded-md bg-card/80 ring-1 ring-edge text-mute hover:text-ink flex items-center justify-center ${FOCUS_RING}`}
             >
               <MoreHorizontal size={13} aria-hidden />
             </button>
-            {menuOpen && (
-              <div className="absolute right-0 top-8 z-20 w-44 rounded-lg bg-panel border border-edge shadow-xl py-1">
-                <button
-                  onClick={() => { navigator.clipboard.writeText(pod.name); setMenuOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-[12px] text-mute hover:text-ink hover:bg-surface-tint/4 flex items-center gap-2"
-                >
-                  <Copy size={12} /> Copy pod name
-                </button>
-                <div className="my-1 border-t border-edge-raw/60" />
-                <button
-                  onClick={() => { if (roReason) return; setDeleteError(""); setConfirmDeletePod(true); setMenuOpen(false); }}
-                  {...disabledAttrs(roReason)}
-                  className={`w-full text-left px-3 py-1.5 text-[12px] text-bad hover:bg-surface-tint/4 flex items-center gap-2 ${roReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                >
-                  <Trash2 size={12} /> Delete pod
-                </button>
-              </div>
-            )}
+            <Popover open={menuOpen} onClose={() => setMenuOpen(false)} triggerRef={menuBtnRef} label="Pod actions" className="right-0 top-8 w-44 py-1">
+              {/* The menu stays open after a copy: the label flips in place (X-6). */}
+              <button
+                type="button"
+                onClick={() => { void copyName.copy(pod.name); }}
+                className={`w-full text-left px-3 py-1.5 text-[12px] text-mute hover:text-ink hover:bg-surface-tint/4 flex items-center gap-2 ${ITEM_RING}`}
+              >
+                <Copy size={12} aria-hidden /> {copyNameLabel}
+              </button>
+              <span role="status" className="sr-only">{copyName.state === "idle" ? "" : copyNameLabel}</span>
+              <div className="my-1 border-t border-edge-raw/60" />
+              <button
+                type="button"
+                onClick={() => { if (roReason) return; setDeleteError(""); setConfirmDeletePod(true); setMenuOpen(false); }}
+                {...disabledAttrs(roReason)}
+                className={`w-full text-left px-3 py-1.5 text-[12px] text-bad hover:bg-surface-tint/4 flex items-center gap-2 ${ITEM_RING} ${roReason ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                <Trash2 size={12} aria-hidden /> Delete pod
+              </button>
+            </Popover>
           </div>
           <ConfirmModal
             contextLabel={identity.label}
@@ -786,13 +822,15 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
       </div>
 
       {/* tabs */}
-      <div className="flex items-center gap-0.5 px-4 border-b border-edge shrink-0 overflow-x-auto">
+      <div role="group" aria-label="Pod sections" className="flex items-center gap-0.5 px-4 border-b border-edge shrink-0 overflow-x-auto">
         {TABS.map((t) => (
           <button
             key={t}
-            onClick={() => { if (t === "Shell" && shellReason) return; setTab(t); }}
+            type="button"
+            onClick={() => setTab(t)}
+            aria-current={tab === t ? "true" : undefined}
             {...(t === "Shell" ? disabledAttrs(shellReason) : {})}
-            className={`relative h-9 px-2.5 text-[12px] shrink-0 ${tab === t ? "text-ink" : "text-mute hover:text-ink"} ${t === "Shell" && shellReason ? "opacity-50 cursor-not-allowed" : ""}`}
+            className={`relative h-9 px-2.5 text-[12px] shrink-0 ${FOCUS_RING} focus-visible:ring-inset ${tab === t ? "text-ink" : "text-mute hover:text-ink"} ${t === "Shell" && shellReason ? "opacity-50" : ""}`}
           >
             {t}
             {tab === t && (
@@ -804,52 +842,6 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
 
       {/* tab content */}
       <div className="flex-1 overflow-y-auto fade-in" key={`${pod.name}-${tab}`}>
-        {tab === "Overview" && (
-          <div className="p-4 flex flex-col gap-3">
-            <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-              <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-1.5">Metadata</div>
-              <KV k="Name"            v={pod.name} />
-              <KV k="Namespace"       v={pod.namespace} />
-              <KV k="Owner"           v={pod.owner ?? "—"} />
-              <KV k="Node"            v={pod.node} />
-              <KV k="Service account" v="default" />
-              <KV k="Created"         v={`${pod.age} ago`} mono={false} />
-            </div>
-            <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-              <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">Labels</div>
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(pod.labels).length > 0
-                  ? Object.entries(pod.labels).map(([k, v]) => (
-                    <span key={k} className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-mute">
-                      {k}={v}
-                    </span>
-                  ))
-                  : <span className="text-[11px] text-mute">No labels</span>
-                }
-              </div>
-            </div>
-            <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
-              <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">Conditions</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { k: "Initialized",     v: pod.status !== "Pending" },
-                  { k: "Ready",           v: pod.status === "Running" },
-                  { k: "ContainersReady", v: pod.status === "Running" },
-                  { k: "PodScheduled",    v: pod.node !== "—" },
-                ].map((c) => (
-                  <div key={c.k} className="flex items-center gap-2 text-[11.5px]">
-                    <span className={`h-1.5 w-1.5 rounded-full ${c.v ? "bg-ok" : "bg-bad"}`} />
-                    <span className="text-mute">{c.k}</span>
-                    <span className={`mono text-[10.5px] ml-auto ${c.v ? "text-ok" : "text-bad"}`}>
-                      {c.v ? "True" : "False"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         {tab === "Summary" && explain.model && (
           <div className="px-4 pt-4">
             <ExplainCard
@@ -910,13 +902,13 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
               return (
                 <Fragment key={i}>
                 {isFirstInit && (
-                  <div className="text-[10px] uppercase tracking-wider text-mute font-semibold flex items-center gap-1.5">
+                  <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold flex items-center gap-1.5">
                     Init Containers
-                    <span className="text-[9.5px] text-mute normal-case tracking-normal">— run to completion before app containers start</span>
+                    <span className="text-[10.5px] text-mute normal-case tracking-normal">Run to completion before app containers start.</span>
                   </div>
                 )}
                 {isFirstRegular && containers.some((x) => x.is_init) && (
-                  <div className="text-[10px] uppercase tracking-wider text-mute font-semibold mt-1">
+                  <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mt-1">
                     Containers
                   </div>
                 )}
@@ -925,7 +917,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                     <span className={`h-1.5 w-1.5 rounded-full ${c.ready ? "bg-ok" : "bg-bad"}`} />
                     <span className="mono text-[12.5px]">{c.name}</span>
                     {c.is_init && (
-                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-accent/10 ring-1 ring-accent/20 text-accent">
+                      <span className="text-[10.5px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-accent/10 ring-1 ring-accent/20 text-accent">
                         init
                       </span>
                     )}
@@ -935,7 +927,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   {c.ports.length > 0 && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
                       {c.ports.map((p) => (
-                        <span key={p} className="mono text-[10px] px-1.5 py-0.5 rounded-sm bg-accent/10 ring-1 ring-accent/20 text-accent">
+                        <span key={p} className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-accent/10 ring-1 ring-accent/20 text-accent">
                           :{p}
                         </span>
                       ))}
@@ -978,10 +970,10 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                     <span className="text-edge2">·</span>
                     <button
                       type="button"
-                      onClick={() => { if (shellReason) return; setSelectedContainer(c.name); setTab("Shell"); }}
+                      onClick={() => { setSelectedContainer(c.name); setTab("Shell"); }}
                       aria-label={`Open shell in ${c.name}`}
                       {...disabledAttrs(shellReason)}
-                      className={`h-6 px-1.5 -mx-1.5 rounded-sm flex items-center gap-1 hover:bg-surface-tint/6 hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${shellReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      className={`h-6 px-1.5 -mx-1.5 rounded-sm flex items-center gap-1 hover:bg-surface-tint/6 hover:text-ink ${FOCUS_RING} ${shellReason ? "opacity-50" : ""}`}
                     >
                       <Terminal size={11} aria-hidden />exec
                     </button>
@@ -996,28 +988,28 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   </div>
                   {hasHistory && (
                     <div className="mt-3 border-t border-edge-raw/60 pt-3">
-                      <div className="text-[10px] uppercase tracking-wider text-mute font-semibold mb-2">Restart History</div>
+                      <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">Restart History</div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                         <div>
-                          <div className="text-[9.5px] uppercase tracking-wider text-mute mb-1">Current State</div>
+                          <div className="text-[10.5px] text-mute mb-1">Current state</div>
                           <span className={`mono text-[11px] ${cs?.current_state === "running" ? "text-ok" : cs?.current_state === "terminated" ? "text-bad" : "text-warn"}`}>
                             {cs?.current_state ?? c.status}
                           </span>
                           {cs?.current_started_at && (
-                            <div className="mono text-[10px] text-mute mt-0.5">{cs.current_started_at}</div>
+                            <div className="mono text-[10.5px] text-mute mt-0.5">{cs.current_started_at}</div>
                           )}
                           {cs?.current_reason && (
-                            <span className="mt-1 inline-block mono text-[10px] px-1.5 py-0.5 rounded-sm bg-warn/10 ring-1 ring-warn/20 text-warn">
+                            <span className="mt-1 inline-block mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-warn/10 ring-1 ring-warn/20 text-warn">
                               {cs.current_reason}
                             </span>
                           )}
                         </div>
                         {cs?.last_state && (
                           <div>
-                            <div className="text-[9.5px] uppercase tracking-wider text-mute mb-1">Last State</div>
+                            <div className="text-[10.5px] text-mute mb-1">Last state</div>
                             <span className="mono text-[11px] text-bad">{cs.last_state}</span>
                             {cs.last_finished_at && (
-                              <div className={`mono text-[10px] mt-0.5 ${reasonIsNonTerminal ? "text-mute" : "text-warn"}`}>
+                              <div className={`mono text-[10.5px] mt-0.5 ${reasonIsNonTerminal ? "text-mute" : "text-warn"}`}>
                                 {reasonIsNonTerminal ? cs.last_finished_at : `Last crash: ${cs.last_finished_at}`}
                               </div>
                             )}
@@ -1030,7 +1022,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                   cs.last_reason === "ContainerCannotRun" ? "Image or command issue" :
                                   cs.last_reason === "DeadlineExceeded" ? "activeDeadlineSeconds exceeded" :
                                   cs.last_reason
-                                } className={`mono text-[10px] px-1.5 py-0.5 rounded ring-1 ${
+                                } className={`mono text-[10.5px] px-1.5 py-0.5 rounded ring-1 ${
                                   reasonIsNonTerminal
                                     ? "bg-ok/10 ring-ok/20 text-ok"
                                     : cs.last_exit_code === 137
@@ -1041,12 +1033,12 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                 </span>
                               )}
                               {cs.last_exit_code != null && (
-                                <span className={`mono text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-tint/4 ring-1 ring-edge ${exitCodeColor}`}>
+                                <span className={`mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-surface-tint/4 ring-1 ring-edge ${exitCodeColor}`}>
                                   exit {cs.last_exit_code}
                                 </span>
                               )}
                               {cs.last_signal != null && cs.last_signal !== 0 && (
-                                <span className="mono text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-tint/4 ring-1 ring-edge text-mute">
+                                <span className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-surface-tint/4 ring-1 ring-edge text-mute">
                                   sig {cs.last_signal}
                                 </span>
                               )}
@@ -1077,7 +1069,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
 
                             const rowContent = (
                               <>
-                                <span aria-hidden className="text-dim/50 shrink-0 text-[10px]">⊞</span>
+                                <span aria-hidden className="text-dim/50 shrink-0 text-[10.5px]">⊞</span>
                                 <span className={`mono flex-1 min-w-0 truncate transition-colors ${
                                   isNavigable
                                     ? 'text-accent group-hover:text-accent group-hover:underline'
@@ -1092,11 +1084,11 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                     aria-hidden="true"
                                   />
                                 )}
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-sm shrink-0 ${badgeClass}`}>
+                                <span className={`text-[10.5px] px-1.5 py-0.5 rounded-sm shrink-0 ${badgeClass}`}>
                                   {ef.source_type === 'configmap' ? 'CM' : 'S'}
                                 </span>
                                 {ef.prefix && (
-                                  <span className="text-mute text-[10px] truncate max-w-[80px]">{ef.prefix}</span>
+                                  <span className="text-mute text-[10.5px] truncate max-w-[80px]">{ef.prefix}</span>
                                 )}
                               </>
                             );
@@ -1111,8 +1103,8 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                 )}
                                 aria-label={`Open ${ef.source_type === 'configmap' ? 'ConfigMap' : 'Secret'} ${ef.name}`}
                                 className="w-full flex items-center gap-2 py-0.5 px-0.5 rounded-xs text-[11px] text-left
-                                           hover:bg-surface-tint/6 focus-visible:outline-hidden focus-visible:ring-1
-                                           focus-visible:ring-accent/40 transition-colors group cursor-pointer"
+                                           hover:bg-surface-tint/6 outline-hidden focus-visible:ring-2
+                                           focus-visible:ring-accent/70 transition-colors group cursor-pointer"
                               >
                                 {rowContent}
                               </button>
@@ -1139,8 +1131,8 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                       )}
                                       aria-label={`Open ${ev.value_from.source_type === 'configmap' ? 'ConfigMap' : 'Secret'} ${ev.value_from.name}`}
                                       className="flex items-center gap-1.5 flex-1 min-w-0 rounded-xs px-1 py-0.5
-                                                 hover:bg-surface-tint/6 focus-visible:outline-hidden focus-visible:ring-1
-                                                 focus-visible:ring-accent/40 transition-colors group cursor-pointer"
+                                                 hover:bg-surface-tint/6 outline-hidden focus-visible:ring-2
+                                                 focus-visible:ring-accent/70 transition-colors group cursor-pointer"
                                     >
                                       <span className="mono text-accent group-hover:text-accent group-hover:underline
                                                        flex-1 truncate text-[10.5px] italic transition-colors">
@@ -1151,7 +1143,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                         className="text-mute opacity-0 group-hover:opacity-100 shrink-0 transition-opacity"
                                         aria-hidden="true"
                                       />
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                                      <span className={`text-[10.5px] px-1.5 py-0.5 rounded shrink-0 ${
                                         ev.value_from.source_type === 'configmap'
                                           ? 'bg-info/10 ring-1 ring-info/20 text-info'
                                           : 'bg-warn/10 ring-1 ring-warn/20 text-warn'
@@ -1168,7 +1160,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                           ? `(resourceField: ${ev.value_from.key})`
                                           : `${ev.value_from.name}/${ev.value_from.key}`}
                                       </span>
-                                      <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                                      <span className={`text-[10.5px] px-1.5 py-0.5 rounded shrink-0 ${
                                         ev.value_from.source_type === 'configmap'
                                           ? 'bg-info/10 ring-1 ring-info/20 text-info'
                                           : ev.value_from.source_type === 'secret'
@@ -1214,7 +1206,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                 {vm.name}
                               </span>
                               {vm.read_only && (
-                                <span className="text-[9px] uppercase tracking-wider text-warn bg-warn/10 ring-1 ring-warn/20 px-1 rounded-sm shrink-0">
+                                <span className="text-[10.5px] uppercase tracking-wider text-warn bg-warn/10 ring-1 ring-warn/20 px-1 rounded-sm shrink-0">
                                   ro
                                 </span>
                               )}
@@ -1292,7 +1284,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                                     {kindLabel}
                                   </span>
                                   {probe && typeLabel ? (
-                                    <span className="bg-surface-tint/5 ring-1 ring-edge-raw/60 text-mute text-[10px] px-1.5 py-[2px] rounded-sm mono leading-none shrink-0">
+                                    <span className="bg-surface-tint/5 ring-1 ring-edge-raw/60 text-mute text-[10.5px] px-1.5 py-[2px] rounded-sm mono leading-none shrink-0">
                                       {typeLabel}
                                     </span>
                                   ) : (
@@ -1333,12 +1325,12 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
             })}
             {(debugContainers?.length ?? 0) > 0 && (
               <>
-                <div className="text-[10px] uppercase tracking-wider text-mute font-semibold mt-1">Debug Containers</div>
+                <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mt-1">Debug Containers</div>
                 {debugContainers!.map((e) => (
                   <div key={e.name} className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3">
                     <div className="flex items-center gap-2">
                       <span className="mono text-[12.5px]">{e.name}</span>
-                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-surface-tint/6 ring-1 ring-edge text-mute">debug</span>
+                      <span className="text-[10.5px] uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-surface-tint/6 ring-1 ring-edge text-mute">debug</span>
                       <span className="ml-auto text-[10.5px] uppercase tracking-wider text-mute">{e.state}</span>
                     </div>
                     <div className="mono text-[11px] text-mute mt-1 truncate">{e.image}</div>
@@ -1356,37 +1348,16 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
         )}
 
         {tab === "Events" && (
-          <div className="p-4 flex flex-col gap-1">
-            {eventsLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="flex gap-2.5 py-2 border-b border-edge-raw/60">
-                  <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-surface-tint/4 animate-pulse shrink-0" />
-                  <div className="flex-1 flex flex-col gap-1.5">
-                    <div className="h-2.5 rounded-sm bg-surface-tint/4 animate-pulse w-32" />
-                    <div className="h-2.5 rounded-sm bg-surface-tint/4 animate-pulse w-full" />
-                  </div>
-                </div>
-              ))
-            ) : podEvents.length === 0 ? (
-              <p className="py-12 text-center text-[13px] text-mute">No events found</p>
-            ) : (
-              podEvents.map((e, i) => (
-                <div key={i} className="flex gap-2.5 py-2 border-b border-edge-raw/60 last:border-b-0">
-                  <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${e.type_ === "Warning" ? "bg-warn" : "bg-mute/60"}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className={`text-[11px] font-semibold ${e.type_ === "Warning" ? "text-warn" : "text-mute"}`}>
-                        {e.reason}
-                      </span>
-                      <span className="mono text-[10.5px] text-mute">{e.source}</span>
-                      <span className="ml-auto mono text-[10.5px] text-mute">{e.age}</span>
-                    </div>
-                    <div className="text-[11.5px] text-ink/85 mt-0.5">{e.message}</div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+          // scopedToKind is false: get_pod_events matches the object name and namespace only, so the "this Kind only" note
+          // that the resource panel prints would be untrue here.
+          <EventsTabContent
+            events={podEvents}
+            isLoading={eventsLoading}
+            error={eventsError}
+            onRetry={() => { void refetchEvents(); }}
+            kind="Pod"
+            scopedToKind={false}
+          />
         )}
 
         {tab === "Logs" && (
@@ -1429,6 +1400,20 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                   />
                 ))}
               </div>
+            ) : yamlError && !yamlContent ? (
+              // A failed request is an error, never a blank YAML view (POD-4). Stale text from an earlier fetch stays visible instead.
+              <div role="alert" className="py-12 flex flex-col items-center gap-3 text-center">
+                <p className="text-[13px] text-bad wrap-break-word max-w-full">
+                  Couldn&apos;t load YAML: {(yamlError as any)?.message ?? String(yamlError)}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void refetchYaml()}
+                  className={`h-7 px-3 rounded-md bg-card/80 ring-1 ring-edge text-[11.5px] text-mute hover:text-ink ${FOCUS_RING}`}
+                >
+                  Retry
+                </button>
+              </div>
             ) : (
               // One <YamlFind> for the read and the edit view, so the find bar survives the switch. The Pod tab body is
               // keyed only by name and tab, so the key carries the full identity (S2).
@@ -1454,21 +1439,23 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                 {({ findButton, bar, content }) => editMode ? (
                   <>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-warn mono">Editing — changes apply to the cluster</span>
+                      <span className="text-[11px] text-warn">Editing. Nothing changes until you review and save.</span>
                       <div className="flex-1" />
                       {findButton}
                       <NeatChip on={neat} onToggle={toggleNeat} editing />
                       <button
+                        type="button"
                         onClick={() => { setEditMode(false); }}
-                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
                       >
-                        cancel
+                        Cancel
                       </button>
                       <button
+                        type="button"
                         disabled={applyResource.isPending}
                         onClick={() => { if (yamlReason) return; setConfirmSave(true); }}
                         {...disabledAttrs(yamlReason)}
-                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/30 text-[10.5px] text-accent hover:bg-accent/30 flex items-center gap-1.5 disabled:opacity-50 ${FOCUS_RING} ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         <SaveIcon /> Review &amp; save…
                       </button>
@@ -1497,18 +1484,21 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
                       {findButton}
                       <NeatChip on={neat} onToggle={toggleNeat} editing={false} />
                       <button
-                        onClick={() => navigator.clipboard.writeText(shownYaml)}
+                        type="button"
+                        onClick={() => { void copyYaml.copy(shownYaml); }}
                         title={neatShown ? "Copies the neat YAML, without the hidden fields." : undefined}
-                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
                       >
-                        {neatShown ? "copy neat" : "copy"}
+                        {yamlCopyLabel}
                       </button>
+                      <span role="status" className="sr-only">{copyYaml.state === "idle" ? "" : yamlCopyLabel}</span>
                       <button
+                        type="button"
                         onClick={() => { if (yamlReason) return; setEditContent(yamlContent); setEditMode(true); }}
                         {...disabledAttrs(yamlReason)}
-                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink flex items-center gap-1 disabled:opacity-50 ${FOCUS_RING} ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
-                        <SaveIcon /> edit
+                        <SaveIcon /> Edit
                       </button>
                     </div>
                     {neat && (
