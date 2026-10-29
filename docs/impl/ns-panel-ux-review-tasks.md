@@ -505,3 +505,54 @@ Each blocks only the task named. Recommended option first.
 - `docs/claude/resource-types.md` says `RESOURCE_LABELS` lives in `TopBar.tsx`; it is in `src/utils/kindToResourceType.ts`. F2 fixes the line.
 - `.claude/agents/senior-ux-specialist.md` still says "Sidebar (… namespace list …)" and "Dark-only palette". After F2 lands the main session or the user may update it; agents do not edit agent configuration.
 - The Who can page, Compare dialog and every create form fetch the namespace list on open; with this plan they share the cache with the page, so a list fetched for the page also fills them.
+
+## 10. User decisions during the run
+
+Copied from the run ledger when the run closed (`docs/claude/agent-checkpoints.md` → Cleanup). Newest first. "NOT the recommendation" marks a choice that differs from the option the agents recommended.
+
+- 2026-10-29: D25 (Pods Labels and Sort menus run past the window bottom) = "Fix now" before v2.4.0 (NOT the recommendation). The vite-kill question was not answered; the container restart ended that vite process, so nothing to do.
+- 2026-10-29 (answers to V2 questions, docs/ux/25 section 7): Q1 FX5 = must + should (FX5-1..FX5-6; Tier B NOT included); Q2 TopBar search may shrink to 200 px; Q3 captions say "with sample data"; Q4 "In v2.4.0" (NOT the recommendation): add a top-level React error boundary in this release (new `src/components/ErrorBoundary.tsx`, wired in `src/main.tsx`; fallback with a plain message and Reload; components never call invoke, so no IPC logging; no error stack or object data on screen).
+- 2026-10-29: README and landing page get new screenshots from the Chromium captures: REPLACE the hero `site/demo.png` (caption and alt must say it uses sample data, not "a real window on a kind cluster") AND add a small gallery (Namespaces page, Pod panel, ArgoCD panel). Dark theme. Marketing shots are captured after any FX5 so they show the final UI.
+- 2026-10-29: release v2.4.0: the release commit keeps `[skip ci]`; NO tag yet (tag after the PR merges to main; user's call).
+- 2026-10-29 (user, after the run summary): (1) run the by-sight check with a Chromium driver; (2) release v2.4.0; (3) update `.claude/agents/senior-ux-specialist.md` (done c2ccb12); (4) the PR is the user's, later.
+- 2026-10-29: Q-T = A. Change timeline shows only the first line of an ArgoCD commit message (`timeline.ts` + one `timeline.test.ts` case; argocd.md sentence). History tab keeps the whole message. FX4b.
+- 2026-10-29 (answers to F4 / W4R questions):
+  - Q-A: "Rust change now" (NOT the recommendation): ArgoCD History shows the whole commit message. Contract: `ArgoCdHistoryEntry.message` becomes the full message (all lines, trailing whitespace trimmed); the row shows the first line, the expanded entry shows all lines (`whitespace-pre-wrap`). R3 (Rust, argocd.rs history mapping + test) and FX4 (frontend render + docs + CHANGELOG) in parallel.
+  - Q-B: leave the YAML edit banner text (asked twice, the second time with the "not directly, Save previews first" point; user kept "Leave").
+  - Q-C: accept Cmd+N inert while the New popover is open (documented).
+  - Q-D: A. Applications list Health/Sync cells use the shared `argoHealthPill`/`argoSyncPill`; ArgoGlyph moves to `src/components/ArgoGlyph.tsx`; delete `syncPillClass`/`syncIcon` (keep `healthPillClass`/`healthIcon` for the Certificate Ready column); argocd.md + CHANGELOG Fixed.
+- 2026-10-29 (answers to F3 questions):
+  - F3-QA: option 1, as implemented: "twice the request" applies to live usage only; a request-only value is drawn against the limit, else the number alone.
+  - F3-QB: keep ascending first click for CPU/Memory (same as other columns).
+  - Unowned weak rings / sub-10.5 px text: fix the Pod-panel ones in this run (user said "in F4"; W3R found they must land in FX3 for the CHANGELOG line to be true, so FX3 S3 = A: LogSourceBar, NeatYaml, plus MetricChart axis, all inside the Pod panel). FieldManagers, DiffRows, ConfirmModal, MergeFromFileModal, HelmInstallModal, WhoCanPage, ClusterOverview, ExplainCard wait for a later app-wide pass (log in open-items). TopBar stays F4.
+- 2026-10-29 (answers to F2 questions):
+  - F2-Q1: A. Accept that deleting the picked namespace resets the picker to "all" and closes the panel.
+  - F2-Q2: "Fix in this run" (NOT the recommendation): `useApplyResource` invalidates `[RESOURCE_QUERY_KEY[resourceType], context]` (prefix, like `useDeleteResource`), so every list refreshes after a YAML Save; update `resource-types.md` step 8 and a CHANGELOG Fixed line. In FX2.
+- 2026-10-28 (answers to F1 questions):
+  - F1-Q1 X-1: A. Add `interactive?: boolean` to `Column`; GenericResourceTable puts the name button in the first visible non-interactive column; flag the ArgoCD Applications `sel` column. Done in F1b before F2.
+  - F1-Q2: "Extract + test" (NOT the recommendation): move the pure ArgoCD Health/Sync pill and filter logic from ResourceDetailPanel.tsx into `src/utils/argoStatus.ts` with `argoStatus.test.ts`. Done in F1b.
+- 2026-10-28 (answers to T5 plan §8):
+  - QT1: A. `useNamespaces` stays a names-only `select` over the one rows query; the 20 form/page call sites do not change.
+  - QT2: A. Fix the `revision[..7]` byte slice in `argocd.rs` with `short_revision` in R2; History "Current" marker uses exact match.
+  - QT3: "Map it now" (NOT the recommendation): `garita ns`, `namespace`, `namespaces` open the Namespaces page (R2, `launch.rs` + `launcher.md`). If a frontend file must change for it, R2 reports it and the main session assigns it (F3 or F4).
+  - delete_namespace propagation: accepted. R1 moves it to `delete_params_for` (Background); delete_pod, delete_node, delete_argocd_app stay documented exceptions.
+- 2026-10-28 (answers to T2 §6 questions, docs/ux/24 §6):
+  - Q1 batches: two batches. B1 = 5 Critical + POD-3, POD-5, POD-12, ARGO-2, ARGO-4, ARGO-5; review; B2 = rest of "implement now".
+  - Q16: new Rust rows command + one `useNamespaceRows` hook for page, picker, MapPage, creator invalidation (names derived from rows; one query key).
+  - Q17: real reasons: rows carry `status.conditions` and `spec.finalizers`; Terminating card shows them.
+  - Q8: `operation_message` in a later Rust run; nothing now.
+  - Q5: blocked Shell click opens the Shell tab (edit ui.md DISABLE-PRECEDENCE).
+  - Q9: Force sync goes through a confirm, like Prune, even with the typed-confirm guardrail off.
+  - Q2: "Real fields now" (NOT the recommendation): add `service_account` and `conditions` to the Rust pod type this run and show real values; remove the hardcoded "default" and phase-derived conditions.
+  - Q6: "Merge tabs" (NOT the recommendation): merge Pod Overview into Summary (one fewer tab).
+  - Q7: remove the ArgoCD Resources "diff" expander.
+  - Q13: floor 10.5 px, no mono sentences, keep uppercase eyebrows.
+  - Q21: 403 ViewState card for all core lists in GenericResourceTable.
+  - Q3, Q4, Q10, Q11, Q12, Q14, Q15, Q18, Q19, Q20, Q22, Q23, Q24: accept T2 recommendations (option A each).
+- 2026-10-28 (answers to main-session questions):
+  - Q-place: "Both". TopBar namespace dropdown = picking + filter; a new Namespaces resource page (table + detail panel) = create, delete, details. Sidebar namespace list removed (the page gets a sidebar nav item). This reopens plan §1 (frozen contract): new resource kind, cross-stack; tech-lead re-plans.
+  - Q1 palette "Create namespace…": no, not now.
+  - Q2 forbidden namespace list: "Return forbidden" (show the forbidden state; no typed-name fallback).
+  - Q3: protect `kube-node-lease` from delete in this run.
+- 2026-10-28: Scope widened: the Pod and ArgoCD panel improvements that T2 judges needed get implemented. After T2, tech-lead turns T2 findings into implementation tasks (new briefs). Any part an agent is unsure of becomes a question to the user, not an assumption.
+- 2026-10-28: UX re-check focus is the Pod detail panel and the ArgoCD panel; namespace list moves from the left sidebar into the namespace panel.
