@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, memo, type RefObject } from "react";
 import { ChevronDown, ChevronUp, Filter, ArrowUpDown, Boxes, Trash2, X, Copy, RotateCcw } from "lucide-react";
 import type { Pod, PodStatus } from "../types/k8s";
 import { useDeletePod, useBulkDeletePods, usePermissions } from "../hooks/useResources";
@@ -9,7 +9,7 @@ import { useClusterIdentity, type IdentityRole } from "../utils/clusterIdentity"
 import { checkBulk, disabledAttrs, pickDisabledReason, READ_ONLY_REASON_SHORT } from "../utils/guardrails";
 import { deletePodsByNamespaceEquiv, deletePodsEquiv } from "../utils/kubectlEquiv";
 import { podStatusStyle } from "../utils/podStatus";
-import { barDenominator, displayedUsage, isNotReady, statusCounts, usageLabel } from "../utils/podTableView";
+import { barDenominator, displayedUsage, isNotReady, menuPlacement, statusCounts, usageLabel, type MenuPlacement } from "../utils/podTableView";
 import { useCopyFeedback, type CopyState } from "../hooks/useCopyFeedback";
 import { Popover } from "./Popover";
 
@@ -101,7 +101,59 @@ const SORT_OPTIONS: { field: SortField; dir: SortDir; label: string }[] = [
   { field: "memory",    dir: "asc",  label: "Memory  least first" },
 ];
 
+// ─── Toolbar menu placement ──────────────────────────────────────────────────
+
+// The Labels and Sort menus hang off buttons that sit below the summary and node cards, and the list pane is
+// overflow-hidden, so a menu of a fixed height ran past the bottom of the window and its lower rows could not be
+// reached. A menu is capped at the room it has below its button inside the visible pane (or above it, when that is
+// small, see `menuPlacement`) and scrolls inside. `top-9` and `bottom-9` leave GAP px between the button and the menu.
+const MENU_GAP = 8;
+const MENU_EDGE = 8;
+
+/** The part of the window the menu may use: the window, cut down by every ancestor that clips or scrolls vertically. */
+function visibleBox(el: HTMLElement): { top: number; bottom: number } {
+  let top = 0;
+  let bottom = window.innerHeight;
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (getComputedStyle(p).overflowY === "visible") continue;
+    const r = p.getBoundingClientRect();
+    top = Math.max(top, r.top);
+    bottom = Math.min(bottom, r.bottom);
+  }
+  return { top, bottom };
+}
+
+/**
+ * Placement of an open menu, measured from its trigger when it opens and again on resize and scroll. Null while
+ * closed. The measure runs before paint, so the first painted frame is already placed.
+ */
+function useMenuPlacement(open: boolean, triggerRef: RefObject<HTMLElement | null>, cap?: number): MenuPlacement | null {
+  const [placement, setPlacement] = useState<MenuPlacement | null>(null);
+  useLayoutEffect(() => {
+    if (!open) { setPlacement(null); return; }
+    const measure = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const t = el.getBoundingClientRect();
+      const box = visibleBox(el);
+      const next = menuPlacement(box.bottom - t.bottom - MENU_GAP - MENU_EDGE, t.top - box.top - MENU_GAP - MENU_EDGE, cap);
+      setPlacement((prev) => (prev && prev.up === next.up && prev.maxHeight === next.maxHeight ? prev : next));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open, triggerRef, cap]);
+  return placement;
+}
+
 // ─── FiltersBar ──────────────────────────────────────────────────────────────
+
+/** The Labels menu never grows past this height (px), however much room there is. */
+const LABELS_MENU_CAP = 320;
 
 const STATUSES: PodStatus[] = ["All", "Running", "Pending", "CrashLoopBackOff", "ImagePullBackOff", "Terminating", "Failed"];
 
@@ -133,6 +185,8 @@ const FiltersBar = memo(function FiltersBar({
   const [sortOpen, setSortOpen]     = useState(false);
   const labelsBtnRef = useRef<HTMLButtonElement>(null);
   const sortBtnRef   = useRef<HTMLButtonElement>(null);
+  const labelsPlace = useMenuPlacement(labelsOpen, labelsBtnRef, LABELS_MENU_CAP);
+  const sortPlace   = useMenuPlacement(sortOpen, sortBtnRef);
 
   const activeLabelCount = Object.keys(activeLabels).length;
   const activeSortLabel  = SORT_OPTIONS.find(o => o.field === sortField && o.dir === sortDir)?.label;
@@ -187,7 +241,8 @@ const FiltersBar = memo(function FiltersBar({
           )}
         </button>
 
-        <Popover open={labelsOpen} onClose={() => setLabelsOpen(false)} triggerRef={labelsBtnRef} label="Filter by label" className="right-0 top-9 w-72 py-2 max-h-80 overflow-y-auto">
+        <Popover open={labelsOpen} onClose={() => setLabelsOpen(false)} triggerRef={labelsBtnRef} label="Filter by label" className={`right-0 w-72 ${labelsPlace?.up ? "bottom-9" : "top-9"}`}>
+          <div className="py-2 overflow-y-auto rounded-lg" style={{ maxHeight: labelsPlace?.maxHeight ?? LABELS_MENU_CAP }}>
             {allLabels.length === 0 ? (
               <p className="px-3 py-2 text-[11.5px] text-mute">No labels found on pods</p>
             ) : (
@@ -230,6 +285,7 @@ const FiltersBar = memo(function FiltersBar({
                 ))}
               </>
             )}
+          </div>
         </Popover>
       </div>
 
@@ -251,7 +307,8 @@ const FiltersBar = memo(function FiltersBar({
           <span className="truncate">{sortField ? activeSortLabel : "Sort"}</span>
         </button>
 
-        <Popover open={sortOpen} onClose={() => setSortOpen(false)} triggerRef={sortBtnRef} label="Sort pods" className="right-0 top-9 w-52 py-1">
+        <Popover open={sortOpen} onClose={() => setSortOpen(false)} triggerRef={sortBtnRef} label="Sort pods" className={`right-0 w-52 ${sortPlace?.up ? "bottom-9" : "top-9"}`}>
+          <div className="py-1 overflow-y-auto rounded-lg" style={{ maxHeight: sortPlace?.maxHeight }}>
             {sortField && (
               <>
                 <button
@@ -281,6 +338,7 @@ const FiltersBar = memo(function FiltersBar({
                 </button>
               );
             })}
+          </div>
         </Popover>
       </div>
       </div>

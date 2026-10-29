@@ -63,3 +63,29 @@ export function statusCounts(pods: readonly { status: string }[]): Record<string
 export function validPort(value: string): boolean {
   return /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 65535;
 }
+
+/** Least room (px) below a menu's button at which the menu still opens downwards. */
+export const MENU_MIN_ROOM = 160;
+/** A menu is never squeezed below this height (px), so a very small window still shows a few rows. */
+export const MENU_FLOOR = 96;
+
+export interface MenuPlacement {
+  /** Open above the button instead of below it. */
+  up: boolean;
+  /** Tallest the menu may be (px); it scrolls inside when its content is taller. */
+  maxHeight: number;
+}
+
+/**
+ * Where a toolbar menu opens and how tall it may be, from the room (px, edge margin already taken off) below and above
+ * its button inside the visible pane. Downwards while there is at least `minRoom` below, or while above has no more
+ * room than below; otherwise upwards. The height is the room on the chosen side, never under `MENU_FLOOR`, and never
+ * over `cap` when one is given (the Labels menu keeps its old 320 px ceiling).
+ */
+export function menuPlacement(spaceBelow: number, spaceAbove: number, cap?: number, minRoom = MENU_MIN_ROOM): MenuPlacement {
+  const below = Number.isFinite(spaceBelow) ? spaceBelow : 0;
+  const above = Number.isFinite(spaceAbove) ? spaceAbove : 0;
+  const up = below < minRoom && above > below;
+  const room = Math.max(Math.floor(up ? above : below), MENU_FLOOR);
+  return { up, maxHeight: cap != null ? Math.min(room, cap) : room };
+}
