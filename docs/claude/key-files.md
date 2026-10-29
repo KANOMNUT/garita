@@ -123,7 +123,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/admission.rs` | Mutating/validating webhooks; `WebhookConfigRow.matches` |
 | `src-tauri/src/commands/namespaces.rs` | Namespaces: `list_namespace_rows` (`NamespaceRow`: phase, age, labels, deletion time, conditions, finalizers) behind the page, the picker and every names reader |
 | `src-tauri/src/commands/cluster_info.rs` | Cluster metadata, `check_cluster_access`, `list_events`, `get_resource_events(…, kind: Option<String>)` |
-| `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()` |
+| `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()`, `short_revision` / `last_commit_display` (revision display strings) |
 | `src-tauri/src/commands/flux.rs`, `gateway.rs`, `certmanager.rs` | CRD lists via `DynamicObject`; empty on 404 |
 | `src-tauri/src/commands/search.rs` | `search_resources` |
 | `src-tauri/src/commands/graph.rs` | `get_resource_graph` |

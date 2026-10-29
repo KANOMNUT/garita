@@ -684,6 +684,19 @@ pub(crate) fn short_revision(rev: &str) -> String {
     }
 }
 
+/// Display form of `status.sync.revision` for the Applications list and the panel (`last_commit`).
+/// An empty revision is a dash; anything else goes through `short_revision`, so only a full
+/// 40-char hex SHA is shortened and a chart version, tag or branch name stays whole. History
+/// entries use the same `short_revision`, so for one revision the two strings are equal and the
+/// frontend can match them exactly.
+pub(crate) fn last_commit_display(revision: &str) -> String {
+    if revision.is_empty() {
+        "\u{2014}".to_string()
+    } else {
+        short_revision(revision)
+    }
+}
+
 fn time_ago(iso: &str) -> String {
     use chrono::{DateTime, Utc};
     if iso.is_empty() { return "\u{2014}".to_string(); }
@@ -720,14 +733,7 @@ pub async fn list_argocd_apps(context: String) -> Result<Vec<ArgoCdApp>, String>
             if s.is_empty() { "\u{2014}".to_string() } else { s }
         };
 
-        let revision = status["sync"]["revision"].as_str().unwrap_or("");
-        let last_commit = if revision.len() >= 7 {
-            revision[..7].to_string()
-        } else if revision.is_empty() {
-            "\u{2014}".to_string()
-        } else {
-            revision.to_string()
-        };
+        let last_commit = last_commit_display(status["sync"]["revision"].as_str().unwrap_or(""));
         let last_synced_at = time_ago(status["operationState"]["finishedAt"].as_str().unwrap_or(""));
         let operation_phase = str_or_dash(&status["operationState"]["phase"]);
         // ArgoCD stores revisionMetadata in multiple places depending on version/state.
@@ -1468,6 +1474,28 @@ mod rollback_tests {
         assert_eq!(short_revision("h\u{e9}llo w\u{f6}rld"), "h\u{e9}llo w\u{f6}rld");
         // 40 bytes, not ASCII hex: must not be shortened and must not panic.
         assert_eq!(short_revision(&"\u{e9}".repeat(20)), "\u{e9}".repeat(20));
+    }
+
+    #[test]
+    fn last_commit_display_rules() {
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(last_commit_display(""), "\u{2014}");
+        assert_eq!(last_commit_display(sha), "0123456");
+        // Chart versions longer than 7 characters were cut to a different version before.
+        assert_eq!(last_commit_display("10.11.12"), "10.11.12");
+        assert_eq!(last_commit_display("1.2.3-rc.1+build.5"), "1.2.3-rc.1+build.5");
+        // Short values and non-SHA refs are unchanged.
+        assert_eq!(last_commit_display("v1.0"), "v1.0");
+        assert_eq!(last_commit_display("release-2024-01"), "release-2024-01");
+        // Non-ASCII: byte 7 is inside a multi-byte character; this used to be a byte slice.
+        assert_eq!(last_commit_display("h\u{e9}llo w\u{f6}rld"), "h\u{e9}llo w\u{f6}rld");
+        assert_eq!(last_commit_display(&"\u{e9}".repeat(20)), "\u{e9}".repeat(20));
+        assert_eq!(last_commit_display("\u{1f980}\u{1f980}\u{1f980}"), "\u{1f980}\u{1f980}\u{1f980}");
+        // 40 characters that are not all hex: not a SHA, so not shortened.
+        assert_eq!(
+            last_commit_display("0123456789abcdef0123456789abcdef0123456g"),
+            "0123456789abcdef0123456789abcdef0123456g"
+        );
     }
 
     #[test]

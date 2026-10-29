@@ -6,16 +6,6 @@ use std::collections::BTreeMap;
 use super::extras::ResourceCondition;
 use super::utils::{age_from_timestamp, client_for_context};
 
-#[tauri::command]
-pub async fn list_namespaces(context: String) -> Result<Vec<String>, String> {
-    let client = client_for_context(&context).await
-        .map_err(|e| format!("Failed to connect: {}", e))?;
-    let api: Api<Namespace> = Api::all(client);
-    let list = api.list(&ListParams::default()).await
-        .map_err(|e| format!("Failed to list namespaces: {}", e))?;
-    Ok(list.items.into_iter().filter_map(|ns| ns.metadata.name).collect())
-}
-
 /// One namespace for the Namespaces page, the namespace picker and every consumer that needs only
 /// names. Mirrors `NamespaceRow` in `src/types/k8s.ts`.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -72,8 +62,8 @@ pub(crate) fn namespace_row(ns: Namespace) -> NamespaceRow {
 }
 
 /// Every namespace as a row, in the API's order. The one read behind the Namespaces page and the
-/// picker. Errors keep the strings of `list_namespaces`: the kube 403 text contains "forbidden",
-/// which the frontend's `classifyReadError` and `isForbidden` rely on.
+/// picker. The error strings are load-bearing: the kube 403 text contains "forbidden", which the
+/// frontend's `classifyReadError` and `isForbidden` rely on.
 #[tauri::command]
 pub async fn list_namespace_rows(context: String) -> Result<Vec<NamespaceRow>, String> {
     let client = client_for_context(&context).await

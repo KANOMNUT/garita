@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **A Namespaces page.** "Namespaces" is the first item in the sidebar's Cluster section (and in the command palette). It lists every namespace with its status (Active, or Terminating with how long it has been deleting), age and labels, and opens the usual detail panel: Overview, Summary (labels and annotations), Events and YAML, plus Compare and field managers. For a namespace that is stuck in Terminating, the Overview explains what is blocking it (the namespace's own conditions) and points to Events and YAML. **New** and Ctrl/Cmd+N create a namespace here, and the trash button deletes one after you type its name. A deleted namespace usually stays Terminating for a while; the page refreshes every 5 seconds until it is gone. "Show pods in this namespace" in the panel jumps to the Pods list for it.
+- **`garita ns` opens the Namespaces page.** On the command line, `ns`, `namespace` and `namespaces` now name the Namespaces page, like `garita nodes`. They used to be ignored. A `-n` namespace given with it is dropped, because the page lists all namespaces.
 
 ### Changed
 
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **ArgoCD: the Revision column no longer cuts a chart version, tag or branch to 7 characters.** An Application that tracks a Helm chart version such as `10.11.12` showed `10.11.1`, which also looked like a different version from the History entry. The list and the panel now show the revision in full; only a 40-character commit SHA is shortened to 7. A revision with non-ASCII characters (a tag or branch name) no longer crashes the app.
 - **Deleting a namespace works from the keyboard.** The old sidebar trash button was invisible until the pointer hovered it, so Tab skipped it. The row delete buttons in resource lists now appear while any control in the row has focus, they carry names ("Delete namespace payments"), and a delete that is not allowed (read-only mode, no permission, a built-in or already-deleting namespace) shows dimmed with its reason instead of acting enabled.
 - **ArgoCD: Health and Sync are no longer folded into one word.** The panel header called an Application "Degraded" in red when it was Healthy but OutOfSync, Progressing, Suspended or Missing, directly above an Overview that said Healthy. The header now shows a Health chip and a Sync chip, and the Overview's operation badge reads "Last operation: …". On the Resources tab the filter chips are two groups, Health and Sync, with a count per status: "Healthy" means Healthy whatever its sync state, Missing is counted apart from Degraded, and Suspended and Unknown get their own chips when a resource has them.
 - **ArgoCD: Sync, Refresh and Hard Refresh look disabled in read-only mode and say why.** They used to look active and do nothing. The reason now shows under the buttons, and a pending request no longer takes focus away from the button.
