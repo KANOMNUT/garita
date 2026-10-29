@@ -164,8 +164,10 @@ const FiltersBar = memo(function FiltersBar({
         ))}
       </div>
 
-      {/* Labels dropdown. ml-auto: when the toolbar wraps, both menu buttons sit at the right edge of their row, so the right-0 menus open into the table. */}
-      <div className="relative ml-auto">
+      {/* Labels and Sort wrap as one group at the right edge of their row, so the right-0 menus open into the table. */}
+      <div className="ml-auto flex items-center gap-2">
+      {/* Labels dropdown */}
+      <div className="relative">
         <button
           ref={labelsBtnRef}
           type="button"
@@ -280,6 +282,7 @@ const FiltersBar = memo(function FiltersBar({
               );
             })}
         </Popover>
+      </div>
       </div>
     </div>
   );
