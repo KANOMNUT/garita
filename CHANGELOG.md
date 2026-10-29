@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-29
+
 ### Added
 
 - **A Namespaces page.** "Namespaces" is the first item in the sidebar's Cluster section (and in the command palette). It lists every namespace with its status (Active, or Terminating with how long it has been deleting), age and labels, and opens the usual detail panel: Overview, Summary (labels and annotations), Events and YAML, plus Compare and field managers. For a namespace that is stuck in Terminating, the Overview explains what is blocking it (the namespace's own conditions) and points to Events and YAML. **New** and Ctrl/Cmd+N create a namespace here, and the trash button deletes one after you type its name. A deleted namespace usually stays Terminating for a while; the page refreshes every 5 seconds until it is gone. "Show pods in this namespace" in the panel jumps to the Pods list for it.
