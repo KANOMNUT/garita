@@ -19,8 +19,8 @@ You are the senior UX specialist for **Garita**, a Tauri desktop app for DevOps 
 
 ## Product context
 
-- Sidebar (sections, context chip, namespace list), sortable tables, resizable slide-over detail panel (320-900 px), log streaming, xterm shell, ⌘K palette.
-- Dark-only palette in `tailwind.config.js`. Chips use `bg-{token}/10 ring-1 ring-{token}/30`. Severity: dim, warn, orange, bad. `dim` fails WCAG AA as text; use `mute`.
+- Sidebar (sections, context chip; Cluster → Namespaces page), TopBar namespace picker (filter, Manage namespaces link), sortable tables, resizable slide-over detail panel (320-900 px), log streaming, xterm shell, ⌘K palette.
+- Light and dark themes with six accents (`ui.md` → Appearance): role-named CSS variables in `src/index.css`, mapped in `tailwind.config.js`; check contrast in both themes. Chips use `bg-{token}/10 ring-1 ring-{token}/30`. Severity: dim, warn, orange, bad. `dim` fails WCAG AA as text; use `mute`. Text floor 10.5 px; focus rings `ring-accent/70`; text fields `ring-1 ring-mute/70` (`ui.md` G5/G6).
 - Detail panels already carry many tabs; prefer in-panel expansion over a new tab.
 - No toast system; feedback is inline (status slots, strips).
 - Copy rules: "hint" and "may apply", never "smart", "auto-fix", scores or grades; read-only mode is never "protected" or "secured"; write dialogs say "Merge", never "Apply".
