@@ -42,6 +42,8 @@ import type {
   EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow, CRDResource, NamespaceRow,
 } from "../types/k8s";
 import { podStatusStyle } from "../utils/podStatus";
+import { ArgoGlyph } from "./ArgoGlyph";
+import { argoHealthPill, argoSyncPill, type ArgoPill } from "../utils/argoStatus";
 import { chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
 
 interface ViewProps { context: string; namespace: string; search?: string; selectedKey?: string | null; }
@@ -1715,6 +1717,8 @@ export const PDBView = memo(function PDBView({ context, namespace, search, selec
 
 // ─── ArgoCD Applications ──────────────────────────────────────────────────────
 
+// healthPillClass and healthIcon serve the Certificate "Ready" column only. The Applications list reads the shared
+// pill tables in utils/argoStatus.ts (ArgoPillCell below).
 function healthPillClass(status: string): string {
   switch (status) {
     case "Healthy":     return "bg-ok/10 text-ok ring-1 ring-ok/30";
@@ -1733,22 +1737,6 @@ function healthIcon(status: string): string {
   }
 }
 
-function syncPillClass(status: string): string {
-  switch (status) {
-    case "Synced":    return "bg-ok/10 text-ok ring-1 ring-ok/30";
-    case "OutOfSync": return "bg-warn/10 text-warn ring-1 ring-warn/30";
-    default:          return "bg-surface-tint/4 text-mute ring-1 ring-edge";
-  }
-}
-
-function syncIcon(status: string): string {
-  switch (status) {
-    case "Synced":    return "✓";
-    case "OutOfSync": return "↑";
-    default:          return "?";
-  }
-}
-
 const repoShort = (url: string): string => {
   try {
     const parts = url.replace(/\.git$/, "").split("/");
@@ -1760,21 +1748,28 @@ const PILL = "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5
 /** A focus ring of at least 3:1 in both themes (X-8, ui.md G6). */
 const ARGO_FOCUS = "outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
 
+/**
+ * A Health or Sync cell of the Applications list. The pill table is the one the cards and the panel read
+ * (`utils/argoStatus.ts`), so a status looks the same in all three; never keep a second map here (argocd.md).
+ */
+function ArgoPillCell({ pill, text }: { pill: ArgoPill; text: string }) {
+  return (
+    <span className={`${PILL} ring-1 ${pill.cls}`}>
+      <ArgoGlyph icon={pill.icon} />
+      {text || "—"}
+    </span>
+  );
+}
+
 const argoColumns: Column<ArgoCdApp>[] = [
   { id: "name",    header: "Name",        sortable: true, sortValue: (a) => a.name,     cell: (a) => <N t={a.name} /> },
   { id: "ns",      header: "Namespace",   width: 130, sortable: true, sortValue: (a) => a.namespace, cell: (a) => <Ns t={a.namespace} /> },
   { id: "project", header: "Project",     width: 120, sortable: true, sortValue: (a) => a.project,   cell: (a) => <Mute t={a.project} /> },
   { id: "health",  header: "Health",      width: 110, sortable: true, sortValue: (a) => a.health_status, cell: (a) => (
-    <span className={`${PILL} ${healthPillClass(a.health_status)}`}>
-      <span aria-hidden>{healthIcon(a.health_status)}</span>
-      {a.health_status || "—"}
-    </span>
+    <ArgoPillCell pill={argoHealthPill(a.health_status)} text={a.health_status} />
   )},
   { id: "sync",    header: "Sync",        width: 100, sortable: true, sortValue: (a) => a.sync_status, cell: (a) => (
-    <span className={`${PILL} ${syncPillClass(a.sync_status)}`}>
-      <span aria-hidden>{syncIcon(a.sync_status)}</span>
-      {a.sync_status || "—"}
-    </span>
+    <ArgoPillCell pill={argoSyncPill(a.sync_status)} text={a.sync_status} />
   )},
   { id: "dest",    header: "Destination", width: 150, cell: (a) => (
     <div className="flex flex-col" title={a.dest_server}>

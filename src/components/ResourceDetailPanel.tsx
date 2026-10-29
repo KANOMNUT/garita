@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResizablePanel } from "../hooks/useResizablePanel";
-import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, ArrowUpRight, ChevronRight, StepBack, Network, Pause } from "lucide-react";
+import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, ArrowUpRight, ChevronRight, StepBack, Network } from "lucide-react";
 import { useResourceYaml, useResourceEvents, useApplyResource, useCRDResources, useNodePods, useCordonNode, useUncordonNode, useDeleteNode, useAddNodeTaint, useRemoveNodeTaint, useStartServicePortForward, usePortForwards, useStopPortForward, useHelmValues, useUpgradeHelmRelease, useHelmHistory, useRollbackHelmRelease, useSyncArgoCdApp, useRollbackArgoCdApp, useRefreshArgoCdApp, useArgoCdCommitInfo, useArgoCdAppResources, useWorkloadPods, useResourceMetadata, useWorkloadConditions, useResourceGraph, useDeleteResource, useDeleteArgoCdApp, useUninstallHelmRelease, useTlsCertificateInfo, usePermissions, useResourceYamlNeat } from "../hooks/useResources";
 import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision, NamespaceRow } from "../types/k8s";
 import { useRevealedSecret, forgetSecret, forgetHelmValues, useAccessChecks } from "../hooks/useResources";
@@ -51,6 +51,7 @@ import { defaultLogView } from "../utils/logFilter";
 import { podStatusStyle } from "../utils/podStatus";
 import { PROTECTED_NAMESPACES, PROTECTED_NAMESPACE_REASON, chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
 import { liveHistoryId } from "../utils/argoHistory";
+import { ArgoGlyph } from "./ArgoGlyph";
 import {
   ARGO_CHIP_CLS, ARGO_NEUTRAL_CLS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount,
   argoSyncPill, filterArgoResources, isArgoHealthy, isDegradedOrMissing, visibleHealthFilters,
@@ -79,15 +80,8 @@ function KV({ k, v, mono = true, wrap = false }: { k: string; v: string; mono?: 
 
 // ─── ArgoCD status chip (ARGO-1) ──────────────────────────────────────────────
 // The pill tables and the Resources-tab filter logic are pure and live in utils/argoStatus.ts, shared by the panel
-// header, the Overview and the Resources tab. Health and Sync are independent (argocd.md).
-
-/**
- * A status glyph is decoration (the status word sits beside it), so a screen reader skips it. The Suspended glyph
- * `⏸` (U+23F8) can render as a colour emoji in WKWebView, so it is drawn as the Pause icon instead.
- */
-function ArgoGlyph({ icon }: { icon: string }) {
-  return icon === argoHealthPill("Suspended").icon ? <Pause size={10} aria-hidden /> : <span aria-hidden>{icon}</span>;
-}
+// header, the Overview and the Resources tab. Health and Sync are independent (argocd.md). `ArgoGlyph` (the pill glyph)
+// lives in ArgoGlyph.tsx, shared with the Applications list.
 
 /** A Health or Sync chip in the panel header. The glyph is decoration; the sr-only prefix names the status. */
 function ArgoStatusChip({ which, pill }: { which: "Health" | "Sync"; pill: ArgoPill }) {
@@ -1419,7 +1413,7 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
         <>
           <div className="flex items-center gap-2 mb-3">
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] mono font-medium ring-1 ${sp.cls}`}>
-              <span>{sp.icon}</span>{c.ready ? "Ready" : c.status}
+              <span aria-hidden>{sp.icon}</span>{c.ready ? "Ready" : c.status}
             </span>
           </div>
 
@@ -2617,7 +2611,8 @@ function ArgoCdHistoryTab({
           >
             <span className="mono text-[11px] text-accent w-[68px] shrink-0 truncate" title={entry.revision}>{entry.revision}</span>
             <span className="mono text-[11px] text-mute w-[80px] shrink-0">{entry.deployed_at}</span>
-            <span className="text-[11.5px] text-ink/80 flex-1 truncate">{entry.message || "—"}</span>
+            {/* The backend sends the whole commit message; the row shows its first line, the expanded entry all of it. */}
+            <span className="text-[11.5px] text-ink/80 flex-1 truncate">{entry.message.split(/\r?\n/, 1)[0] || "—"}</span>
             {entry.id === currentId && (
               <span
                 title="The revision this Application is running now."
@@ -2631,7 +2626,7 @@ function ArgoCdHistoryTab({
           </button>
           {expanded === entry.id && (
             <div className="mx-2 mb-1 p-2.5 rounded-lg bg-surface-tint/3 ring-1 ring-edge-raw/60 flex flex-col gap-2">
-              {/* The row cuts the message to one line, so this is the only place to read it in full. */}
+              {/* The row shows only the first line of the message, so this is where to read all of it. Line breaks are kept; a long line wraps. */}
               <p className="text-[12px] text-ink whitespace-pre-wrap wrap-break-word">{entry.message || "No commit message recorded."}</p>
               {entry.author && (
                 <p className="text-[11px] text-mute">by <span className="mono">{entry.author}</span></p>
