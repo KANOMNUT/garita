@@ -42,6 +42,15 @@ describe("mergeTimeline", () => {
     expect(syncedTitle("")).toBe("ArgoCD synced");
   });
 
+  it("uses only the first line of an ArgoCD commit message in the detail", () => {
+    const detail = (message: string, author = "ann") =>
+      mergeTimeline(input({ kind: "argocd", argocd: [{ ...argo(1, "2026-10-16T11:00:00Z"), message, author }] }))[0].detail;
+    expect(detail("fix: bug\n\nBody line 1\nBody line 2")).toBe("fix: bug. by ann");
+    expect(detail("fix: bug\r\nBody")).toBe("fix: bug. by ann");
+    expect(detail("single line")).toBe("single line. by ann");
+    expect(detail("", "")).toBe("");
+  });
+
   it("puts unknown timestamps last in input order", () => {
     const m = mergeTimeline(input({
       kind: "sts",
