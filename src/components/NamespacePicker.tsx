@@ -33,7 +33,7 @@ export function NamespacePicker({ context, ns, setNs, onManage }: Props) {
   };
 
   return (
-    <div className="relative">
+    <div className="relative min-w-[3.25rem] shrink-[10000]">
       <button
         ref={triggerRef}
         type="button"
@@ -41,10 +41,10 @@ export function NamespacePicker({ context, ns, setNs, onManage }: Props) {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Namespace: ${ns}`}
-        className="group flex items-center gap-1 px-1.5 py-1 rounded-sm hover:bg-surface-tint/4 aria-expanded:bg-surface-tint/6 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+        className="group flex items-center gap-1 min-w-0 max-w-full px-1.5 py-1 rounded-sm hover:bg-surface-tint/4 aria-expanded:bg-surface-tint/6 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
       >
         <span className="mono text-[12px] text-ink max-w-[28ch] truncate" title={ns}>{ns}</span>
-        <ChevronDown size={12} aria-hidden className={`text-mute transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={12} aria-hidden className={`shrink-0 text-mute transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <Popover
         open={open}

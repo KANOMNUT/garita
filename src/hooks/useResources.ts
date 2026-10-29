@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery, type QueryClient } from "@tanstack/react-query";
-import { useRef, useEffect, useSyncExternalStore } from "react";
+import { useRef, useEffect, useState, useSyncExternalStore } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke, Channel } from "@tauri-apps/api/core";
@@ -401,8 +401,13 @@ export function usePodMetricsHistory(context: string, namespace: string) {
   // name collided across namespaces when the picker is "all". Same 20-sample ring as before.
   const history = useRef<UsageHistory>(newUsageHistory());
 
+  const [, setSamples] = useState(0);
   useEffect(() => {
-    if (result.data) recordUsage(history.current, result.data);
+    if (!result.data) return;
+    recordUsage(history.current, result.data);
+    // The rings are mutated in place: this render is what shows the new sample (otherwise the
+    // render that receives the metrics still reads an empty ring and a cell keeps its "req" label).
+    setSamples((n) => n + 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.dataUpdatedAt]);
 

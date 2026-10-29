@@ -46,7 +46,7 @@ const Bar = memo(function Bar({ value, limit, color = "bg-metric-cpu", label, re
       <div className="flex items-center gap-2">
         {/* Keeps the number in the column where the bars put it. */}
         <span aria-hidden className="shrink-0" style={{ width: 72 }} />
-        <span className="mono text-[11px] text-mute tabular-nums" style={{ minWidth: 56 }}>{label}</span>
+        <span className="mono text-[11px] text-mute tabular-nums whitespace-nowrap" style={{ minWidth: 56 }}>{label}</span>
       </div>
     );
   }
@@ -63,7 +63,7 @@ const Bar = memo(function Bar({ value, limit, color = "bg-metric-cpu", label, re
           />
         )}
       </div>
-      <span className="mono text-[11px] text-mute tabular-nums" style={{ minWidth: 56 }}>{label}</span>
+      <span className="mono text-[11px] text-mute tabular-nums whitespace-nowrap" style={{ minWidth: 56 }}>{label}</span>
     </div>
   );
 });
@@ -164,8 +164,8 @@ const FiltersBar = memo(function FiltersBar({
         ))}
       </div>
 
-      {/* Labels dropdown */}
-      <div className="relative">
+      {/* Labels dropdown. ml-auto: when the toolbar wraps, both menu buttons sit at the right edge of their row, so the right-0 menus open into the table. */}
+      <div className="relative ml-auto">
         <button
           ref={labelsBtnRef}
           type="button"

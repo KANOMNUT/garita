@@ -9,6 +9,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions |
+| `src/main.tsx` / `src/components/ErrorBoundary.tsx` | `main.tsx` mounts `<ErrorBoundary><App /></ErrorBoundary>` inside `StrictMode` after `initAppearance()`. `ErrorBoundary` is the app's one class component: a render error shows a full-window "Something went wrong" card with a Reload button, never the message, stack or data. See `ui.md` → Error boundary |
 | `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"), context chip, Custom Resources tree. No namespace list |
 | `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu (a `Popover` user) |
 | `src/components/NamespacePicker.tsx` | TopBar namespace picker: trigger + `Popover`, filter, "Terminating" tag, "Manage namespaces" link. Reads `useNamespaceRows`; no writes. See `ui.md` → Namespaces: picker and page |

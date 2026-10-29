@@ -2809,10 +2809,12 @@ function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }
     ? "Force is on, but a dry run overwrites nothing."
     : "Force is on: it overwrites resources that conflict with git.";
   const confirmTitle = prune && force ? "Prune resources and force sync" : prune ? "Prune resources on sync" : `Force sync ${name}`;
+  // pruneDescription ends in a resource list or a bare clause: close it before anything follows.
+  const closed = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`);
   const confirmDescription = prune && force
-    ? `${pruneDescription} ${forceSentence}`
+    ? `${closed(pruneDescription)} ${forceSentence}`
     : prune
-    ? pruneDescription
+    ? closed(pruneDescription)
     : dryRun
     ? `Sync "${name}" is a dry run, so nothing will actually be overwritten.`
     : `Sync "${name}" with force enabled overwrites resources that conflict with git.`;

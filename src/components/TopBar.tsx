@@ -110,15 +110,15 @@ export const TopBar = memo(function TopBar({
       )}
 
       {/* breadcrumbs */}
-      <div className="flex items-center gap-2 text-[12.5px]">
+      <div className="flex items-center gap-2 min-w-0 text-[12.5px]">
         <button
           type="button"
           onClick={onOpenSwitcher}
-          className={`group flex items-center gap-1.5 px-1.5 py-1 -ml-1.5 rounded-sm hover:bg-surface-tint/4 ${RING_CLS}`}
+          className={`group flex items-center gap-1.5 px-1.5 py-1 -ml-1.5 rounded-sm min-w-0 hover:bg-surface-tint/4 ${RING_CLS}`}
         >
-          <span className="h-2 w-2 rounded-full bg-ok ring-[3px] ring-ok/18" />
-          <span className="font-medium">{currentContext || "No context"}</span>
-          <ChevronsUpDown size={12} className="text-dim" />
+          <span className="h-2 w-2 rounded-full bg-ok ring-[3px] ring-ok/18 shrink-0" />
+          <span className="font-medium truncate" title={currentContext || undefined}>{currentContext || "No context"}</span>
+          <ChevronsUpDown size={12} className="text-dim shrink-0" />
         </button>
         {identity.readOnly && currentContext && (
           <div className="relative">
@@ -166,10 +166,8 @@ export const TopBar = memo(function TopBar({
           </>
         )}
         <span className="text-dim">/</span>
-        <span className="mono text-[12px] text-ink">{health ? health.breadcrumb : appView ?? RESOURCE_LABELS[activeResource]}</span>
+        <span className="mono text-[12px] text-ink whitespace-nowrap">{health ? health.breadcrumb : appView ?? RESOURCE_LABELS[activeResource]}</span>
       </div>
-
-      <div className="flex-1" />
 
       <button
         type="button"
@@ -178,13 +176,13 @@ export const TopBar = memo(function TopBar({
         aria-label="Refresh"
         aria-busy={isFetching}
         title={lastUpdated ? `Refresh · ${lastUpdated} · (r)` : "Refresh · (r)"}
-        className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors duration-150 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+        className="ml-auto h-8 w-8 rounded-md flex items-center justify-center shrink-0 text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors duration-150 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
       >
         <RotateCw size={14} className={isFetching ? "animate-spin" : ""} />
       </button>
 
-      {/* search */}
-      <div className="relative">
+      {/* search: grows from 200 to 340 px into the free space of the row, so in a narrow window it gives way first and nothing else is squeezed (the Refresh button's ml-auto takes what is left in a wide one). Only when even 200 px does not fit does the breadcrumb shrink: the namespace picker first (shrink-[10000] in NamespacePicker.tsx, down to its minimum), then the context name, which truncates. The factors are weights: a shrink below 1 leaves the row overflowing once the others are at their minimum, and equal factors would shorten the context name along with the namespace. */}
+      <div className="relative flex-1 min-w-[200px] max-w-[340px]">
         <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-dim">
           <Search size={13} />
         </div>
@@ -198,7 +196,7 @@ export const TopBar = memo(function TopBar({
           autoCorrect="off"
           autoCapitalize="off"
           autoComplete="off"
-          className="bg-card/80 ring-1 ring-mute/70 focus:ring-2 focus:ring-accent/70 focus:outline-hidden rounded-md pl-8 pr-16 h-8 w-[340px] text-[12.5px] placeholder:text-mute mono"
+          className="bg-card/80 ring-1 ring-mute/70 focus:ring-2 focus:ring-accent/70 focus:outline-hidden rounded-md pl-8 pr-16 h-8 w-full text-[12.5px] placeholder:text-mute mono"
         />
         {search ? (
           <button
