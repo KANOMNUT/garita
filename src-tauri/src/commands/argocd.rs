@@ -636,6 +636,10 @@ pub struct ArgoCdHistoryEntry {
     pub revision: String,
     pub deployed_at: String,
     pub deployed_at_iso: String,
+    /// The whole commit message of `status.history[].revisionMetadata.message`: every line,
+    /// inner newlines kept, CRLF turned into LF, trailing whitespace and trailing blank lines
+    /// removed (see `history_entry_message`). The History row shows the first line and the expanded
+    /// entry shows all of them. The Applications list `commit_message` stays first-line only.
     pub message: String,
     pub author: String,
 }
@@ -695,6 +699,19 @@ pub(crate) fn last_commit_display(revision: &str) -> String {
     } else {
         short_revision(revision)
     }
+}
+
+/// Display form of a History entry's commit message: every line is kept, joined with `\n`
+/// (so a CRLF message loses its `\r`), and trailing whitespace and trailing blank lines are
+/// removed. Inner blank lines (the gap between a subject and its body) and leading whitespace
+/// stay. Never byte-slices.
+pub(crate) fn history_entry_message(message: &str) -> String {
+    message
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim_end()
+        .to_string()
 }
 
 fn time_ago(iso: &str) -> String {
@@ -797,9 +814,8 @@ pub async fn list_argocd_apps(context: String) -> Result<Vec<ArgoCdApp>, String>
                     deployed_at_iso,
                     message: h["revisionMetadata"]["message"]
                         .as_str()
-                        .and_then(|s| s.lines().next())
-                        .unwrap_or("")
-                        .to_string(),
+                        .map(history_entry_message)
+                        .unwrap_or_default(),
                     author: h["revisionMetadata"]["author"]
                         .as_str()
                         .unwrap_or("")
@@ -1474,6 +1490,43 @@ mod rollback_tests {
         assert_eq!(short_revision("h\u{e9}llo w\u{f6}rld"), "h\u{e9}llo w\u{f6}rld");
         // 40 bytes, not ASCII hex: must not be shortened and must not panic.
         assert_eq!(short_revision(&"\u{e9}".repeat(20)), "\u{e9}".repeat(20));
+    }
+
+    #[test]
+    fn history_entry_message_rules() {
+        // Empty and whitespace-only messages are empty.
+        assert_eq!(history_entry_message(""), "");
+        assert_eq!(history_entry_message("\n\n"), "");
+        assert_eq!(history_entry_message("  \t\n \n"), "");
+        // One line: unchanged, trailing newline and spaces removed.
+        assert_eq!(history_entry_message("fix: bug"), "fix: bug");
+        assert_eq!(history_entry_message("fix: bug\n"), "fix: bug");
+        assert_eq!(history_entry_message("fix: bug  \t"), "fix: bug");
+        // Several lines: inner newlines and the inner blank line stay.
+        assert_eq!(
+            history_entry_message("fix: bug\n\nBody line 1\nBody line 2\n"),
+            "fix: bug\n\nBody line 1\nBody line 2"
+        );
+        // Trailing blank lines (and trailing whitespace on them) go.
+        assert_eq!(
+            history_entry_message("subject\n\nbody\n\n\n  \n"),
+            "subject\n\nbody"
+        );
+        // CRLF becomes LF; no `\r` is left, also at the end.
+        assert_eq!(
+            history_entry_message("subject\r\n\r\nbody\r\nmore\r\n\r\n"),
+            "subject\n\nbody\nmore"
+        );
+        // Indentation of body lines (a list, a quoted block) is kept.
+        assert_eq!(
+            history_entry_message("subject\n\n  - item\n  - item 2\n"),
+            "subject\n\n  - item\n  - item 2"
+        );
+        // Non-ASCII text passes through whole.
+        assert_eq!(
+            history_entry_message("h\u{e9}llo\n\n\u{1f980} w\u{f6}rld\n"),
+            "h\u{e9}llo\n\n\u{1f980} w\u{f6}rld"
+        );
     }
 
     #[test]
