@@ -28,9 +28,10 @@ interface LogSourceBarProps {
   timestampsLockedReason?: string;
 }
 
-// A field: a visible boundary (`ring-mute/70`, docs/ux/24 Q14 A) and a focus ring of at least 3:1 (X-8).
+// A field: a visible boundary (`ring-mute/70`, docs/ux/24 Q14 A) and a focus ring of at least 3:1 (X-8). The select
+// labels are words, so they are sans; only the custom amount (a number) adds `mono`.
 const selectBase =
-  "h-6 px-2 rounded-sm bg-card/80 ring-1 text-[11px] mono text-ink focus:outline-hidden focus:ring-2 focus:ring-accent/70 disabled:opacity-50";
+  "h-6 px-2 rounded-sm bg-card/80 ring-1 text-[11px] text-ink focus:outline-hidden focus:ring-2 focus:ring-accent/70 disabled:opacity-50";
 const selectCls = `${selectBase} ring-mute/70`;
 
 export function LogSourceBar({
@@ -99,7 +100,7 @@ export function LogSourceBar({
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitCustom(draftValue, draftUnit);
               }}
-              className={`${selectBase} w-14 ${customError ? "ring-bad/40" : "ring-mute/70"}`}
+              className={`${selectBase} mono w-14 ${customError ? "ring-bad/40" : "ring-mute/70"}`}
             />
             <select
               aria-label="Custom range unit"

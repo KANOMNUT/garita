@@ -10,7 +10,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 |------|---------|
 | `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions |
 | `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"), context chip, Custom Resources tree. No namespace list |
-| `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu |
+| `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu (a `Popover` user) |
 | `src/components/NamespacePicker.tsx` | TopBar namespace picker: trigger + `Popover`, filter, "Terminating" tag, "Manage namespaces" link. Reads `useNamespaceRows`; no writes. See `ui.md` → Namespaces: picker and page |
 | `src/components/DeleteNamespaceConfirm.tsx` | The typed-name delete confirm for a namespace; one instance hosted in `App.tsx`, opened by the Namespaces page row trash and the panel header trash |
 | `src/utils/namespaces.ts` | Pure (with `namespaces.test.ts`): `PROTECTED_NAMESPACES`, `namespaceDeleteReason` and the reason strings, `isTerminating`, `namespaceRows` (picker rows), `namespaceNames`, `chipLabels`, `deletingFor` |
@@ -21,7 +21,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/podTableView.ts` | Pure Pod table and panel rules, tested in `podTableView.test.ts`: `barDenominator`, `displayedUsage`, `usageLabel`, `readyFraction`, `isNotReady`, `statusCounts`, `validPort` |
 | `src/components/ResourceDetailPanel.tsx` | Panel for every other kind; tabs from `tabsFor()`. Default Overview / Summary / Events / YAML; ArgoCD Overview / Resources / History / Events; Helm Overview / Values / History / Events; workloads add Pods, Logs, Relationships; TLS Secrets add TLS; `Timeline` (v2.2.0) is added for `deploy`, `sts`, `ds`, `helm`, `argocd`. Hosts the editor pencil and delete |
 | `src/components/ResourceViews.tsx` | Table views for non-pod kinds |
-| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them). Per-row `deleteReason` / function `deleteLabel` for the row trash; a forbidden list error renders the `ViewState` no-access card |
+| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them). Per-row `deleteReason` / function `deleteLabel` for the row trash; a forbidden list error renders the `ViewState` no-access card. A sortable header is a button inside the `<th>`; the sorted column's `<th>` carries `aria-sort` |
 | `src/utils/tableRows.ts` | Pure `searchRows`, `sortRows`, `shownRows`, `rangeSelect`, `SortState` (v2.3.1): the table's one search predicate and comparator, so `ArgoCDView` selects exactly the rows the table shows. See `argocd.md` |
 | `src/components/ConfirmModal.tsx` | Shared confirm dialog + `ClusterBadge`. See Confirm-on-Destructive |
 | `src/components/NodeDrainDialog.tsx` | Drain dialog on `ConfirmModal` `lg`, Override band, nested force-delete dialog |
@@ -33,6 +33,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/drain.ts` | Pure drain helpers; owns the `deleting` / `force-deleted` row states (never in `EvictionOutcome`) |
 | `src/utils/podStatus.ts` | `POD_STATUS_STYLE`, `podStatusStyle`: the one pod status vocabulary and its token classes, read by `PodTable`, `DetailPanel`, the workload Pods tab and the Node panel's pod list. See `pods-logs.md` |
 | `src/utils/argoStatus.ts` | Pure ArgoCD status logic (with `argoStatus.test.ts`): the Health, Sync and operation pill tables (`argoHealthPill`, `argoSyncPill`, `argoPhasePill`), `isArgoHealthy`, the Resources tab filter groups (`filterArgoResources`, `argoHealthCount`, `argoSyncCount`, `visibleHealthFilters`, `ARGO_CHIP_CLS`) and row order (`argoSortScore`, `isDegradedOrMissing`). See `argocd.md` |
+| `src/utils/argoHistory.ts` | `liveHistoryId(history, lastCommit)` (with `argoHistory.test.ts`): the History entry that is running now, by exact match of `ArgoCdHistoryEntry.revision` to `ArgoCdApp.last_commit` (highest `id`; none for `""` or `—`). Drives the neutral **Current** chip. See `argocd.md` |
 | `src/utils/modalLayer.ts` | `useModalLayer`, `isModalOpen`, `isEditableTarget`. See Keyboard layering |
 | `src/components/Popover.tsx` | The one popover primitive; registers a modal layer |
 | `src/components/ObservabilityDialog.tsx` | v2.3.0 per-cluster observability dialog (discovery, Test, Save) and its `ObservabilityDialogHost`. See `pods-logs.md` (External observability), `ui.md` |

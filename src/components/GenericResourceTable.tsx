@@ -182,8 +182,9 @@ export function GenericResourceTable<T>({
                 <p className="text-[11.5px] text-bad whitespace-pre-wrap font-mono leading-relaxed">{(error as any)?.message ?? String(error)}</p>
               </div>
               <button
+                type="button"
                 onClick={onRetry}
-                className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25"
+                className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
               >
                 Retry
               </button>
@@ -215,11 +216,14 @@ export function GenericResourceTable<T>({
           {storageKey && (
             <div className="relative" data-col-menu>
               <button
+                type="button"
                 onClick={() => setShowColMenu(v => !v)}
-                className="h-7 w-7 rounded-md flex items-center justify-center text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors"
-                title="Show/hide columns"
+                aria-label="Show or hide columns"
+                aria-expanded={showColMenu}
+                className="h-7 w-7 rounded-md flex items-center justify-center text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                title="Show or hide columns"
               >
-                <Settings size={13} />
+                <Settings size={13} aria-hidden />
               </button>
               {showColMenu && (
                 <div className="absolute right-0 top-8 z-20 bg-surface-overlay rounded-lg ring-1 ring-edge-strong shadow-xl p-2 min-w-[160px]">
@@ -256,13 +260,16 @@ export function GenericResourceTable<T>({
                   <th
                     key={col.id}
                     style={col.width ? { width: col.width } : undefined}
+                    // X-5: the sorted column says so (the PodTable header does the same). The sort control is the button inside.
+                    aria-sort={currentSort?.col === col.id ? (currentSort.asc ? "ascending" : "descending") : undefined}
                     className={`sticky top-0 z-1 bg-panel/95 backdrop-blur-sm border-b border-edge text-left text-[10.5px] uppercase tracking-[0.06em] font-semibold py-2 px-2 first:pl-3 last:pr-3
                       ${currentSort?.col === col.id ? "text-accent" : "text-dim"}`}
                   >
                     {col.sortable ? (
                       <button
+                        type="button"
                         onClick={() => handleSort(col.id)}
-                        className="flex items-center gap-1 hover:text-ink"
+                        className="flex items-center gap-1 rounded-xs hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
                       >
                         {col.header}
                         {currentSort?.col === col.id

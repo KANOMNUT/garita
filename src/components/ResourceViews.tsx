@@ -1580,7 +1580,7 @@ const scColumns: Column<StorageClassRow>[] = [
   { id: "name",        header: "Name",           sortable: true, sortValue: (s) => s.name, cell: (s) => (
     <span className="flex items-center gap-1.5">
       <N t={s.name} />
-      {s.is_default && <span className="mono text-[10px] px-1 py-0.5 rounded-sm bg-ok/10 text-ok ring-1 ring-ok/30">default</span>}
+      {s.is_default && <span className="mono text-[10.5px] px-1 py-0.5 rounded-sm bg-ok/10 text-ok ring-1 ring-ok/30">default</span>}
     </span>
   )},
   { id: "provisioner", header: "Provisioner",    sortable: true, sortValue: (s) => s.provisioner, cell: (s) => <Mute t={s.provisioner} /> },
@@ -1757,6 +1757,8 @@ const repoShort = (url: string): string => {
 };
 
 const PILL = "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] mono font-medium";
+/** A focus ring of at least 3:1 in both themes (X-8, ui.md G6). */
+const ARGO_FOCUS = "outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
 
 const argoColumns: Column<ArgoCdApp>[] = [
   { id: "name",    header: "Name",        sortable: true, sortValue: (a) => a.name,     cell: (a) => <N t={a.name} /> },
@@ -1764,35 +1766,36 @@ const argoColumns: Column<ArgoCdApp>[] = [
   { id: "project", header: "Project",     width: 120, sortable: true, sortValue: (a) => a.project,   cell: (a) => <Mute t={a.project} /> },
   { id: "health",  header: "Health",      width: 110, sortable: true, sortValue: (a) => a.health_status, cell: (a) => (
     <span className={`${PILL} ${healthPillClass(a.health_status)}`}>
-      <span>{healthIcon(a.health_status)}</span>
+      <span aria-hidden>{healthIcon(a.health_status)}</span>
       {a.health_status || "—"}
     </span>
   )},
   { id: "sync",    header: "Sync",        width: 100, sortable: true, sortValue: (a) => a.sync_status, cell: (a) => (
     <span className={`${PILL} ${syncPillClass(a.sync_status)}`}>
-      <span>{syncIcon(a.sync_status)}</span>
+      <span aria-hidden>{syncIcon(a.sync_status)}</span>
       {a.sync_status || "—"}
     </span>
   )},
   { id: "dest",    header: "Destination", width: 150, cell: (a) => (
     <div className="flex flex-col" title={a.dest_server}>
       <span className="mono text-[11.5px] text-mute truncate max-w-[140px]">{a.dest_namespace || "—"}</span>
-      <span className="mono text-[10px] text-mute truncate max-w-[140px]">{a.dest_server.replace(/^https?:\/\//, "")}</span>
+      <span className="mono text-[10.5px] text-mute truncate max-w-[140px]">{a.dest_server.replace(/^https?:\/\//, "")}</span>
     </div>
   )},
   { id: "repo",    header: "Repo",        width: 160, cell: (a) => (
     <span className="mono text-[11px] text-mute truncate inline-block max-w-[150px]" title={a.repo_url}>{repoShort(a.repo_url)}</span>
   )},
   { id: "rev",     header: "Revision",    width: 100, cell: (a) => (
+    // last_commit and target_revision can be a full chart version, tag or branch name: cut with an ellipsis, whole value in the tooltip.
     <div className="flex flex-col">
-      <span className="mono text-[11.5px] text-mute tabular-nums">{a.last_commit || "—"}</span>
-      <span className="mono text-[10px] text-mute tabular-nums">{a.target_revision || "HEAD"}</span>
+      <span className="mono text-[11.5px] text-mute tabular-nums truncate block max-w-[90px]" title={a.last_commit || undefined}>{a.last_commit || "—"}</span>
+      <span className="mono text-[10.5px] text-mute tabular-nums truncate block max-w-[90px]" title={a.target_revision || undefined}>{a.target_revision || "HEAD"}</span>
     </div>
   )},
   { id: "synced",  header: "Synced",      width: 100, sortable: true, sortValue: (a) => parseAge(a.age), cell: (a) => (
     <div className="flex flex-col">
       <span className="mono text-[11.5px] text-mute tabular-nums">{a.last_synced_at || "—"}</span>
-      <span className="mono text-[10px] text-mute tabular-nums">{a.age}</span>
+      <span className="mono text-[10.5px] text-mute tabular-nums">{a.age}</span>
     </div>
   )},
 ];
@@ -1806,12 +1809,14 @@ function ArgoHealthCard({ label, value, active, color, onClick }: {
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`rounded-lg ring-1 px-2 py-1 flex flex-col items-start min-w-[56px] transition-colors ${
-        active ? "bg-surface-tint/[0.07] ring-accent/40" : "bg-card/70 ring-edge hover:bg-surface-tint/4"
+      aria-pressed={active}
+      className={`rounded-lg ring-1 px-2 py-1 flex flex-col items-start min-w-[56px] transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+        active ? "bg-surface-tint/[0.07] ring-accent/70" : "bg-card/70 ring-edge hover:bg-surface-tint/4"
       }`}
     >
-      <span className="text-[9px] uppercase tracking-wide text-mute font-medium">{label}</span>
+      <span className="text-[10.5px] uppercase tracking-wide text-mute font-medium">{label}</span>
       <span className={`text-[14px] font-semibold tabular-nums leading-tight ${color}`}>{value}</span>
     </button>
   );
@@ -1927,7 +1932,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
     hardRefresh: {
       title: "Hard refresh applications",
       description: `Hard refresh ${selectedApps.length} application${selectedApps.length !== 1 ? "s" : ""} — clears ArgoCD's cache and re-fetches manifests from git.`,
-      confirmLabel: "Hard Refresh",
+      confirmLabel: "Hard refresh",
     },
   };
 
@@ -1960,27 +1965,27 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
   const bulkBar = selectedApps.length > 0 ? (
     <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
       <span className="mono text-[11px] text-accent font-semibold shrink-0">{selectedApps.length} selected</span>
-      <button onClick={() => setBulkSelected(new Set())} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge flex items-center gap-1">
-        <X size={10} /> Clear
+      <button type="button" onClick={() => setBulkSelected(new Set())} className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-surface-tint/3 ring-1 ring-edge flex items-center gap-1 ${ARGO_FOCUS}`}>
+        <X size={10} aria-hidden /> Clear
       </button>
-      <button onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className="h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge">
+      <button type="button" onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge ${ARGO_FOCUS}`}>
         Select all
       </button>
-      <button onClick={() => { if (bulkReason) return; setConfirmAction("sync"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-accent hover:bg-accent/20 bg-accent/10 ring-1 ring-accent/30 flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <GitMerge size={11} /> Sync
+      <button type="button" onClick={() => { if (bulkReason) return; setConfirmAction("sync"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-accent hover:bg-accent/20 bg-accent/10 ring-1 ring-accent/30 flex items-center gap-1.5 ${ARGO_FOCUS} ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
+        <GitMerge size={11} aria-hidden /> Sync
       </button>
-      <button onClick={() => { if (bulkReason) return; setConfirmAction("refresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <RefreshCw size={11} /> Refresh
+      <button type="button" onClick={() => { if (bulkReason) return; setConfirmAction("refresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${ARGO_FOCUS} ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
+        <RefreshCw size={11} aria-hidden /> Refresh
       </button>
-      <button onClick={() => { if (bulkReason) return; setConfirmAction("hardRefresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <RefreshCcw size={11} /> Hard Refresh
+      <button type="button" onClick={() => { if (bulkReason) return; setConfirmAction("hardRefresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${ARGO_FOCUS} ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
+        <RefreshCcw size={11} aria-hidden /> Hard refresh
       </button>
       {bulkLimit.message && !identity.readOnly && (
         <span className="text-[10.5px] text-mute max-w-[300px] truncate" title={bulkLimit.message}>{bulkLimit.message}</span>
       )}
     </div>
   ) : (
-    <button onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge shrink-0 whitespace-nowrap">
+    <button type="button" onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-surface-tint/3 ring-1 ring-edge shrink-0 whitespace-nowrap ${ARGO_FOCUS}`}>
       Select all
     </button>
   );
@@ -1996,7 +2001,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
         extra={
           <div className="flex items-center gap-2">
             {bulkResult && (
-              <div className={`mono text-[10.5px] px-2 py-1 rounded ring-1 flex items-center gap-1.5 max-w-[360px] ${
+              <div role={bulkResult.failed.length > 0 ? "alert" : "status"} className={`text-[10.5px] px-2 py-1 rounded ring-1 flex items-center gap-1.5 max-w-[360px] ${
                 bulkResult.failed.length > 0 ? "bg-bad/10 ring-bad/20 text-bad" : "bg-ok/10 ring-ok/20 text-ok"
               }`}>
                 <span className="shrink-0">{bulkResult.ok} succeeded · {bulkResult.failed.length} failed</span>
@@ -2005,7 +2010,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
                     {bulkResult.failed.map(f => f.name).join(", ")}
                   </span>
                 )}
-                <button onClick={() => setBulkResult(null)} className="ml-1 text-dim hover:text-ink shrink-0">✕</button>
+                <button type="button" onClick={() => setBulkResult(null)} aria-label="Dismiss result" className={`ml-1 text-mute hover:text-ink shrink-0 rounded-xs ${ARGO_FOCUS}`}><span aria-hidden>✕</span></button>
               </div>
             )}
             {bulkBar}
@@ -2070,7 +2075,7 @@ export const ArgoCdAppSetView = memo(function ArgoCdAppSetView({ context, search
     { id: "gen",     header: "Generators", width: 160, cell: (s) => (
       <div className="flex flex-wrap gap-1">
         {s.generators.map((g) => (
-          <span key={g} className="mono text-[10px] text-mute bg-surface-tint/4 ring-1 ring-edge-raw/60 px-1 py-0.5 rounded-sm">{g}</span>
+          <span key={g} className="mono text-[10.5px] text-mute bg-surface-tint/4 ring-1 ring-edge-raw/60 px-1 py-0.5 rounded-sm">{g}</span>
         ))}
       </div>
     )},
@@ -2243,7 +2248,7 @@ const certColumns: Column<Certificate>[] = [
   { id: "ns",     header: "Namespace", width: 130, sortable: true, sortValue: (c) => c.namespace, cell: (c) => <Ns t={c.namespace} /> },
   { id: "ready",  header: "Ready",     width: 90, sortable: true, sortValue: (c) => (c.ready ? 1 : 0), cell: (c) => (
     <span className={`${PILL} ${healthPillClass(c.status)}`}>
-      <span>{healthIcon(c.status)}</span>
+      <span aria-hidden>{healthIcon(c.status)}</span>
       {c.ready ? "True" : "False"}
     </span>
   )},

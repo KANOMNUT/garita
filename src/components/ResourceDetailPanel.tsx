@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useResizablePanel } from "../hooks/useResizablePanel";
-import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, ArrowUpRight, ChevronRight, StepBack, Network } from "lucide-react";
+import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, ArrowUpRight, ChevronRight, StepBack, Network, Pause } from "lucide-react";
 import { useResourceYaml, useResourceEvents, useApplyResource, useCRDResources, useNodePods, useCordonNode, useUncordonNode, useDeleteNode, useAddNodeTaint, useRemoveNodeTaint, useStartServicePortForward, usePortForwards, useStopPortForward, useHelmValues, useUpgradeHelmRelease, useHelmHistory, useRollbackHelmRelease, useSyncArgoCdApp, useRollbackArgoCdApp, useRefreshArgoCdApp, useArgoCdCommitInfo, useArgoCdAppResources, useWorkloadPods, useResourceMetadata, useWorkloadConditions, useResourceGraph, useDeleteResource, useDeleteArgoCdApp, useUninstallHelmRelease, useTlsCertificateInfo, usePermissions, useResourceYamlNeat } from "../hooks/useResources";
 import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision, NamespaceRow } from "../types/k8s";
 import { useRevealedSecret, forgetSecret, forgetHelmValues, useAccessChecks } from "../hooks/useResources";
@@ -50,19 +50,29 @@ import { useNodeDrain } from "../hooks/useNodeDrain";
 import { defaultLogView } from "../utils/logFilter";
 import { podStatusStyle } from "../utils/podStatus";
 import { PROTECTED_NAMESPACES, PROTECTED_NAMESPACE_REASON, chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
+import { liveHistoryId } from "../utils/argoHistory";
 import {
-  ARGO_CHIP_CLS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount,
+  ARGO_CHIP_CLS, ARGO_NEUTRAL_CLS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount,
   argoSyncPill, filterArgoResources, isArgoHealthy, isDegradedOrMissing, visibleHealthFilters,
   type ArgoHealthStatus, type ArgoPill, type ArgoSyncStatus,
 } from "../utils/argoStatus";
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
-function KV({ k, v, mono = true }: { k: string; v: string; mono?: boolean }) {
+/** A focus ring of at least 3:1 in both themes (X-8, ui.md G6); the 40 % and 60 % accent rings are only 1.9 to 2.8:1. */
+const FOCUS_RING = "outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
+/** The same ring drawn inside the control, for a row or tab that an edge would clip. */
+const INSET_RING = "outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70";
+
+/**
+ * A label and a value. The value carries `title` so a cut-off value can still be read. `wrap` breaks a long value
+ * (a repository URL, a chart path) over several lines instead of cutting its tail, which is the part that differs.
+ */
+function KV({ k, v, mono = true, wrap = false }: { k: string; v: string; mono?: boolean; wrap?: boolean }) {
   return (
-    <div className="flex items-baseline gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0">
+    <div className={`flex ${wrap ? "items-start" : "items-baseline"} gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0`}>
       <span className="text-[11px] text-mute w-[110px] shrink-0">{k}</span>
-      <span className={`text-[12px] text-ink ${mono ? "mono" : ""} truncate`}>{v}</span>
+      <span title={v} className={`text-[12px] text-ink ${mono ? "mono" : ""} ${wrap ? "min-w-0 break-all" : "truncate"}`}>{v}</span>
     </div>
   );
 }
@@ -71,6 +81,14 @@ function KV({ k, v, mono = true }: { k: string; v: string; mono?: boolean }) {
 // The pill tables and the Resources-tab filter logic are pure and live in utils/argoStatus.ts, shared by the panel
 // header, the Overview and the Resources tab. Health and Sync are independent (argocd.md).
 
+/**
+ * A status glyph is decoration (the status word sits beside it), so a screen reader skips it. The Suspended glyph
+ * `⏸` (U+23F8) can render as a colour emoji in WKWebView, so it is drawn as the Pause icon instead.
+ */
+function ArgoGlyph({ icon }: { icon: string }) {
+  return icon === argoHealthPill("Suspended").icon ? <Pause size={10} aria-hidden /> : <span aria-hidden>{icon}</span>;
+}
+
 /** A Health or Sync chip in the panel header. The glyph is decoration; the sr-only prefix names the status. */
 function ArgoStatusChip({ which, pill }: { which: "Health" | "Sync"; pill: ArgoPill }) {
   return (
@@ -78,7 +96,7 @@ function ArgoStatusChip({ which, pill }: { which: "Health" | "Sync"; pill: ArgoP
       title={`${which} status`}
       className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] font-medium ring-1 ${pill.cls}`}
     >
-      <span aria-hidden>{pill.icon}</span>
+      <ArgoGlyph icon={pill.icon} />
       <span className="sr-only">{which}: </span>
       {pill.label}
     </span>
@@ -104,8 +122,8 @@ function HPAMetricBar({ label, current, target, unit, color }: {
         <div className={`h-full rounded-xs transition-all ${tone}`} style={{ width: `${pct}%` }} />
       </div>
       <div className="flex justify-between mt-0.5">
-        <span className="mono text-[10px] text-mute">{pct}% of target</span>
-        {pct >= 100 && <span className="mono text-[10px] text-bad">scaling up</span>}
+        <span className="mono text-[10.5px] text-mute">{pct}% of target</span>
+        {pct >= 100 && <span className="mono text-[10.5px] text-bad">scaling up</span>}
       </div>
     </div>
   );
@@ -140,10 +158,10 @@ function HPAMetricBarStr({ label, current, target, color }: {
             <div className={`h-full rounded-xs transition-all ${tone}`} style={{ width: `${pct}%` }} />
           </div>
           <div className="flex justify-between mt-0.5">
-            <span className="mono text-[10px] text-mute">
+            <span className="mono text-[10.5px] text-mute">
               {isPercent ? `${pct}% of target` : `${pct}% utilization`}
             </span>
-            {pct >= 100 && <span className="mono text-[10px] text-bad">scaling up</span>}
+            {pct >= 100 && <span className="mono text-[10.5px] text-bad">scaling up</span>}
           </div>
         </>
       )}
@@ -177,7 +195,7 @@ interface SecretReveal {
   onRetry: () => void;
 }
 
-const smallBtn = "h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50";
+const smallBtn = `h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink flex items-center gap-1 disabled:opacity-50 ${FOCUS_RING}`;
 
 function SecretOverview({ item, reveal }: { item: import("../types/k8s").Secret; reveal: SecretReveal }) {
   const [decodeAll, setDecodeAll] = useState(false);
@@ -196,7 +214,7 @@ function SecretOverview({ item, reveal }: { item: import("../types/k8s").Secret;
         <div className="mt-3">
           <div className="flex items-center gap-1.5 mb-1.5">
             <span className="text-[10.5px] uppercase tracking-wider text-mute font-semibold">Data</span>
-            {shown && <span className="mono text-[10px] px-1.5 rounded-sm bg-info/15 text-info ring-1 ring-info/30">Revealed</span>}
+            {shown && <span className="mono text-[10.5px] px-1.5 rounded-sm bg-info/15 text-info ring-1 ring-info/30">Revealed</span>}
             <div className="flex-1" />
             {shown && (
               <button onClick={() => setDecodeAll((v) => !v)} className={smallBtn}>
@@ -289,7 +307,7 @@ function SecretRow({
           {visible ? text : "••••••••"}
         </pre>
       )}
-      {decoded?.ok && <span className="mono text-[9.5px] text-ok">decoded</span>}
+      {decoded?.ok && <span className="mono text-[10.5px] text-ok">decoded</span>}
     </div>
   );
 }
@@ -345,8 +363,8 @@ function TlsCertCard({ cert, defaultOpen }: { cert: TlsCertInfo; defaultOpen: bo
       >
         <ChevronRight size={11} className={`text-mute transition-transform shrink-0 ${open ? "rotate-90" : ""}`} />
         <span className="mono text-[12px] text-ink truncate flex-1">{orDash(cert.subject_cn || cert.subject)}</span>
-        <span className="mono text-[9px] text-mute shrink-0">{cert.source_key}[{cert.index}]</span>
-        <span className={`mono text-[9.5px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm ring-1 shrink-0 ${roleBadgeCls}`}>
+        <span className="mono text-[10.5px] text-mute shrink-0">{cert.source_key}[{cert.index}]</span>
+        <span className={`mono text-[10.5px] uppercase tracking-wide px-1.5 py-0.5 rounded-sm ring-1 shrink-0 ${roleBadgeCls}`}>
           {role}
         </span>
       </button>
@@ -376,7 +394,7 @@ function TlsCertCard({ cert, defaultOpen }: { cert: TlsCertInfo; defaultOpen: bo
             {cert.other_sans.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-1">
                 {cert.other_sans.map((s, i) => (
-                  <span key={`${s}-${i}`} className="mono text-[10px] text-mute bg-surface-tint/2 rounded-sm px-1.5 py-0.5 ring-1 ring-edge-raw/40 break-all">
+                  <span key={`${s}-${i}`} className="mono text-[10.5px] text-mute bg-surface-tint/2 rounded-sm px-1.5 py-0.5 ring-1 ring-edge-raw/40 break-all">
                     {s}
                   </span>
                 ))}
@@ -386,7 +404,7 @@ function TlsCertCard({ cert, defaultOpen }: { cert: TlsCertInfo; defaultOpen: bo
 
           <KV k="Issuer" v={orDash(cert.issuer_cn || cert.issuer)} />
           {cert.issuer && (
-            <div className="mono text-[10px] text-mute truncate pb-1.5 border-b border-edge-raw/60" title={cert.issuer}>
+            <div className="mono text-[10.5px] text-mute truncate pb-1.5 border-b border-edge-raw/60" title={cert.issuer}>
               {cert.issuer}
             </div>
           )}
@@ -598,7 +616,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
         <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold mb-2">Node Actions</div>
         <DrainResultCard node={item.name} drain={drain} nodeUnschedulable={item.unschedulable} />
         {actionResult && (
-          <div className={`mono text-[10.5px] px-2 py-1.5 rounded-sm mb-2 ${actionResult.ok ? "text-ok bg-ok/10 ring-1 ring-ok/20" : "text-bad bg-bad/10 ring-1 ring-bad/20"}`}>
+          <div role={actionResult.ok ? "status" : "alert"} className={`text-[11px] px-2 py-1.5 rounded-sm mb-2 ${actionResult.ok ? "text-ok bg-ok/10 ring-1 ring-ok/20" : "text-bad bg-bad/10 ring-1 ring-bad/20"}`}>
             {actionResult.msg}
           </div>
         )}
@@ -619,7 +637,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               }}
               disabled={isBusy}
               {...disabledAttrs(cordonReason)}
-              className={`h-7 px-3 rounded-md bg-accent/15 ring-1 ring-accent/30 text-[11px] text-accent hover:bg-accent/25 mono disabled:opacity-50 ${cordonReason ? "opacity-50 cursor-not-allowed" : ""}`}
+              className={`h-7 px-3 rounded-md bg-accent/15 ring-1 ring-accent/30 text-[11px] text-accent hover:bg-accent/25 disabled:opacity-50 ${FOCUS_RING} ${cordonReason ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               {item.unschedulable ? "Uncordon" : "Cordon"}
             </button>
@@ -628,7 +646,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               disabled={isBusy || drain.busy}
               title={drainBusyReason}
               {...disabledAttrs(drainReason)}
-              className={`h-7 px-3 rounded-md bg-warn/10 ring-1 ring-warn/30 text-[11px] text-warn hover:bg-warn/20 mono disabled:opacity-50 ${drainReason ? "opacity-50 cursor-not-allowed" : ""}`}
+              className={`h-7 px-3 rounded-md bg-warn/10 ring-1 ring-warn/30 text-[11px] text-warn hover:bg-warn/20 disabled:opacity-50 ${FOCUS_RING} ${drainReason ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               Drain…
             </button>
@@ -636,7 +654,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               onClick={() => { if (deleteReason) return; setConfirmAction("delete"); }}
               disabled={isBusy}
               {...disabledAttrs(deleteReason)}
-              className={`h-7 px-3 rounded-md bg-bad/10 ring-1 ring-bad/30 text-[11px] text-bad hover:bg-bad/20 mono disabled:opacity-50 ${deleteReason ? "opacity-50 cursor-not-allowed" : ""}`}
+              className={`h-7 px-3 rounded-md bg-bad/10 ring-1 ring-bad/30 text-[11px] text-bad hover:bg-bad/20 disabled:opacity-50 ${FOCUS_RING} ${deleteReason ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               Delete
             </button>
@@ -728,13 +746,13 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               <button
                 onClick={doRemoveTaint}
                 disabled={removeTaint.isPending}
-                className="h-6 px-3 rounded-sm bg-bad/20 ring-1 ring-bad/40 text-[10.5px] text-bad hover:bg-bad/30 mono disabled:opacity-50"
+                className={`h-6 px-3 rounded-sm bg-bad/20 ring-1 ring-bad/40 text-[10.5px] text-bad hover:bg-bad/30 disabled:opacity-50 ${FOCUS_RING}`}
               >
                 {removeTaint.isPending ? "…" : "Confirm remove"}
               </button>
               <button
                 onClick={() => setConfirmRemoveTaint(null)}
-                className="h-6 px-3 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                className={`h-6 px-3 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
               >
                 Cancel
               </button>
@@ -753,7 +771,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               autoCorrect="off"
               autoCapitalize="off"
               autoComplete="off"
-              className="h-7 px-2 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-[11px] mono text-ink placeholder:text-mute focus:outline-hidden focus:ring-1 focus:ring-accent/40"
+              className="h-7 px-2 rounded-sm bg-surface-tint/5 ring-1 ring-mute/70 text-[11px] mono text-ink placeholder:text-mute focus:outline-hidden focus:ring-2 focus:ring-accent/70"
             />
             <input
               type="text"
@@ -764,12 +782,12 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
               autoCorrect="off"
               autoCapitalize="off"
               autoComplete="off"
-              className="h-7 px-2 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-[11px] mono text-ink placeholder:text-mute focus:outline-hidden focus:ring-1 focus:ring-accent/40"
+              className="h-7 px-2 rounded-sm bg-surface-tint/5 ring-1 ring-mute/70 text-[11px] mono text-ink placeholder:text-mute focus:outline-hidden focus:ring-2 focus:ring-accent/70"
             />
             <select
               value={taintEffect}
               onChange={e => setTaintEffect(e.target.value)}
-              className="h-7 px-2 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-[11px] mono text-ink focus:outline-hidden focus:ring-1 focus:ring-accent/40"
+              className="h-7 px-2 rounded-sm bg-surface-tint/5 ring-1 ring-mute/70 text-[11px] mono text-ink focus:outline-hidden focus:ring-2 focus:ring-accent/70"
             >
               <option value="NoSchedule">NoSchedule</option>
               <option value="PreferNoSchedule">PreferNoSchedule</option>
@@ -786,13 +804,13 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
                 onClick={handleAddTaint}
                 disabled={!taintKey.trim() || addTaint.isPending}
                 {...disabledAttrs(taintReason)}
-                className="h-6 px-3 rounded-sm bg-accent/15 ring-1 ring-accent/30 text-[10.5px] text-accent hover:bg-accent/25 mono disabled:opacity-50"
+                className={`h-6 px-3 rounded-sm bg-accent/15 ring-1 ring-accent/30 text-[10.5px] text-accent hover:bg-accent/25 disabled:opacity-50 ${FOCUS_RING}`}
               >
-                {addTaint.isPending ? "…" : "Add Taint"}
+                {addTaint.isPending ? "…" : "Add taint"}
               </button>
               <button
                 onClick={() => { setShowAddTaint(false); setTaintKey(""); setTaintValue(""); setTaintEffect("NoSchedule"); }}
-                className="h-6 px-3 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                className={`h-6 px-3 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
               >
                 Cancel
               </button>
@@ -809,7 +827,7 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
       <div className="mt-4">
         <div className="flex items-center mb-2">
           <span className="text-[10.5px] uppercase tracking-wider text-mute font-semibold flex-1">Pods on this node</span>
-          {!podsLoading && <span className="mono text-[10px] text-mute">{pods.length} pods</span>}
+          {!podsLoading && <span className="mono text-[10.5px] text-mute">{pods.length} pods</span>}
         </div>
         {podsLoading ? (
           <div className="flex flex-col gap-1.5">
@@ -826,10 +844,10 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
             <table className="w-full border-separate border-spacing-0">
               <thead>
                 <tr>
-                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-3">Name</th>
-                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[110px]">Namespace</th>
-                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[100px]">Status</th>
-                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[55px]">Age</th>
+                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-3">Name</th>
+                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[110px]">Namespace</th>
+                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[100px]">Status</th>
+                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[55px]">Age</th>
                 </tr>
               </thead>
               <tbody>
@@ -880,7 +898,7 @@ function CRDOverview({ item, context }: { item: import("../types/k8s").CRD; cont
             Resources
           </span>
           {!isLoading && (
-            <span className="mono text-[10px] text-mute">{resources.length} total</span>
+            <span className="mono text-[10.5px] text-mute">{resources.length} total</span>
           )}
         </div>
 
@@ -899,11 +917,11 @@ function CRDOverview({ item, context }: { item: import("../types/k8s").CRD; cont
             <table className="w-full border-separate border-spacing-0">
               <thead>
                 <tr>
-                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-3">Name</th>
+                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-3">Name</th>
                   {isNamespaced && (
-                    <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[110px]">Namespace</th>
+                    <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[110px]">Namespace</th>
                   )}
-                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[60px]">Age</th>
+                  <th className="sticky top-0 bg-panel/95 border-b border-edge text-left text-[10.5px] uppercase tracking-wider text-mute font-semibold py-1.5 px-2 w-[60px]">Age</th>
                 </tr>
               </thead>
               <tbody>
@@ -980,14 +998,14 @@ function ServicePortForward({ item, context }: { item: import("../types/k8s").Se
       )}
       <div className="flex items-center gap-2">
         <div className="flex flex-col gap-0.5">
-          <span className="mono text-[9.5px] text-mute">Svc port</span>
+          <span className="mono text-[10.5px] text-mute">Svc port</span>
           <input
             type="number" value={svcPort} onChange={(e) => setSvcPort(e.target.value)}
             className="h-7 w-20 rounded-md bg-base ring-1 ring-edge mono text-[11px] text-ink px-2 focus:ring-accent focus:outline-hidden"
           />
         </div>
         <div className="flex flex-col gap-0.5">
-          <span className="mono text-[9.5px] text-mute">Local port</span>
+          <span className="mono text-[10.5px] text-mute">Local port</span>
           <input
             type="number" value={localPort} onChange={(e) => setLocalPort(e.target.value)}
             className="h-7 w-20 rounded-md bg-base ring-1 ring-edge mono text-[11px] text-ink px-2 focus:ring-accent focus:outline-hidden"
@@ -996,13 +1014,13 @@ function ServicePortForward({ item, context }: { item: import("../types/k8s").Se
         <button
           onClick={handleStart}
           disabled={startForward.isPending}
-          className="mt-4 h-7 px-3 rounded-md bg-accent/15 ring-1 ring-accent/30 text-[11px] text-accent hover:bg-accent/25 mono flex items-center gap-1.5 disabled:opacity-50"
+          className={`mt-4 h-7 px-3 rounded-md bg-accent/15 ring-1 ring-accent/30 text-[11px] text-accent hover:bg-accent/25 flex items-center gap-1.5 disabled:opacity-50 ${FOCUS_RING}`}
         >
           <Play size={10} /> {startForward.isPending ? "Starting…" : "Forward"}
         </button>
       </div>
       {error && (
-        <div className="mono text-[10.5px] text-bad px-2 py-1 mt-2 rounded-sm bg-bad/10 ring-1 ring-bad/20">{error}</div>
+        <div role="alert" className="text-[11px] text-bad px-2 py-1 mt-2 rounded-sm bg-bad/10 ring-1 ring-bad/20 wrap-break-word">{error}</div>
       )}
     </div>
   );
@@ -1194,7 +1212,7 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
                 <div key={ri} className="mb-3 last:mb-0 rounded-lg ring-1 ring-edge overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-tint/3 border-b border-edge">
                     {rule.tls && (
-                      <span className="mono text-[9.5px] px-1.5 py-0.5 rounded-sm bg-ok/10 ring-1 ring-ok/30 text-ok">TLS</span>
+                      <span className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-ok/10 ring-1 ring-ok/30 text-ok">TLS</span>
                     )}
                     <span className="mono text-[12px] text-ink">{rule.host}</span>
                   </div>
@@ -1203,7 +1221,7 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
                       <span className="mono px-3 py-1.5 text-mute w-[140px] shrink-0 border-r border-edge-raw/50 truncate" title={p.path}>
                         {p.path}
                       </span>
-                      <span className="mono px-2 py-1.5 text-mute w-[80px] shrink-0 border-r border-edge-raw/50 text-[10px]">
+                      <span className="mono px-2 py-1.5 text-mute w-[80px] shrink-0 border-r border-edge-raw/50 text-[10.5px]">
                         {p.path_type}
                       </span>
                       <span className="mono px-3 py-1.5 text-accent truncate flex-1">
@@ -1450,7 +1468,7 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
             const pp = argoPhasePill(a.operation_phase);
             return (
               <div className="flex items-center gap-2 mb-3">
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] mono font-medium ring-1 ${pp.cls}`}>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ring-1 ${pp.cls}`}>
                   <span aria-hidden>{pp.icon}</span>Last operation: {a.operation_phase}
                 </span>
               </div>
@@ -1462,7 +1480,8 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
             <div className="mb-3 p-2.5 rounded-lg bg-surface-tint/3 ring-1 ring-edge-raw/60 space-y-1.5">
               <div className="flex items-center gap-2">
                 <GitCommit size={11} className="text-mute shrink-0 mt-0.5" />
-                <span className="mono text-[12px] font-semibold text-accent bg-accent/12 px-2 py-0.5 rounded-sm">
+                {/* last_commit can be a full chart version, tag or branch name: wrap it and keep the whole value in the tooltip. */}
+                <span title={a.last_commit} className="mono min-w-0 break-all text-[12px] font-semibold text-accent bg-accent/12 px-2 py-0.5 rounded-sm">
                   {a.last_commit}
                 </span>
                 <span className="text-[11px] text-mute mono">{a.last_synced_at}</span>
@@ -1481,12 +1500,12 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
 
           <KV k="Namespace"       v={a.namespace} />
           <KV k="Project"         v={a.project} />
-          <KV k="Repo"            v={a.repo_url} />
-          <KV k="Path"            v={a.path} />
-          <KV k="Target revision" v={a.target_revision} />
+          <KV k="Repo"            v={a.repo_url} wrap />
+          <KV k="Path"            v={a.path} wrap />
+          <KV k="Target revision" v={a.target_revision} wrap />
           <KV k="Sync policy"     v={a.auto_sync ? "Automated" : "Manual"} mono={false} />
           <KV k="Dest namespace"  v={a.dest_namespace} />
-          <KV k="Dest cluster"    v={a.dest_server.replace(/^https?:\/\//, "")} />
+          <KV k="Dest cluster"    v={a.dest_server.replace(/^https?:\/\//, "")} wrap />
           <KV k="Age"             v={a.age} />
           {a.owner_appset && (
             <div className="flex items-baseline gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0">
@@ -1781,8 +1800,8 @@ type ChipTone = "ok" | "bad" | "terminating" | "neutral";
 
 /**
  * The one header chip for every kind except Application (which shows separate Health and Sync chips).
- * The generic words stay Healthy / Degraded until Q15 is applied (F4). A Namespace shows its phase instead:
- * a Terminating namespace is being deleted, not "Degraded".
+ * The generic fallback reads "Not healthy" (user decision Q15 A): a Pending PVC or a NotReady node is not "degraded".
+ * A Namespace shows its phase instead: a Terminating namespace is being deleted, not unhealthy.
  */
 function statusChip(resource: SelectedResource): { label: string; tone: ChipTone } {
   if (resource.kind === "ns") {
@@ -1791,7 +1810,7 @@ function statusChip(resource: SelectedResource): { label: string; tone: ChipTone
     return { label: resource.item.phase || "Unknown", tone: "neutral" };
   }
   const healthy = isHealthy(resource);
-  return { label: healthy ? "Healthy" : "Degraded", tone: healthy ? "ok" : "bad" };
+  return { label: healthy ? "Healthy" : "Not healthy", tone: healthy ? "ok" : "bad" };
 }
 
 /** Header chip classes per tone. Literal strings so Tailwind sees them; `terminating` is the Terminating pod look. */
@@ -1850,11 +1869,27 @@ function ArgoCdResourcesTab({
   const [grouped, setGrouped] = useState<boolean>(() => {
     try { return localStorage.getItem("argocd-resources-view") === "grouped"; } catch { return false; }
   });
-  const [expandedOutOfSync, setExpandedOutOfSync] = useState<Set<string>>(new Set());
   const refresh = useRefreshArgoCdApp();
   const tabIdentity = useClusterIdentity(context);
   const { guarded: guardedRefresh, dialog: refreshDialog } = useGuardedAction(context);
   const refreshReason = pickDisabledReason({ readOnly: tabIdentity.readOnly });
+  // ARGO-11: the same feedback shape as the Overview actions (ARGO-5). Success clears itself after 4 s; an error stays
+  // until the next refresh starts, so it can be read and copied.
+  const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  useEffect(() => {
+    if (feedback?.tone !== "ok") return;
+    const t = window.setTimeout(() => setFeedback(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [feedback]);
+  const runRefresh = async (hard: boolean) => {
+    setFeedback(null);
+    try {
+      await refresh.mutateAsync({ context, namespace: appNamespace, name: appName, hard });
+      setFeedback({ tone: "ok", text: "Refresh requested. ArgoCD updates the status when it finishes." });
+    } catch (e) {
+      setFeedback({ tone: "error", text: `Couldn't refresh ${appName}: ${(e as any)?.message ?? String(e)}` });
+    }
+  };
   const handleRefresh = (hard: boolean) => {
     if (!appName || refreshReason || refresh.isPending) return;
     guardedRefresh({
@@ -1864,7 +1899,7 @@ function ArgoCdResourcesTab({
         : `Tells ArgoCD to re-check drift for "${appName}" now.`,
       confirmLabel: hard ? "Hard refresh" : "Refresh",
       equivalent: argoRefreshEquiv({ context, namespace: appNamespace, name: appName, hard }),
-      run: () => { refresh.mutate({ context, namespace: appNamespace, name: appName, hard }); },
+      run: () => runRefresh(hard),
     });
   };
 
@@ -1911,6 +1946,8 @@ function ArgoCdResourcesTab({
     }
   }
 
+  const toolBtn = `inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 transition-colors ${FOCUS_RING}`;
+
   return (
     <div className="p-3 flex flex-col gap-3">
       {/* Count / filter bar */}
@@ -1925,9 +1962,9 @@ function ArgoCdResourcesTab({
               type="button"
               aria-pressed={healthFilter === st}
               onClick={() => setHealthFilter(f => f === st ? "all" : st)}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] mono font-medium ring-1 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${healthFilter === st ? ARGO_CHIP_CLS[st].on : ARGO_CHIP_CLS[st].off}`}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] mono font-medium ring-1 transition-colors ${FOCUS_RING} ${healthFilter === st ? ARGO_CHIP_CLS[st].on : ARGO_CHIP_CLS[st].off}`}
             >
-              <span aria-hidden>{argoHealthPill(st).icon}</span>{st} {healthCount(st)}
+              <ArgoGlyph icon={argoHealthPill(st).icon} />{st} {healthCount(st)}
             </button>
           ))}
         </div>
@@ -1938,59 +1975,66 @@ function ArgoCdResourcesTab({
               type="button"
               aria-pressed={syncFilter === st}
               onClick={() => setSyncFilter(f => f === st ? "all" : st)}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] mono font-medium ring-1 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${syncFilter === st ? ARGO_CHIP_CLS[st].on : ARGO_CHIP_CLS[st].off}`}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] mono font-medium ring-1 transition-colors ${FOCUS_RING} ${syncFilter === st ? ARGO_CHIP_CLS[st].on : ARGO_CHIP_CLS[st].off}`}
             >
-              <span aria-hidden>{argoSyncPill(st).icon}</span>{st} {syncCount(st)}
+              <ArgoGlyph icon={argoSyncPill(st).icon} />{st} {syncCount(st)}
             </button>
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1">
+          {/* A toggle keeps one name: the pressed state says which way it is set (the word used to flip between Flat and Grouped). */}
           <button
+            type="button"
+            aria-pressed={grouped}
             onClick={() => {
               const next = !grouped;
               setGrouped(next);
               try { localStorage.setItem("argocd-resources-view", next ? "grouped" : "flat"); } catch { /* */ }
             }}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] mono font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 transition-colors"
-            title={grouped ? "Switch to flat view" : "Switch to grouped view"}
+            title="Group the managed resources by kind"
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 transition-colors ${FOCUS_RING} ${
+              grouped ? "bg-surface-tint/8 text-ink ring-edge-strong" : "ring-edge text-mute hover:text-ink hover:bg-surface-tint/4"
+            }`}
           >
-            {grouped ? "Flat" : "Grouped"}
+            Group by kind
           </button>
           <button
             type="button"
             onClick={() => handleRefresh(false)}
-            title="Refresh — tells ArgoCD to re-check drift now (≈3-min reconciliation lag otherwise)"
+            title="Refresh. Asks ArgoCD to re-check drift now; without it the check can lag by about 3 minutes."
             {...disabledAttrs(refreshReason)}
             aria-disabled={refresh.isPending || !!refreshReason || undefined}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] mono font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed transition-colors"
+            className={`${toolBtn} aria-disabled:opacity-50 aria-disabled:cursor-not-allowed`}
           >
             {refresh.isPending && !refresh.variables?.hard
-              ? <Loader2 size={11} className="animate-spin" />
-              : <RefreshCw size={11} />}
+              ? <Loader2 size={11} className="animate-spin" aria-hidden />
+              : <RefreshCw size={11} aria-hidden />}
             Refresh
           </button>
           <button
             type="button"
             onClick={() => handleRefresh(true)}
-            title="Hard refresh — force-reload manifests from git, ignoring ArgoCD cache"
+            title="Hard refresh. Asks ArgoCD to clear its cache and re-fetch from git."
             {...disabledAttrs(refreshReason)}
             aria-disabled={refresh.isPending || !!refreshReason || undefined}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] mono font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed transition-colors"
+            className={`${toolBtn} aria-disabled:opacity-50 aria-disabled:cursor-not-allowed`}
           >
             {refresh.isPending && refresh.variables?.hard
-              ? <Loader2 size={11} className="animate-spin" />
-              : <RefreshCcw size={11} />}
-            Hard
+              ? <Loader2 size={11} className="animate-spin" aria-hidden />
+              : <RefreshCcw size={11} aria-hidden />}
+            Hard refresh
           </button>
         </div>
       </div>
       {refreshDialog}
       {refreshReason && <p className="text-[11px] text-mute">{refreshReason}</p>}
-      {refresh.isSuccess && !refresh.isPending && (
-        <p role="status" className="text-[10.5px] text-ok mono">✓ Refresh triggered — sync status will update within seconds.</p>
-      )}
-      {refresh.isError && (
-        <p role="alert" className="text-[10.5px] text-bad mono">✕ {(refresh.error as any)?.message ?? String(refresh.error)}</p>
+      {feedback && (
+        <p
+          role={feedback.tone === "error" ? "alert" : "status"}
+          className={`text-[11px] wrap-break-word ${feedback.tone === "error" ? "text-bad" : "text-ok"}`}
+        >
+          {feedback.text}
+        </p>
       )}
 
       {/* Table */}
@@ -2011,11 +2055,12 @@ function ArgoCdResourcesTab({
               return (
                 <Fragment key={`group-${kind}`}>
                   <tr className="bg-surface-tint/2 border-b border-edge">
-                    <td colSpan={4} className="px-3 py-1 text-[10px] uppercase tracking-wider text-mute font-semibold">
+                    <td colSpan={4} className="px-3 py-1 text-[10.5px] uppercase tracking-wider text-mute font-semibold">
                       <span>{kind}</span>
                       <span className="ml-2 text-mute normal-case tracking-normal font-normal">· {items.length} total</span>
                       {degradedInKind > 0 && (
-                        <span className="ml-2 text-bad font-medium">✕ {degradedInKind} Degraded</span>
+                        // Counts Degraded and Missing, so it says both (the tab badge says the same).
+                        <span className="ml-2 text-bad font-medium"><span aria-hidden>✕</span> {degradedInKind} Degraded or Missing</span>
                       )}
                     </td>
                   </tr>
@@ -2024,59 +2069,41 @@ function ArgoCdResourcesTab({
                     const clickable = !!targetKind && !!onNavigate;
                     const isDegraded = isDegradedOrMissing(r);
                     const isOutOfSync = !isDegraded && r.sync_status === "OutOfSync";
-                    const rowKey = `${kind}-${i}`;
-                    const isExpanded = expandedOutOfSync.has(rowKey);
+                    const sp = argoSyncPill(r.sync_status);
+                    const hp = argoHealthPill(r.health_status);
                     return (
-                      <Fragment key={rowKey}>
-                        <tr
-                          onClick={clickable ? () => onNavigate!(targetKind, r.namespace, r.name) : undefined}
-                          className={`border-b border-edge-raw/50 ${clickable ? "cursor-pointer hover:bg-surface-tint/6 group" : "hover:bg-surface-tint/2.5"}`}
-                        >
-                          <td className={`py-1.5 pr-3 pl-1 border-l-2 ${isDegraded ? "border-bad/60" : isOutOfSync ? "border-warn/50" : "border-transparent"}`}>
-                            <ArgoKindCell r={r} clickable={clickable} />
-                          </td>
-                          <td className="py-1.5 pr-3">
-                            <span className="mono text-[11.5px] text-ink block">{r.name || "—"}</span>
-                            <span className="mono text-[10px] text-mute block">{r.namespace || ""}</span>
-                          </td>
-                          <td className="py-1.5 pr-3">
-                            <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10px] mono ring-1 ${argoSyncPill(r.sync_status).cls}`}>
-                              <span>{argoSyncPill(r.sync_status).icon}</span>{r.sync_status || "—"}
+                      <tr
+                        key={`${kind}-${i}`}
+                        onClick={clickable ? () => onNavigate!(targetKind, r.namespace, r.name) : undefined}
+                        className={`border-b border-edge-raw/50 ${clickable ? "cursor-pointer hover:bg-surface-tint/6 group" : "hover:bg-surface-tint/2.5"}`}
+                      >
+                        <td className={`py-1.5 pr-3 pl-1 border-l-2 ${isDegraded ? "border-bad/60" : isOutOfSync ? "border-warn/50" : "border-transparent"}`}>
+                          <ArgoKindCell r={r} clickable={clickable} />
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <span className="mono text-[11.5px] text-ink block">{r.name || "—"}</span>
+                          <span className="mono text-[10.5px] text-mute block">{r.namespace || ""}</span>
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10.5px] mono ring-1 ${sp.cls}`}>
+                            <ArgoGlyph icon={sp.icon} />{r.sync_status || "—"}
+                          </span>
+                          {r.requires_pruning && (
+                            <span className="ml-1 inline-flex items-center px-1 py-px rounded-sm text-[10.5px] mono bg-bad/10 text-bad ring-1 ring-bad/30" title="Will be pruned on next sync with prune enabled">
+                              prune
                             </span>
-                            {r.requires_pruning && (
-                              <span className="ml-1 inline-flex items-center px-1 py-px rounded-sm text-[9.5px] mono bg-bad/10 text-bad ring-1 ring-bad/30" title="Will be pruned on next sync with prune enabled">
-                                prune
-                              </span>
-                            )}
-                            {isOutOfSync && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setExpandedOutOfSync(s => { const n = new Set(s); n.has(rowKey) ? n.delete(rowKey) : n.add(rowKey); return n; }); }}
-                                className="ml-1 mono text-[9.5px] text-warn hover:text-warn underline"
-                              >
-                                {isExpanded ? "hide" : "diff"}
-                              </button>
-                            )}
-                          </td>
-                          <td className="py-1.5">
-                            {r.health_status && r.health_status !== "Unknown" ? (
-                              <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10px] mono ring-1 ${argoHealthPill(r.health_status).cls}`} title={r.health_message || undefined}>
-                                <span>{argoHealthPill(r.health_status).icon}</span>{r.health_status}
-                              </span>
-                            ) : (
-                              <span className="text-mute text-[10px] mono">—</span>
-                            )}
-                          </td>
-                        </tr>
-                        {isOutOfSync && isExpanded && (
-                          <tr className="bg-warn/2">
-                            <td colSpan={4} className="px-3 py-2">
-                              <div className="rounded-lg ring-1 ring-warn/20 p-2.5 text-[11px] text-warn mono">
-                                OutOfSync — this resource differs from git. Open the YAML tab to view live manifest, or click Sync to reconcile.
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                          )}
+                        </td>
+                        <td className="py-1.5">
+                          {r.health_status && r.health_status !== "Unknown" ? (
+                            <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10.5px] mono ring-1 ${hp.cls}`} title={r.health_message || undefined}>
+                              <ArgoGlyph icon={hp.icon} />{r.health_status}
+                            </span>
+                          ) : (
+                            <span className="text-mute text-[10.5px] mono">—</span>
+                          )}
+                        </td>
+                      </tr>
                     );
                   })}
                 </Fragment>
@@ -2093,58 +2120,40 @@ function ArgoCdResourcesTab({
                 : isOutOfSync
                 ? "border-l-2 border-warn/50"
                 : "border-l-2 border-transparent";
-              const rowKey = `flat-${i}`;
-              const isExpanded = expandedOutOfSync.has(rowKey);
+              const sp = argoSyncPill(r.sync_status);
+              const hp = argoHealthPill(r.health_status);
               return (
-                <Fragment key={rowKey}>
-                  <tr
-                    onClick={clickable ? () => onNavigate!(targetKind, r.namespace, r.name) : undefined}
-                    className={`border-b border-edge-raw/50 last:border-b-0 ${clickable ? "cursor-pointer hover:bg-surface-tint/6 group" : "hover:bg-surface-tint/2.5"}`}
-                  >
-                    <td className={`py-1.5 pr-3 pl-1 ${firstTdBorder}`}>
-                      <ArgoKindCell r={r} clickable={clickable} />
-                      {r.group && <span className="ml-1 text-mute text-[10px]">{r.group}</span>}
-                    </td>
-                    <td className="py-1.5 pr-3 mono text-mute truncate max-w-[120px]" title={r.name}>{r.name || "—"}</td>
-                    <td className="py-1.5 pr-3 mono text-mute text-[10.5px]">{r.namespace || "—"}</td>
-                    <td className="py-1.5 pr-3">
-                      <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10px] mono ring-1 ${argoSyncPill(r.sync_status).cls}`}>
-                        <span>{argoSyncPill(r.sync_status).icon}</span>{r.sync_status || "—"}
+                <tr
+                  key={`flat-${i}`}
+                  onClick={clickable ? () => onNavigate!(targetKind, r.namespace, r.name) : undefined}
+                  className={`border-b border-edge-raw/50 last:border-b-0 ${clickable ? "cursor-pointer hover:bg-surface-tint/6 group" : "hover:bg-surface-tint/2.5"}`}
+                >
+                  <td className={`py-1.5 pr-3 pl-1 ${firstTdBorder}`}>
+                    <ArgoKindCell r={r} clickable={clickable} />
+                    {r.group && <span className="ml-1 text-mute text-[10.5px]">{r.group}</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 mono text-mute truncate max-w-[120px]" title={r.name}>{r.name || "—"}</td>
+                  <td className="py-1.5 pr-3 mono text-mute text-[10.5px]">{r.namespace || "—"}</td>
+                  <td className="py-1.5 pr-3">
+                    <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10.5px] mono ring-1 ${sp.cls}`}>
+                      <ArgoGlyph icon={sp.icon} />{r.sync_status || "—"}
+                    </span>
+                    {r.requires_pruning && (
+                      <span className="ml-1 inline-flex items-center px-1 py-px rounded-sm text-[10.5px] mono bg-bad/10 text-bad ring-1 ring-bad/30" title="Will be pruned on next sync with prune enabled">
+                        prune
                       </span>
-                      {r.requires_pruning && (
-                        <span className="ml-1 inline-flex items-center px-1 py-px rounded-sm text-[9.5px] mono bg-bad/10 text-bad ring-1 ring-bad/30" title="Will be pruned on next sync with prune enabled">
-                          prune
-                        </span>
-                      )}
-                      {isOutOfSync && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setExpandedOutOfSync(s => { const n = new Set(s); n.has(rowKey) ? n.delete(rowKey) : n.add(rowKey); return n; }); }}
-                          className="ml-1 mono text-[9.5px] text-warn hover:text-warn underline"
-                        >
-                          {isExpanded ? "hide" : "diff"}
-                        </button>
-                      )}
-                    </td>
-                    <td className="py-1.5">
-                      {r.health_status && r.health_status !== "Unknown" ? (
-                        <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10px] mono ring-1 ${argoHealthPill(r.health_status).cls}`} title={r.health_message || undefined}>
-                          <span>{argoHealthPill(r.health_status).icon}</span>{r.health_status}
-                        </span>
-                      ) : (
-                        <span className="text-mute text-[10px] mono">—</span>
-                      )}
-                    </td>
-                  </tr>
-                  {isOutOfSync && isExpanded && (
-                    <tr className="bg-warn/2">
-                      <td colSpan={5} className="px-3 py-2">
-                        <div className="rounded-lg ring-1 ring-warn/20 p-2.5 text-[11px] text-warn mono">
-                          OutOfSync — this resource differs from git. Open the YAML tab to view live manifest, or click Sync to reconcile.
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
+                    )}
+                  </td>
+                  <td className="py-1.5">
+                    {r.health_status && r.health_status !== "Unknown" ? (
+                      <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded-sm text-[10.5px] mono ring-1 ${hp.cls}`} title={r.health_message || undefined}>
+                        <ArgoGlyph icon={hp.icon} />{r.health_status}
+                      </span>
+                    ) : (
+                      <span className="text-mute text-[10.5px] mono">—</span>
+                    )}
+                  </td>
+                </tr>
               );
             })
           )}
@@ -2200,7 +2209,7 @@ function WorkloadPodsTab({
             <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotCls}`} />
             <span className="mono text-[11.5px] flex-1 truncate group-hover:text-ink text-mute">{p.name}</span>
             {p.restarts > 0 && (
-              <span className={`mono text-[10px] px-1.5 py-px rounded ring-1 shrink-0 ${
+              <span className={`mono text-[10.5px] px-1.5 py-px rounded ring-1 shrink-0 ${
                 crashReason && crashReason !== "Completed"
                   ? crashReason === "OOMKilled"
                     ? "text-bad bg-bad/10 ring-bad/20"
@@ -2309,7 +2318,7 @@ function ResourceSummaryTab({
                     <div className="w-1.5 h-1.5 rounded-full bg-dim/30 shrink-0" />
                     <span className="mono text-ink shrink-0 w-[90px] truncate">{c.name}</span>
                     {c.is_init && (
-                      <span className="text-[9px] uppercase tracking-wider bg-status-purple/10 ring-1 ring-status-purple/20 text-status-purple px-1 rounded-sm shrink-0">
+                      <span className="text-[10.5px] uppercase tracking-wider bg-status-purple/10 ring-1 ring-status-purple/20 text-status-purple px-1 rounded-sm shrink-0">
                         init
                       </span>
                     )}
@@ -2317,7 +2326,7 @@ function ResourceSummaryTab({
                       {c.image}
                     </span>
                     {(cpuRange || memRange) && (
-                      <span className="mono text-[10px] text-mute shrink-0 text-right">
+                      <span className="mono text-[10.5px] text-mute shrink-0 text-right">
                         {cpuRange} {memRange}
                       </span>
                     )}
@@ -2332,7 +2341,7 @@ function ResourceSummaryTab({
                 ['RESTART POLICY', pt.restart_policy],
               ] as [string, string | undefined][]).filter(([, v]) => v).map(([label, value]) => (
                 <div key={label} className="flex items-baseline gap-3 text-[11px]">
-                  <span className="text-[10px] uppercase tracking-wider text-mute font-medium shrink-0 w-[130px]">
+                  <span className="text-[10.5px] uppercase tracking-wider text-mute font-medium shrink-0 w-[130px]">
                     {label}
                   </span>
                   <span className="mono text-ink">{value}</span>
@@ -2409,7 +2418,7 @@ function GraphNodeRow({ node, depth = 0 }: { node: GraphNode; depth?: number }) 
         {hasChildren ? (
           <button onClick={() => setOpen(o => !o)}
             className="h-4 w-4 flex items-center justify-center text-mute hover:text-ink shrink-0">
-            <span className={`transition-transform ${open ? "rotate-90" : ""} text-[10px]`}>▶</span>
+            <span className={`transition-transform ${open ? "rotate-90" : ""} text-[10.5px]`}>▶</span>
           </button>
         ) : (
           <span className="h-4 w-4 shrink-0" />
@@ -2496,10 +2505,10 @@ function HelmHistoryTab({
   return (
     <div className="p-3 flex flex-col gap-1">
       <div className="flex items-center gap-2 px-2 py-1 border-b border-edge-raw/60 mb-1">
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold w-[52px] shrink-0">Rev</span>
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold w-[100px] shrink-0">Status</span>
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold flex-1">Chart</span>
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold w-[90px] shrink-0">Updated</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold w-[52px] shrink-0">Rev</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold w-[100px] shrink-0">Status</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold flex-1">Chart</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold w-[90px] shrink-0">Updated</span>
       </div>
       {sorted.map((rev) => (
         <div key={rev.revision} className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-surface-tint/4 transition-colors">
@@ -2512,12 +2521,12 @@ function HelmHistoryTab({
           <span className="text-[11.5px] text-ink/80 flex-1 truncate" title={rev.description}>
             {rev.chart} <span className="text-mute">{rev.app_version}</span>
           </span>
-          <span className="mono text-[10px] text-mute w-[90px] shrink-0 truncate">{rev.updated}</span>
+          <span className="mono text-[10.5px] text-mute w-[90px] shrink-0 truncate">{rev.updated}</span>
           {rev.revision !== latest && (
             <button
               onClick={() => { if (rollbackReason) return; setRollbackTarget(rev.revision); }}
               {...disabledAttrs(rollbackReason)}
-              className={`h-5 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[9.5px] text-mute hover:text-ink mono flex items-center gap-1 shrink-0 ${rollbackReason ? "opacity-50 cursor-not-allowed" : ""}`}
+              className={`h-5 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink flex items-center gap-1 shrink-0 ${FOCUS_RING} ${rollbackReason ? "opacity-50 cursor-not-allowed" : ""}`}
             >
               <StepBack size={9} /> Rollback
             </button>
@@ -2545,8 +2554,8 @@ function HelmHistoryTab({
         isPending={rollback.isPending}
       />
       {rollback.isError && (
-        <p className="mono text-[10.5px] text-bad px-2 py-1">
-          ✕ {(rollback.error as any)?.message ?? String(rollback.error)}
+        <p role="alert" className="text-[11px] text-bad px-2 py-1 wrap-break-word">
+          <span aria-hidden>✕</span> {(rollback.error as any)?.message ?? String(rollback.error)}
         </p>
       )}
     </div>
@@ -2556,13 +2565,15 @@ function HelmHistoryTab({
 // ─── ArgoCD History tab ───────────────────────────────────────────────────────
 
 function ArgoCdHistoryTab({
-  history, context, namespace, appName, autoSync,
+  history, context, namespace, appName, autoSync, lastCommit,
 }: {
   history: ArgoCdHistoryEntry[];
   context: string;
   namespace: string;
   appName: string;
   autoSync: boolean;
+  /** `ArgoCdApp.last_commit`: the revision the Application runs now, in the same form as `ArgoCdHistoryEntry.revision`. */
+  lastCommit: string;
 }) {
   const identity = useClusterIdentity(context);
   // Keyed by entry.id, never entry.revision: two history entries can share a
@@ -2577,6 +2588,8 @@ function ArgoCdHistoryTab({
     "Auto-sync is on. ArgoCD doesn't allow a rollback while auto-sync is enabled. Turn off auto-sync first.";
   // Read-only first, then the auto-sync reason (DISABLE-PRECEDENCE).
   const rollbackReason = pickDisabledReason({ readOnly: identity.readOnly, capability: autoSync ? AUTO_SYNC_REASON : undefined });
+  // Q11 A: the entry whose revision is the one running now gets a neutral "Current" chip (exact match, none when nothing matches).
+  const currentId = liveHistoryId(history, lastCommit);
 
   if (history.length === 0) {
     return (
@@ -2590,32 +2603,43 @@ function ArgoCdHistoryTab({
   return (
     <div className="p-3 flex flex-col gap-1">
       <div className="flex items-center gap-2 px-2 py-1 border-b border-edge-raw/60 mb-1">
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold w-[68px] shrink-0">Revision</span>
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold w-[80px] shrink-0">Deployed</span>
-        <span className="mono text-[10px] uppercase tracking-wider text-mute font-semibold flex-1">Message</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold w-[68px] shrink-0">Revision</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold w-[80px] shrink-0">Deployed</span>
+        <span className="mono text-[10.5px] uppercase tracking-wider text-mute font-semibold flex-1">Message</span>
       </div>
       {history.map((entry) => (
         <div key={entry.id}>
           <button
+            type="button"
             onClick={() => setExpanded(e => e === entry.id ? null : entry.id)}
             aria-expanded={expanded === entry.id}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-surface-tint/4 text-left transition-colors group"
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-surface-tint/4 text-left transition-colors ${INSET_RING}`}
           >
             <span className="mono text-[11px] text-accent w-[68px] shrink-0 truncate" title={entry.revision}>{entry.revision}</span>
             <span className="mono text-[11px] text-mute w-[80px] shrink-0">{entry.deployed_at}</span>
             <span className="text-[11.5px] text-ink/80 flex-1 truncate">{entry.message || "—"}</span>
-            <span className="text-[10px] text-mute opacity-0 group-hover:opacity-100 shrink-0">
-              {expanded === entry.id ? "▲" : "▼"}
-            </span>
+            {entry.id === currentId && (
+              <span
+                title="The revision this Application is running now."
+                className={`shrink-0 px-1.5 py-px rounded-full ring-1 text-[10.5px] ${ARGO_NEUTRAL_CLS}`}
+              >
+                Current
+              </span>
+            )}
+            {/* Always visible: a chevron that needed a hover was invisible to a keyboard user. The button carries aria-expanded. */}
+            <ChevronRight size={12} aria-hidden className={`shrink-0 text-mute transition-transform ${expanded === entry.id ? "rotate-90" : ""}`} />
           </button>
           {expanded === entry.id && (
             <div className="mx-2 mb-1 p-2.5 rounded-lg bg-surface-tint/3 ring-1 ring-edge-raw/60 flex flex-col gap-2">
+              {/* The row cuts the message to one line, so this is the only place to read it in full. */}
+              <p className="text-[12px] text-ink whitespace-pre-wrap wrap-break-word">{entry.message || "No commit message recorded."}</p>
               {entry.author && (
-                <p className="mono text-[11px] text-mute">by {entry.author}</p>
+                <p className="text-[11px] text-mute">by <span className="mono">{entry.author}</span></p>
               )}
-              <p className="mono text-[10px] text-mute">{entry.deployed_at_iso}</p>
+              <p className="mono text-[10.5px] text-mute">{entry.deployed_at_iso}</p>
               {autoSync && <p className="text-[11px] text-warn">{AUTO_SYNC_REASON}</p>}
               <button
+                type="button"
                 onClick={() => {
                   if (rollbackReason) return;
                   setRollbackError(null);
@@ -2623,7 +2647,7 @@ function ArgoCdHistoryTab({
                   setRollbackTarget(entry);
                 }}
                 {...disabledAttrs(rollbackReason)}
-                className="self-start h-6 px-2.5 rounded-sm bg-warn/10 ring-1 ring-warn/30 text-[10.5px] text-warn mono hover:bg-warn/20 transition-colors aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-warn/10"
+                className={`self-start h-6 px-2.5 rounded-sm bg-warn/10 ring-1 ring-warn/30 text-[10.5px] text-warn hover:bg-warn/20 transition-colors aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-warn/10 ${FOCUS_RING}`}
               >
                 Roll back to this revision…
               </button>
@@ -2632,7 +2656,7 @@ function ArgoCdHistoryTab({
         </div>
       ))}
       {rollbackDone && (
-        <p role="status" className="mono text-[10.5px] text-ok px-2 py-1">✓ {rollbackDone}</p>
+        <p role="status" className="text-[11px] text-ok px-2 py-1"><span aria-hidden>✓</span> {rollbackDone}</p>
       )}
       <ConfirmModal
         contextLabel={identity.label}
@@ -2693,11 +2717,13 @@ function SaveIcon() {
 
 // ─── ArgoCD action bar ────────────────────────────────────────────────────────
 
-const SYNC_OPT_HELP: Record<string, string> = {
-  prune: "removes resources not in git",
-  dryRun: "simulates sync, no changes applied",
-  force: "overwrites conflicting resources",
-};
+// The help line is always visible (ARGO-3): the user reads what Prune and Force do before choosing them. Force keeps
+// its older wording (user decision Q10 A); argocd.md says to verify sync semantics against upstream, not memory.
+const SYNC_OPTIONS = [
+  { key: "prune", label: "Prune", help: "Removes resources that are no longer in git." },
+  { key: "dryRun", label: "Dry run", help: "Simulates the sync. Nothing is changed." },
+  { key: "force", label: "Force", help: "Overwrites resources that conflict with git." },
+] as const;
 
 function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }: { context: string; namespace: string; name: string; destNamespace?: string; destServer?: string }) {
   const identity = useClusterIdentity(context);
@@ -2711,7 +2737,8 @@ function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }
     const t = window.setTimeout(() => setFeedback(null), 4000);
     return () => window.clearTimeout(t);
   }, [feedback]);
-  const [confirmPrune, setConfirmPrune] = useState(false);
+  // Q9 A: a sync with Prune or Force always goes through this confirm, even while the typed-confirm guardrail is off.
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const { guarded, dialog: guardedDialog } = useGuardedAction(context);
   const actionReason = pickDisabledReason({ readOnly: identity.readOnly });
 
@@ -2735,10 +2762,10 @@ function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }
 
   const handleSync = () => {
     if (actionReason || busy) return;
-    if (syncOpts.prune) { setConfirmPrune(true); return; }
+    if (syncOpts.prune || syncOpts.force) { setConfirmOpen(true); return; }
     guarded({
       title: `Sync ${name}`,
-      description: syncOpts.dryRun ? `Runs a dry-run sync of "${name}". Nothing is applied.` : `Syncs "${name}" to its target revision.`,
+      description: syncOpts.dryRun ? `Runs a dry-run sync of "${name}". Nothing is changed.` : `Syncs "${name}" to its target revision.`,
       confirmLabel: "Sync",
       equivalent: argoSyncEquiv({ context, namespace, name, ...syncOpts }),
       run: runSync,
@@ -2768,43 +2795,67 @@ function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }
     }
   };
 
+  // The confirm's title, copy and button follow the options that make the sync risky (Prune, Force, or both).
+  const { prune, force, dryRun } = syncOpts;
+  const pruneDescription = dryRun
+    ? `Sync "${name}" is a dry run, so nothing will actually be deleted. ${
+        pruneCountKnown
+          ? pruneTargets.length > 0
+            ? `Would target ${pruneTargets.length} resource(s) for pruning: ${pruneTargets.map(r => `${r.kind}/${r.name}`).join(", ")}`
+            : "No resources currently require pruning."
+          : "Prune target count is unknown (could not load current state)."
+      }`
+    : pruneCountKnown
+    ? pruneTargets.length > 0
+      ? `Sync "${name}" with prune enabled will delete ${pruneTargets.length} resource(s) no longer in git: ${pruneTargets.map(r => `${r.kind}/${r.name}`).join(", ")}`
+      : `Sync "${name}" with prune enabled: no resources currently require pruning.`
+    : `Sync "${name}" with prune enabled will delete resources no longer in git (count unknown, could not load current state).`;
+  const forceSentence = dryRun
+    ? "Force is on, but a dry run overwrites nothing."
+    : "Force is on: it overwrites resources that conflict with git.";
+  const confirmTitle = prune && force ? "Prune resources and force sync" : prune ? "Prune resources on sync" : `Force sync ${name}`;
+  const confirmDescription = prune && force
+    ? `${pruneDescription} ${forceSentence}`
+    : prune
+    ? pruneDescription
+    : dryRun
+    ? `Sync "${name}" is a dry run, so nothing will actually be overwritten.`
+    : `Sync "${name}" with force enabled overwrites resources that conflict with git.`;
+  const confirmLabel = prune && force ? "Sync with prune and force" : prune ? "Sync with prune" : "Sync with force";
+
+  const actionBtn = `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] aria-disabled:opacity-50 aria-disabled:cursor-not-allowed transition-colors ${FOCUS_RING}`;
+
   return (
     <div className="px-4 pt-4">
       <div className="rounded-xl bg-card/60 ring-1 ring-edge p-3 space-y-3">
         <div className="text-[10.5px] uppercase tracking-wider text-mute font-semibold">Actions</div>
       {/* Sync options */}
-      <div className="flex flex-wrap gap-2 text-[11px]">
-        {[
-          { key: "prune" as const, label: "Prune" },
-          { key: "dryRun" as const, label: "Dry run" },
-          { key: "force" as const, label: "Force" },
-        ].map(({ key, label }) => (
-          <div key={key} className="flex flex-col gap-0.5">
-            <button
-              onClick={() => setSyncOpts(v => ({ ...v, [key]: !v[key] }))}
-              className={`px-2 py-0.5 rounded ring-1 mono text-[10.5px] transition-colors ${
-                syncOpts[key]
-                  ? "bg-accent/15 text-accent ring-accent/40"
-                  : "text-mute ring-edge hover:text-ink"
-              }`}
-            >
+      <fieldset className="min-w-0 flex flex-col gap-1.5">
+        <legend className="sr-only">Sync options</legend>
+        {SYNC_OPTIONS.map(({ key, label, help }) => (
+          <label key={key} className="flex items-start gap-2 text-[12px] text-ink cursor-pointer">
+            <input
+              type="checkbox"
+              checked={syncOpts[key]}
+              onChange={() => setSyncOpts(v => ({ ...v, [key]: !v[key] }))}
+              className="mt-0.5 h-3.5 w-3.5 accent-accent"
+            />
+            <span>
               {label}
-            </button>
-            {syncOpts[key] && (
-              <span className="text-[10.5px] text-mute">{SYNC_OPT_HELP[key]}</span>
-            )}
-          </div>
+              <span className="block text-[11px] text-mute">{help}</span>
+            </span>
+          </label>
         ))}
-      </div>
+      </fieldset>
       {syncOpts.prune && (
-        <p className={`text-[10.5px] mono ${syncOpts.dryRun ? "text-warn" : "text-bad"}`}>
+        <p className={`text-[11px] ${syncOpts.dryRun ? "text-warn" : "text-bad"}`}>
           {pruneResourcesLoading
-            ? "⚠ checking which resources would be pruned…"
+            ? <><span aria-hidden>⚠ </span>Checking which resources would be pruned…</>
             : pruneResourcesError
-            ? "⚠ prune target count unknown (could not load current state)"
+            ? <><span aria-hidden>⚠ </span>Prune target count unknown (could not load current state).</>
             : pruneTargets.length > 0
-            ? `⚠ prune ${syncOpts.dryRun ? "would simulate deleting" : "will delete"} ${pruneTargets.length} resource${pruneTargets.length !== 1 ? "s" : ""}${syncOpts.dryRun ? " — dry run, nothing will actually be deleted" : ""}`
-            : "no resources currently require pruning"}
+            ? <><span aria-hidden>⚠ </span>{`Prune ${syncOpts.dryRun ? "would simulate deleting" : "will delete"} ${pruneTargets.length} resource${pruneTargets.length !== 1 ? "s" : ""}${syncOpts.dryRun ? ". It is a dry run, so nothing will actually be deleted." : "."}`}</>
+            : "No resources currently require pruning."}
         </p>
       )}
       {/* Action buttons */}
@@ -2814,31 +2865,32 @@ function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }
           onClick={handleSync}
           {...disabledAttrs(actionReason)}
           aria-disabled={busy || !!actionReason || undefined}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/12 text-accent ring-1 ring-accent/30 text-[12px] font-medium hover:bg-accent/20 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed transition-colors"
+          className={`${actionBtn} bg-accent/12 text-accent ring-1 ring-accent/30 font-medium hover:bg-accent/20`}
         >
-          {sync.isPending ? <Loader2 size={12} className="animate-spin" /> : <GitMerge size={12} />}
+          {sync.isPending ? <Loader2 size={12} className="animate-spin" aria-hidden /> : <GitMerge size={12} aria-hidden />}
           Sync
         </button>
         <button
           type="button"
           onClick={() => handleRefresh(false)}
+          title="Refresh. Asks ArgoCD to re-check drift now; without it the check can lag by about 3 minutes."
           {...disabledAttrs(actionReason)}
           aria-disabled={busy || !!actionReason || undefined}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/80 text-mute ring-1 ring-edge text-[12px] hover:text-ink aria-disabled:opacity-50 aria-disabled:cursor-not-allowed transition-colors"
+          className={`${actionBtn} bg-card/80 text-mute ring-1 ring-edge hover:text-ink`}
         >
-          {refresh.isPending && !refresh.variables?.hard ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          {refresh.isPending && !refresh.variables?.hard ? <Loader2 size={12} className="animate-spin" aria-hidden /> : <RefreshCw size={12} aria-hidden />}
           Refresh
         </button>
         <button
           type="button"
           onClick={() => handleRefresh(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/80 text-mute ring-1 ring-edge text-[12px] hover:text-ink aria-disabled:opacity-50 aria-disabled:cursor-not-allowed transition-colors"
-          title="Hard refresh — clears cache and re-fetches from git"
+          title="Hard refresh. Asks ArgoCD to clear its cache and re-fetch from git."
           {...disabledAttrs(actionReason)}
           aria-disabled={busy || !!actionReason || undefined}
+          className={`${actionBtn} bg-card/80 text-mute ring-1 ring-edge hover:text-ink`}
         >
-          {refresh.isPending && refresh.variables?.hard ? <Loader2 size={12} className="animate-spin" /> : <RefreshCcw size={12} />}
-          Hard Refresh
+          {refresh.isPending && refresh.variables?.hard ? <Loader2 size={12} className="animate-spin" aria-hidden /> : <RefreshCcw size={12} aria-hidden />}
+          Hard refresh
         </button>
       </div>
       {actionReason && <p className="text-[11px] text-mute">{actionReason}</p>}
@@ -2868,27 +2920,13 @@ function ArgoCdActionBar({ context, namespace, name, destNamespace, destServer }
         contextColor={identity.color}
         context={identity.context}
         kubectlEquivalent={argoSyncEquiv({ context, namespace, name, ...syncOpts })}
-        open={confirmPrune}
-        title="Prune resources on sync"
-        description={
-          syncOpts.dryRun
-            ? `Sync "${name}" is a dry run — nothing will actually be deleted. ${
-                pruneCountKnown
-                  ? pruneTargets.length > 0
-                    ? `Would target ${pruneTargets.length} resource(s) for pruning: ${pruneTargets.map(r => `${r.kind}/${r.name}`).join(", ")}`
-                    : "No resources currently require pruning."
-                  : "Prune target count is unknown (could not load current state)."
-              }`
-            : pruneCountKnown
-            ? pruneTargets.length > 0
-              ? `Sync "${name}" with prune enabled will delete ${pruneTargets.length} resource(s) no longer in git: ${pruneTargets.map(r => `${r.kind}/${r.name}`).join(", ")}`
-              : `Sync "${name}" with prune enabled — no resources currently require pruning.`
-            : `Sync "${name}" with prune enabled will delete resources no longer in git (count unknown — could not load current state).`
-        }
-        confirmLabel="Sync with prune"
+        open={confirmOpen}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel={confirmLabel}
         destructive={!syncOpts.dryRun}
-        onConfirm={() => { setConfirmPrune(false); runSync(); }}
-        onCancel={() => setConfirmPrune(false)}
+        onConfirm={() => { setConfirmOpen(false); runSync(); }}
+        onCancel={() => setConfirmOpen(false)}
         isPending={sync.isPending}
       />
     </div>
@@ -3267,26 +3305,35 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
       </div>
 
       {/* tabs */}
-      <div className="flex items-center gap-0.5 px-4 border-b border-edge shrink-0 overflow-x-auto">
+      <div role="group" aria-label={`${kindLabel(resource)} sections`} className="flex items-center gap-0.5 px-4 border-b border-edge shrink-0 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t}
+            type="button"
             ref={tab === t ? selectedTabRef : undefined}
             onClick={() => setTab(t)}
-            className={`relative h-9 px-2.5 text-[12px] shrink-0 whitespace-nowrap ${tab === t ? "text-ink" : "text-mute hover:text-ink"}`}
+            aria-current={tab === t ? "true" : undefined}
+            className={`relative h-9 px-2.5 text-[12px] shrink-0 whitespace-nowrap ${INSET_RING} ${tab === t ? "text-ink" : "text-mute hover:text-ink"}`}
           >
             {t === "Resources" && resource.kind === "argocd" && argoResources.length > 0
               ? <>
                   {t}
-                  <span className="ml-1 px-1.5 py-px rounded-full bg-surface-tint/8 text-[10px] text-mute">{argoResources.length}</span>
+                  <span className="ml-1 px-1.5 py-px rounded-full bg-surface-tint/8 text-[10.5px] text-mute">
+                    {argoResources.length}<span className="sr-only"> resources</span>
+                  </span>
                   {argoResources.filter(isDegradedOrMissing).length > 0 && (
-                    <span className="ml-1 px-1 py-px rounded-full bg-bad/80 text-on-accent text-[9px]">
-                      {argoResources.filter(isDegradedOrMissing).length}
+                    <span className="ml-1 px-1.5 py-px rounded-full bg-bad/10 text-bad ring-1 ring-bad/30 text-[10.5px]" title="Degraded or missing">
+                      {argoResources.filter(isDegradedOrMissing).length}<span className="sr-only"> degraded or missing</span>
                     </span>
                   )}
                 </>
               : t === "Pods" && workloadPods.length > 0
-              ? <>{t} <span className="ml-1 px-1.5 py-px rounded-full bg-surface-tint/8 text-[10px] text-mute">{workloadPods.length}</span></>
+              ? <>
+                  {t}{" "}
+                  <span className="ml-1 px-1.5 py-px rounded-full bg-surface-tint/8 text-[10.5px] text-mute">
+                    {workloadPods.length}<span className="sr-only"> pods</span>
+                  </span>
+                </>
               : t
             }
             {tab === t && (
@@ -3407,6 +3454,7 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
             namespace={resource.item.namespace}
             appName={resource.item.name}
             autoSync={resource.item.auto_sync === true}
+            lastCommit={resource.item.last_commit}
           />
         )}
 
@@ -3469,21 +3517,22 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                 {({ findButton, bar, content }) => valuesEditMode ? (
                   <>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-warn mono">Editing — will run helm upgrade</span>
+                      <span className="text-[11px] text-warn">Editing — will run helm upgrade</span>
                       <div className="flex-1" />
                       {findButton}
                       <button
+                        type="button"
                         onClick={() => { setValuesEditMode(false); }}
-                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
                       >
-                        cancel
+                        Cancel
                       </button>
                       {/* No RBAC hint on purpose: an upgrade is a bundle of writes across many kinds, so no single can-i answers it. */}
                       <button
                         disabled={upgradeHelmRelease.isPending}
                         onClick={() => { if (upgradeReason) return; setConfirmUpgrade(true); }}
                         {...disabledAttrs(upgradeReason)}
-                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${upgradeReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/30 text-[10.5px] text-accent hover:bg-accent/30 flex items-center gap-1.5 disabled:opacity-50 ${FOCUS_RING} ${upgradeReason ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         <SaveIcon /> Review upgrade…
                       </button>
@@ -3527,7 +3576,7 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                         {helmRevealedNow ? <EyeOff size={11} /> : <Eye size={11} />}{" "}
                         {helmRevealedNow ? "Hide values" : helmRevealing && !helmEditIntent ? "Revealing…" : "Reveal values"}
                       </button>
-                      {helmRevealedNow && <span className="mono text-[10px] px-1.5 rounded-sm bg-info/15 text-info ring-1 ring-info/30">Revealed</span>}
+                      {helmRevealedNow && <span className="mono text-[10.5px] px-1.5 rounded-sm bg-info/15 text-info ring-1 ring-info/30">Revealed</span>}
                       <div className="flex-1" />
                       {findButton}
                       <button
@@ -3633,21 +3682,22 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                 {({ findButton, bar, content }) => editMode ? (
                   <>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] text-warn mono">Editing — changes apply directly to the cluster</span>
+                      <span className="text-[11px] text-warn">Editing — changes apply directly to the cluster</span>
                       <div className="flex-1" />
                       {findButton}
                       <NeatChip on={neat} onToggle={toggleNeat} editing />
                       <button
+                        type="button"
                         onClick={() => { setEditMode(false); }}
-                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
                       >
-                        cancel
+                        Cancel
                       </button>
                       <button
                         disabled={applyResource.isPending}
                         onClick={() => { if (yamlReason) return; setConfirmSave(true); }}
                         {...disabledAttrs(yamlReason)}
-                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/40 text-[10.5px] text-accent hover:bg-accent/30 mono flex items-center gap-1.5 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/30 text-[10.5px] text-accent hover:bg-accent/30 flex items-center gap-1.5 disabled:opacity-50 ${FOCUS_RING} ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
                         <SaveIcon /> Review &amp; save…
                       </button>
@@ -3676,18 +3726,20 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
                       {findButton}
                       <NeatChip on={neat} onToggle={toggleNeat} editing={false} />
                       <button
+                        type="button"
                         onClick={() => navigator.clipboard.writeText(shownYaml)}
                         title={neatShown ? "Copies the neat YAML, without the hidden fields." : undefined}
-                        className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono"
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink ${FOCUS_RING}`}
                       >
-                        {neatShown ? "copy neat" : "copy"}
+                        {neatShown ? "Copy neat" : "Copy"}
                       </button>
                       <button
+                        type="button"
                         onClick={() => { if (yamlReason) return; setEditContent(yamlContent); setEditMode(true); }}
                         {...disabledAttrs(yamlReason)}
-                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono flex items-center gap-1 disabled:opacity-50 ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink flex items-center gap-1 disabled:opacity-50 ${FOCUS_RING} ${yamlReason ? "opacity-50 cursor-not-allowed" : ""}`}
                       >
-                        <SaveIcon /> edit
+                        <SaveIcon /> Edit
                       </button>
                     </div>
                     {neat && (
@@ -3836,9 +3888,9 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
       )}
 
       {deleteError && !showDeleteConfirm && (
-        <div className="fixed bottom-4 right-4 z-50 mono text-[10.5px] text-bad px-3 py-2 rounded-lg bg-surface-overlay ring-1 ring-bad/30 shadow-lg flex items-center gap-2">
+        <div role="alert" className="fixed bottom-4 right-4 z-50 text-[11px] text-bad px-3 py-2 rounded-lg bg-surface-overlay ring-1 ring-bad/30 shadow-lg flex items-center gap-2">
           {deleteError}
-          <button onClick={() => setDeleteError("")} className="text-mute hover:text-ink">✕</button>
+          <button type="button" onClick={() => setDeleteError("")} aria-label="Dismiss" className={`text-mute hover:text-ink rounded-xs ${FOCUS_RING}`}><span aria-hidden>✕</span></button>
         </div>
       )}
 

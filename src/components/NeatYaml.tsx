@@ -14,7 +14,7 @@ export function NeatChip({ on, onToggle, editing }: { on: boolean; onToggle: () 
       aria-pressed={on}
       aria-disabled={editing || undefined}
       title={editing ? "Neat is display only. Cancel editing to switch." : "Hide managed fields, status and other server-set fields"}
-      className={`h-6 px-2 rounded ring-1 text-[10.5px] mono transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${
+      className={`h-6 px-2 rounded ring-1 text-[10.5px] transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${
         on && !editing
           ? "bg-accent/20 text-accent ring-accent/30"
           : "bg-card/80 text-mute ring-edge hover:text-ink aria-disabled:hover:text-mute"
@@ -45,7 +45,7 @@ export function NeatNote({ hidden, editing, error }: { hidden: readonly string[]
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="underline hover:text-ink"
+        className="underline hover:text-ink rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
       >
         What?
       </button>
