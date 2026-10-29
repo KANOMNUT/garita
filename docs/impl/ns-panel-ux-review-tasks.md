@@ -556,3 +556,216 @@ Copied from the run ledger when the run closed (`docs/claude/agent-checkpoints.m
   - Q3: protect `kube-node-lease` from delete in this run.
 - 2026-10-28: Scope widened: the Pod and ArgoCD panel improvements that T2 judges needed get implemented. After T2, tech-lead turns T2 findings into implementation tasks (new briefs). Any part an agent is unsure of becomes a question to the user, not an assumption.
 - 2026-10-28: UX re-check focus is the Pod detail panel and the ArgoCD panel; namespace list moves from the left sidebar into the namespace panel.
+
+## 11. ArgoCD sync-failure reason (v2.4.0 addition)
+
+Run 2 of this branch (ledger, user request of 2026-10-29: "add the ArgoCD sync-failure reason to this release"). It supersedes the deferral in §7 ("ARGO-8 / Q8: a later Rust run") and the `argocd.md` line "Not shown (Q8, deferred)". v2.4.0 is committed at `66d7406` and not tagged, so this joins v2.4.0 with no version change. Inputs: `docs/ux/24-pod-argocd-review-and-ns-panel.md` ARGO-8 and §6 Q8 option A; the ArgoCD rules in CLAUDE.md and `argocd.md`. Questions are in §11.7; a task that a question blocks says so.
+
+### 11.0 Minimal version, and what it skips
+
+Minimal: one Rust field `operation_message` on `ArgoCdApp`, read from `status.operationState.message` of the same Application object the list already reads; one pure Rust helper with a unit test; the TypeScript mirror; one pure TS helper with tests; a box under the "Last operation" pill in the Overview when the last operation failed. No new command, no new parameter, no new tab.
+
+Skipped (each is a later request unless an answer in §11.7 adds it):
+
+- Per-resource results (`status.operationState.syncResult.resources[]` entries with `status: SyncFailed` and their `message`). ARGO-8 asks for the operation message only; the Resources tab reads `status.resources[]`, not the sync result, and joining the two is its own design.
+- `status.conditions` (ComparisonError, SyncError, OrphanedResourceWarning and the rest): a different field with its own meaning, not the last operation.
+- A hint in the Applications list (Q-R4).
+- A copy button for the message.
+- The message of a Succeeded operation (upstream writes a fixed "successfully synced" sentence; it adds nothing).
+- Masking the message (§11.1.4).
+- A live-harness test: the kind harness installs no Argo CD.
+
+### 11.1 Contract (frozen)
+
+#### 11.1.1 Rust (`src-tauri/src/commands/argocd.rs`, R4)
+
+```rust
+/// Longest `operation_message` sent to the webview, in characters (Unicode scalar values, not bytes).
+pub(crate) const OPERATION_MESSAGE_MAX_CHARS: usize = 2000;
+
+pub struct ArgoCdApp {
+    // … existing fields unchanged …
+    pub operation_phase: String,
+    /// `status.operationState.message`: the controller's text about the last operation, for every
+    /// phase (the frontend chooses which phases it shows). Empty when absent or not a string.
+    /// Display form from `operation_message_display`.
+    pub operation_message: String,
+    // … existing fields unchanged …
+}
+
+/// Display form of `status.operationState.message`. Never byte-slices, never panics.
+pub(crate) fn operation_message_display(message: &str) -> String;
+```
+
+`operation_message_display`, in this order:
+
+1. Lines are joined with `\n` (`str::lines`, so a CRLF message loses its `\r`).
+2. Control characters other than `\n` and `\t` are dropped (`char::is_control`). An ANSI colour sequence from plugin output then loses its ESC byte instead of reaching the DOM raw; its printable rest stays.
+3. Leading and trailing whitespace is trimmed. Inner blank lines and indentation stay.
+4. A result longer than `OPERATION_MESSAGE_MAX_CHARS` characters keeps its first `OPERATION_MESSAGE_MAX_CHARS` characters (`chars().take(n)`) followed by `…` (U+2026). A result of exactly the limit is unchanged and has no `…`.
+
+Call site, in `list_argocd_apps` next to `operation_phase`:
+
+```rust
+let operation_message = status["operationState"]["message"]
+    .as_str()
+    .map(operation_message_display)
+    .unwrap_or_default();
+```
+
+- Not `str_or_dash`: an absent message is `""`, never `—`, so the frontend tests emptiness only.
+- `panic = "abort"`: the input is untrusted controller text. No `unwrap`, `expect`, indexing or byte slicing (`&s[..n]`); only `lines`, `chars`, `filter`, `take`, `trim`.
+- Commands: `list_argocd_apps` only. It holds the one constructor of `ArgoCdApp` (`grep -rn "ArgoCdApp {" src-tauri/src` has two hits: the struct and that constructor), and the panel's `item` is a list row. No parameter is added to any command, so the `Option<T>` rule has nothing to apply to.
+- The cap: the list is polled every 30 s and carries every Application. 2000 characters holds a multi-object apply failure in practice and bounds the payload; the raw YAML tab keeps the whole text.
+- Source: the Kubernetes object only (the existing `argo_api_resource` discovery, so no hardcoded `argoproj.io` version), never the Argo CD API. Health and Sync are untouched.
+
+Test `argocd::tests::operation_message_display_rules`: absent stays empty at the call site (covered by `unwrap_or_default`, no test needed); `""` and whitespace only give `""`; surrounding spaces and newlines are trimmed; `"a\r\nb"` gives `"a\nb"`; an inner blank line and a `\t` survive; `"\u{1b}[31mfailed\u{1b}[0m"` gives `"[31mfailed[0m"`; exactly 2000 ASCII characters are unchanged with no `…`; 2001 characters give 2000 plus `…`; 2500 × `é` (two bytes each) give 2000 × `é` plus `…` (2001 characters, no panic).
+
+#### 11.1.2 TypeScript mirror (`src/types/k8s.ts`, F5)
+
+```ts
+export interface ArgoCdApp {
+  // … existing fields unchanged …
+  operation_phase: string;
+  /** status.operationState.message, for every phase; "" when absent. Trimmed, control characters other than newline and tab removed, cut at 2000 characters with "…" (operation_message_display in argocd.rs). */
+  operation_message: string;
+  // … existing fields unchanged …
+}
+```
+
+Required, not optional: Rust always sends it, and no TS fixture builds an `ArgoCdApp` (`grep -rn "operation_phase" src` finds only the type and the panel).
+
+#### 11.1.3 Pure TS helper (`src/utils/argoStatus.ts`, F5)
+
+```ts
+export interface ArgoOperationNote { text: string; failed: boolean }
+/** What the Overview shows under the "Last operation" pill, or null for nothing. */
+export function argoOperationNote(phase: string, message: string): ArgoOperationNote | null;
+```
+
+- Q-R1 A: `Failed` and `Error` give `{ text: message, failed: true }` when `message.trim()` is not empty. Every other phase (`Succeeded`, `Running`, `Terminating`, `—`, `""`, a phase the table does not list) gives `null`.
+- Q-R1 B adds: `Running` and `Terminating` give `{ text: message, failed: false }` when the message is not empty.
+- Phases are matched by own key, like the pill tables (`constructor` gives `null`).
+
+Tests in `argoStatus.test.ts`: Failed and Error with a message; Failed with `""` and with spaces only (null); Succeeded with upstream's sentence (null); Running and Terminating (null under A, `failed: false` under B); `—` and `""` phases (null); `constructor` (null).
+
+#### 11.1.4 Secret values in the message
+
+Decision (Q-R3 asks the user to confirm): the message is shown verbatim, not masked. Reasons:
+
+- The Secret hard rule (`writes.md`, Secret values in the webview) covers Secret objects: their `data`/`stringData` values, revealed per object. `operationState.message` is a field of an Application. The Application's raw YAML tab already shows it unmasked to anyone who can read the Application, and upstream's controller copies the same text into its `OperationCompleted` Warning event (read from upstream source, not seen live; Q8 option B relied on that event).
+- The text is free-form: API server and admission webhook refusals, Helm, Kustomize and config-management-plugin output. A Kustomize or plugin error can quote a whole object, so a Secret manifest from git (base64 `data`) can appear in it. No mask can find a value in free text: a pattern would hide good messages, miss bad ones, and read as a guarantee the app cannot give.
+- No new path: the message is not written to the app log or the journal and goes nowhere but the webview, where React renders it as text (no `dangerouslySetInnerHTML`).
+
+### 11.2 UI (F5)
+
+Overview (`ResourceDetailPanel.tsx`, `case "argocd"`). The pill stays as it is. The pill row and a new box sit in one `mb-3` wrapper, so the gap to the commit box stays one step. The box renders when `argoOperationNote(a.operation_phase, a.operation_message)` is not null:
+
+- Failed or Error: `mt-2 p-2.5 rounded-lg bg-bad/6 ring-1 ring-bad/30` (the Certificate "Last failure" box's padding, radius, tint and ring, with `mt-2` for its `mt-3`, so a failure has one look in the panel). Eyebrow `text-[10.5px] uppercase tracking-wide text-bad mb-1` reading **Reason** (Q-R5). Message `<p className="text-[12px] text-ink whitespace-pre-wrap wrap-break-word">`: the History message's classes, sans and not mono (`ui.md` G6: no sentences in `mono`), `ink` not `mute` because it is the main content of the box.
+- Running or Terminating (Q-R1 B only): the same layout in the commit box's neutral classes `bg-surface-tint/3 ring-1 ring-edge-raw/60`, eyebrow `text-mute` reading **Message**.
+- Full text: never clamped, wraps at any character (long object paths), keeps line breaks. No tooltip and no scroll region (a scroll region needs a focus stop). A message that Rust cut ends with `…`; the whole text is in the YAML tab's raw view (the neat view hides `status`).
+- No live region: a poll must not announce. The eyebrow and the message are plain text, read in order after the pill.
+- The controller's words are quoted as they are (they may say "apply"); our own copy ("Reason", "Message") never says "Apply" (CLAUDE.md).
+- No new tab, no change to the Actions card or the Applications list (Q-R4 A).
+
+Live panel (Q-R2 A; nothing under Q-R2 B). Today the ArgoCD panel shows the row as it was when it was clicked, so after a Sync started from the panel fails, neither "Failed" nor the reason appears until the row is clicked again. The fix follows the `ns` precedent (`App.tsx` `panelResource`):
+
+- `useResources.ts`: `useCachedArgoCdApps(context)` = `useQuery<ArgoCdApp[], Error>({ queryKey: ["argocd-apps", context], queryFn: () => invoke<ArgoCdApp[]>("list_argocd_apps", { context }), enabled: false })`. It observes the list's query and never fetches or polls (§1 D5: an always-mounted App observer must not start polling). The Applications view's `useArgoCdApps` stays the only poller.
+- `App.tsx` `panelResource` gains an `argocd` arm: the cached row with the same `namespace` and `name` replaces the snapshot; a row that left the list keeps its snapshot.
+- The panel's resets are keyed on kind, name and namespace (the `useEffect` on `resource.kind, resourceName(resource), resourceNamespace(resource)`), so the swap keeps the open tab, the sync options and an open dialog. F5 confirms this by reading `ArgoCdActionBar` and `ArgoCdHistoryTab` state before relying on it.
+- Effect: the pill, the reason, the header chips and History follow the list (the 30 s poll, or the refetch the Sync mutation's invalidation starts).
+
+### 11.3 Docs and tests, in the same diffs
+
+| File | Change | Owner |
+|---|---|---|
+| `src-tauri/src/commands/argocd.rs` | The field's and the helper's doc comments (§11.1.1); `operation_message_display_rules` | R4 |
+| `src/utils/argoStatus.test.ts` | `argoOperationNote` cases (§11.1.3) | F5 |
+| `docs/claude/argocd.md` | Replace the "Not shown (Q8, deferred)" bullet with the shipped rule (field, helper, phases, cap with the YAML tab for the whole text, verbatim and why, Q-R2's live panel). In the tab list's Overview line, add the reason box after the Last operation badge. In the Panel header section's Overview bullet, one sentence on the box. | F5 |
+| `docs/claude/key-files.md` | `argocd.rs` row: add `operation_message_display`. `argoStatus.ts` row: add `argoOperationNote`. (Q-R2 A: `App.tsx` row: "live panel row for `ns` and `argocd`".) | F5 |
+| `docs/claude/open-items.md` | There is no Q8 entry to remove (`grep -n "Q8" docs/claude/open-items.md` is empty). Add one row under "v2.4.0 deferred" → owed on a real build: a real failed sync (an object the API server refuses, a failing hook, a retrying auto-sync) shows its reason in the Overview with the same text as `argocd app get`; under Q-R2 A, the panel turns Failed without a reselect. | F5 |
+| `CHANGELOG.md` `[Unreleased]` | `### Added`: ArgoCD Overview shows why the last sync failed (user terms, one line). Q-R2 A also `### Fixed`: an open ArgoCD panel follows the list instead of keeping the state it was opened with. | F5 |
+| `CLAUDE.md` Testing | Name `operation_message_display_rules` and the `argoOperationNote` cases with the v2.4.0 tests | main session at REL2 (agents do not edit CLAUDE.md) |
+| `docs/ux/25-v2.4.0-acceptance.md` | New `## 10.` addendum at the end (§11.6 V3) | V3 |
+
+R4 adds no CHANGELOG line: nothing is visible until F5 lands.
+
+### 11.4 Hard-rule check
+
+| Rule | How §11 meets it | Check (owner) |
+|---|---|---|
+| Additive Tauri params are `Option<T>` | No parameter added | `git diff 66d7406 -- src-tauri/src` shows no `#[tauri::command]` signature change (W5R) |
+| ArgoCD health from K8s `.status`, never the Argo CD API; Sync and Health independent | Reads `.status.operationState.message` of the same object; Health and Sync untouched | read the R4 diff; `argoStatus.test.ts` independence tests still pass (W5R) |
+| Never hardcode the `argoproj.io` version | No new API call | `git diff` adds no `v1alpha1` (W5R) |
+| `panic = "abort"` | §11.1.1 helper; multi-byte over-limit test | `cargo test --lib`; read the helper for `unwrap(`, `expect(`, `[` on the string (W5R) |
+| No Secret value without a reveal | §11.1.4 (Q-R3) | read §11.1.4 against `writes.md` (W5R) |
+| Components never call `invoke`; data only in `useResources.ts` | Q-R2 hook lives in `useResources.ts` | `grep -n "invoke" src/App.tsx` has no output (W5R) |
+| Every cluster write through `invokeWrite` | No write added | `writeBackstop.test.ts` (in `npx vitest run`) |
+| Tokens only; `mute` not `dim`; type floor; no sentences in `mono` | §11.2 classes | `ui.md` → Appearance G1, G2, G4, G5, G6 (F5, W5R) |
+| UI says "Merge", never "Apply" | Our copy is "Reason" / "Message" | read the diff's strings (W5R) |
+| `Patch::Strategic` exactly one hit | Untouched | `grep -rn "Patch::Strategic" src-tauri/src` = 1 (R4, W5R) |
+
+### 11.5 Waves and ownership
+
+| Wave | Task | Agent | Starts after | Owns (exactly) |
+|---|---|---|---|---|
+| 1 | R4 | rust-engineer | §11.7 answered (Q-R1 to Q-R5 do not change R4; it may start once the user accepts §11.1.1) | `src-tauri/src/commands/argocd.rs` |
+| 1 | F5 | frontend-engineer | §11.7 answered | `src/types/k8s.ts`, `src/utils/argoStatus.ts`, `src/utils/argoStatus.test.ts`, `src/components/ResourceDetailPanel.tsx`, `docs/claude/argocd.md`, `docs/claude/key-files.md`, `docs/claude/open-items.md`, `CHANGELOG.md`; with Q-R2 A also `src/hooks/useResources.ts`, `src/App.tsx`. Outside the repo, in the V1 harness `<scratchpad>/visual/`: `fixtures.js`, `mock.js` (only if a scenario flag is needed), `argo8.js` (new), `shots/argo8-*.png`, `logs/argo8-*` |
+| 1R | W5R | tech-lead | R4 and F5 committed | checkpoint only |
+| 1R | FX7, then FX7R | per finding (rust-engineer for `src-tauri`, frontend-engineer otherwise), then tech-lead | W5R findings | the files the findings name |
+| 1V | V3 | senior-ux-specialist | W5R clean (or FX7R clean) and F5's shots taken from the reviewed tree | `docs/ux/25-v2.4.0-acceptance.md` (new §10 at the end only) |
+| REL2 | closing commit | main session | V3 ship | `CHANGELOG.md` (`[Unreleased]` into `[2.4.0]`), `CLAUDE.md` Testing line, the ledger |
+
+R4 and F5 share no file and have no ordering constraint: F5 builds against the frozen field name and the harness mocks `invoke`. One-way dependencies: W5R needs R4 and F5 committed; V3 needs W5R clean. A fix batch that changes the UI recaptures the affected shots before V3. `<scratchpad>` is `/tmp/claude-0/-home-user-garita/f4fdec7d-6df0-5838-af75-f4d6d23d0b64/scratchpad`.
+
+### 11.6 Briefs
+
+All of §6.0 applies (Boot, checkpoint `.claude/checkpoints/feat-ns-panel-ux-review/<ID>-<agent>.md`, ownership, no git writes, no agents, ask instead of assuming, gates, docs, report).
+
+**R4. rust-engineer: `operation_message` on `ArgoCdApp`.**
+1. Add `OPERATION_MESSAGE_MAX_CHARS`, `operation_message_display` and the field exactly as §11.1.1, with the doc comments.
+2. Fill the field in `list_argocd_apps` with the call site in §11.1.1.
+3. Add `operation_message_display_rules` to the existing `mod tests` with every case in §11.1.1.
+- Gates: `cargo check`; `cargo test --lib`; `cargo clippy --all-targets --locked`; `grep -rn "Patch::Strategic" src-tauri/src` gives one hit; `grep -rn "ArgoCdApp {" src-tauri/src` gives two hits (the struct and the one constructor); the new non-test code has no `unwrap()`, `expect(` or slice indexing.
+- No doc and no CHANGELOG edit (F5 owns them; the names are frozen here). The report gives the final helper and constant names so W5R can grep F5's docs against them.
+
+**F5. frontend-engineer: the reason in the ArgoCD Overview.**
+1. `types/k8s.ts`: the field (§11.1.2).
+2. `argoStatus.ts`: `ArgoOperationNote` and `argoOperationNote` (§11.1.3, the Q-R1 answer); the cases in `argoStatus.test.ts`.
+3. `ResourceDetailPanel.tsx`: the box (§11.2, the Q-R1 and Q-R5 answers).
+4. Q-R2 A only: `useCachedArgoCdApps` in `useResources.ts` and the `argocd` arm of `panelResource` in `App.tsx` (§11.2). Read `ArgoCdActionBar` and `ArgoCdHistoryTab` first; if any state there is keyed on the item object, stop and report.
+5. Docs and CHANGELOG (§11.3, F5 rows).
+6. Screenshots with the V1 harness (vite on `:1431`, `npx vite --port 1431 --strictPort` from the repo; never `make dev` or port 1420). Add `operation_message` to the `argoApp` default in `fixtures.js` (`"successfully synced (all tasks run)"`, so a Succeeded app proves the box stays hidden) and messages to existing apps: `legacy-reports` (Failed) a multi-line refusal of an object by the API server; `search-indexer` (Failed) a 2000-character text ending in `…`; one app in phase `Error` with a one-line message (a scenario flag in `mock.js`, or a new fixture app, whichever leaves the earlier captures' list unchanged); a Failed app with `""` (no box); `canary-rollout` (Running) a retry text such as `one or more objects failed to apply … Retrying attempt #2 at 3:04PM.` (box only under Q-R1 B). New script `argo8.js` captures the Overview of each, in light and dark, at 1280×800 and 1024×768, plus under Q-R2 A a before and after pair where the mock flips an open app to Failed and the panel follows without a reselect. Shots `shots/argo8-*.png`, notes `logs/argo8-*.json` (the box's text and computed colours). Do not re-run `marketing.js`: the committed site images stay as they are.
+- Gates: §6.0 frontend gates; `ui.md` → Appearance G1, G2, G4, G5, G6 (all clean); `grep -n "invoke" src/App.tsx` has no output; `npx vitest run` includes `writeBackstop.test.ts`.
+
+**W5R. tech-lead: review R4 and F5.** Every check in §11.4; the contract field by field (Rust name and type, TS name and type, `""` never `—`); the helper's tests cover each rule in §11.1.1; the phase rule follows the Q-R1 answer; the docs' claims grep true against the code (`operation_message_display`, `argoOperationNote`, `OPERATION_MESSAGE_MAX_CHARS`, `useCachedArgoCdApps`); one coherent `[Unreleased]` with no line that contradicts `[2.4.0]`. Run `cargo check` and `cargo test --lib` in `src-tauri`, `npm run build`, `npx vitest run`, `node --experimental-strip-types scripts/check-emit.ts`. FX7 and FX7R follow §6's fix-batch rule (every gate re-run).
+
+**V3. senior-ux-specialist: acceptance addendum.** From F5's `shots/argo8-*.png` and `logs/argo8-*.json` (Chromium with sample data, no real cluster), append `## 10. Addendum: ArgoCD sync-failure reason (ARGO-8)` at the end of `docs/ux/25-v2.4.0-acceptance.md`, leaving §0 to §9 unchanged: a verdict (ship, or the defects); per state whether the box appears exactly when §11.1.3 says; the copy; wrapping of the multi-line and the 2000-character message at both widths; contrast of the `text-bad` eyebrow on `bg-bad/6` and of `text-ink` in both themes, computed from `src/index.css`; spacing between the pill, the box and the commit box; under Q-R2 A, the before and after pair; what stays owed on a real build. A defect goes to the main session as an FX7 item with its exact class or copy change.
+
+**REL2. main session.** Move the `[Unreleased]` lines into `[2.4.0]` (one coherent list; keep the release date unless the user says otherwise), add the CLAUDE.md Testing names (§11.3), copy any V3 "owed on a real build" item into `open-items.md` if F5's row does not hold it, record the user's §11.7 answers in §10 of this file, and make the closing commit last with `[skip ci]`. No tag (user decision, 2026-10-29).
+
+### 11.7 Questions for the user
+
+Recommended option first. Q-R1, Q-R2, Q-R4 and Q-R5 block F5 only; Q-R3 blocks F5 and V3. None blocks R4.
+
+**Q-R1. For which phases does the Overview show the message? (blocks F5)** Upstream sets a failing sync with retries configured back to `Running`, with the failure text and "Retrying attempt #N" in the same message (from upstream source, not seen live). With option A such an app shows "Last operation: Running" and no reason.
+- B (recommended): Failed and Error in a red "Reason" box; Running and Terminating in a neutral "Message" box. Covers retrying syncs; a plain Running sync shows progress text such as "waiting for healthy state of …".
+- A (minimal): Failed and Error only.
+
+**Q-R2. Should the open ArgoCD panel follow the list? (blocks F5 step 4)** Today the panel keeps the row as it was when clicked. After a Sync from the panel fails, neither "Failed" nor the reason appears until you click the row again; this applies to the existing pill and header chips too.
+- A (recommended): yes, like the Namespaces panel. Two small changes (`useResources.ts`, `App.tsx`), no extra polling; one CHANGELOG Fixed line.
+- B: no; log it in `open-items.md` as a known limit.
+
+**Q-R3. Show the controller's message as it is? (blocks F5, V3)** It is free text and can quote an object from git, in rare cases a Secret manifest. The same text is already in the Application's YAML tab and in its Events.
+- A (recommended): show it verbatim (§11.1.4). Secret masking covers Secret objects; free text cannot be masked reliably.
+- B: hide it behind a "Show reason" button, per panel, like a Secret reveal. One more click on every failure; the YAML tab still shows it without a click.
+- C: mask lines that look like Secret data. Rejected by the tech lead: a pattern misses real values and hides good text.
+
+**Q-R4. Anything in the Applications list? (blocks F5)**
+- A (recommended): nothing. The list has no last-operation column; ARGO-8 is about the panel.
+- B: a small "Last sync failed" marker after the name, with the reason as its tooltip (new design, needs V3 to check it too).
+
+**Q-R5. The box's heading. (blocks F5)**
+- A (recommended): "Reason" (and "Message" for the neutral box under Q-R1 B).
+- B: "Why it failed".
+- C: no heading; the text sits right under the pill.
