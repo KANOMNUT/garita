@@ -82,6 +82,9 @@ function PickerBody({ context, ns, onPick, onManage }: {
   const rows = namespaceRows(names, ns, query);
   const q = query.trim();
   const filtering = q !== "" && isSuccess;
+  // Every row but "All namespaces", including a selected name that is missing from the list: the same set `rows` is
+  // filtered from, so the count never reads "2 of 1".
+  const total = namespaceRows(names, ns, "").length - 1;
 
   const message = error ? ((error as any)?.message ?? String(error)) : "";
   const forbidden = !!error && classifyReadError(message) === "no-access";
@@ -113,13 +116,13 @@ function PickerBody({ context, ns, onPick, onManage }: {
           />
           {filtering && (
             <span aria-hidden className="absolute right-2 top-1/2 -translate-y-1/2 mono text-[11px] tabular-nums text-mute">
-              {rows.length} of {names.length}
+              {rows.length} of {total}
             </span>
           )}
         </div>
       </div>
       <div role="status" aria-live="polite" className="sr-only">
-        {filtering && rows.length > 0 ? `${rows.length} of ${names.length} namespaces` : ""}
+        {filtering && rows.length > 0 ? `${rows.length} of ${total} namespaces` : ""}
       </div>
 
       <div className="max-h-[min(18rem,50vh)] overflow-y-auto overscroll-contain py-1">

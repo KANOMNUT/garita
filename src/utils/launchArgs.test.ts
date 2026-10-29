@@ -42,6 +42,9 @@ describe("planLaunchArgs", () => {
     expect(plan({ namespace: "x", kind: "nodes" })).toMatchObject({ namespace: null, kind: "nodes", lines: [] });
     expect(plan({ namespace: "x", kind: "argocd" }).namespace).toBeNull();
   });
+  it("maps kind ns to the Namespaces page and drops the namespace (the page lists all namespaces)", () => {
+    expect(plan({ namespace: "x", kind: "ns" })).toMatchObject({ kind: "ns", namespace: null, lines: [], ignoredLine: null });
+  });
   it("without kind, namespace judged by current view", () => {
     expect(plan({ namespace: "x" }, "forwarded", "nodes").namespace).toBeNull();
     expect(plan({ namespace: "x" }, "forwarded", "pods").namespace).toBe("x");

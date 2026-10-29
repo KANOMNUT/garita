@@ -66,7 +66,7 @@ Every listable kind is a row below. `ResourceType` (`src/types/k8s.ts`) has one 
 5. `Column<T>[]` + view component in `ResourceViews.tsx`.
 6. Nav item in `Sidebar.tsx`. If the **view** should hide the namespace picker, extend `viewHidesNamespacePicker` (`src/utils/scope.ts`). Not the same question as object scope (see below).
 7. Route/case in `App.tsx`.
-8. `RESOURCE_QUERY_KEY` entry (`src/utils/resourceQueryKey.ts`). Refresh, `useDeleteResource` and `usePatchResource` read it. Missing = silent no-op invalidation.
+8. `RESOURCE_QUERY_KEY` entry (`src/utils/resourceQueryKey.ts`). Refresh, `useDeleteResource`, `usePatchResource` and `useApplyResource` (a YAML Save) read it. Missing = silent no-op invalidation.
 9. `delete_resource` arm in `pods.rs` if deletable. Omitting it is supported: `GenericResourceTable` delete is opt-in via `onDelete`. `ep` / `eps` have none (controller-owned). `ns` has none on purpose: a namespace deletes through `delete_namespace` (`useDeleteNamespace`, one typed `DeleteNamespaceConfirm` hosted in `App.tsx`), and the panel's generic delete confirm excludes `ns`.
 10. If the object is cluster-scoped, add it to `CLUSTER_SCOPED_KINDS` (`src/utils/scope.ts`). That one set feeds `resourceNamespace()`, the detail-panel delete confirm and `viewHidesNamespacePicker`. **It must equal the Rust `gvk_for` non-namespaced set**; `resource_edit.rs` and `scope.test.ts` test each side.
 11. `RESOURCE_LABELS` (`src/utils/kindToResourceType.ts`), `kindLabel`, `isHealthy`, `OverviewContent` case, `NAV_ITEMS` row (`CommandPalette.tsx`). `tsc` catches the first three, not the last two.

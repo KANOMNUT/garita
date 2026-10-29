@@ -501,6 +501,10 @@ export function useApplyResource() {
       invokeWrite<void>("apply_resource_yaml", { context, namespace, resourceType, name, yaml }),
     onSuccess: (_d, { resourceType, context, namespace }) => {
       qc.invalidateQueries({ queryKey: [resourceType, context, namespace] });
+      // The list key, as a prefix like useDeleteResource: the line above matches no list key for most kinds, so a saved
+      // list stayed stale until its next poll. Active queries only refetch.
+      const listKey = RESOURCE_QUERY_KEY[resourceType as ResourceType];
+      if (listKey) qc.invalidateQueries({ queryKey: [listKey, context] });
       qc.invalidateQueries({ queryKey: ["resource-yaml"] });
     },
   });

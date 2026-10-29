@@ -1,8 +1,6 @@
 import type { ResourceType } from "../types/k8s";
 
-// "ns" (Namespace) is creatable but is not a resource *page* — there is no
-// Sidebar nav item or ResourceType for it, so it rides alongside ResourceType
-// here rather than being folded into that union.
+// `ns` is a ResourceType member since the Namespaces page; the `| "ns"` below is redundant and harmless.
 export type CreatableKind = ResourceType | "ns";
 
 // { kind, yaml } rather than a bare string so the create-modal title
