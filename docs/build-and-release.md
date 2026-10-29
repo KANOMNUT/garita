@@ -180,7 +180,7 @@ For GKE/EKS/AKS integration testing in CI, ensure the appropriate auth plugin bi
 | `pr-title.yml` | Pull request | Conventional Commits title |
 | `labeler.yml` | Pull request | Area labels from `.github/labeler.yml` |
 | `release.yml` | `vX.Y.Z` tag, manual | Installers, updater tarball and signatures, `latest.json`, `SHA256SUMS.txt`, SPDX SBOM, build provenance, draft release (publish job runs in Environment `release`) |
-| `pages.yml` | Release published, push to `main` touching `index.html` or `site/**`, manual | Landing page to GitHub Pages. The artifact is the root `index.html`, exactly the same-site files it loads (today `site/demo.png`; a missing one fails the job) and `scoop/garita.json` rendered from the latest release (see Scoop below); nothing else in the repository is published. Then a 1-byte GET check of the 5 unique `releases/latest/download/` links in `index.html` (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
+| `pages.yml` | Release published, push to `main` touching `index.html` or `site/**`, manual | Landing page to GitHub Pages. The artifact is the root `index.html`, exactly the same-site files it loads (the PNGs under `site/`; a missing one fails the job) and `scoop/garita.json` rendered from the latest release (see Scoop below); nothing else in the repository is published. Then a 1-byte GET check of the 5 unique `releases/latest/download/` links in `index.html` (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
 
 What blocks and what only reports:
 
