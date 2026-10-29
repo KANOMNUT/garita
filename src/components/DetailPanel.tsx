@@ -265,7 +265,7 @@ function MetricsTab({ pod, podMetrics, isLoading, error, context }: {
               {cpuQ.isFetching || memQ.isFetching ? "Retrying…" : "Retry"}
             </button>
           }
-          which={<li className="mono break-words">{queryErr ? queryErr.message : "Prometheus answered with no series for this pod."}</li>}
+          which={<li className={queryErr ? "mono break-words" : "break-words"}>{queryErr ? queryErr.message : "Prometheus answered with no series for this pod."}</li>}
         >
           {empty
             ? "No data for this pod in Prometheus. Showing current usage only."
@@ -757,7 +757,7 @@ export function DetailPanel({ pod, context, onClose, onNavigate, podsList, onOpe
               <div className="my-1 border-t border-edge-raw/60" />
               <button
                 type="button"
-                onClick={() => { if (roReason) return; setDeleteError(""); setConfirmDeletePod(true); setMenuOpen(false); }}
+                onClick={() => { if (roReason) return; menuBtnRef.current?.focus(); setDeleteError(""); setConfirmDeletePod(true); setMenuOpen(false); }}
                 {...disabledAttrs(roReason)}
                 className={`w-full text-left px-3 py-1.5 text-[12px] text-bad hover:bg-surface-tint/4 flex items-center gap-2 ${ITEM_RING} ${roReason ? "opacity-50 cursor-not-allowed" : ""}`}
               >

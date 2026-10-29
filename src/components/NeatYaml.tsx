@@ -16,7 +16,7 @@ export function NeatChip({ on, onToggle, editing }: { on: boolean; onToggle: () 
       title={editing ? "Neat is display only. Cancel editing to switch." : "Hide managed fields, status and other server-set fields"}
       className={`h-6 px-2 rounded ring-1 text-[10.5px] mono transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed ${
         on && !editing
-          ? "bg-accent/20 text-accent ring-accent/40"
+          ? "bg-accent/20 text-accent ring-accent/30"
           : "bg-card/80 text-mute ring-edge hover:text-ink aria-disabled:hover:text-mute"
       }`}
     >
@@ -30,7 +30,7 @@ export function NeatNote({ hidden, editing, error }: { hidden: readonly string[]
   const [open, setOpen] = useState(false);
   if (editing) {
     return (
-      <p className="text-[10.5px] text-dim">
+      <p className="text-[10.5px] text-mute">
         Editing the full object, including managedFields and status. Neat is display only and is never saved.
       </p>
     );
@@ -39,7 +39,7 @@ export function NeatNote({ hidden, editing, error }: { hidden: readonly string[]
     return <p className="text-[10.5px] text-warn wrap-break-word">Couldn't load the neat view ({error}). Showing the full object.</p>;
   }
   return (
-    <div className="text-[10.5px] text-dim">
+    <div className="text-[10.5px] text-mute">
       {neatNote(hidden)}{" "}
       <button
         type="button"
@@ -50,9 +50,9 @@ export function NeatNote({ hidden, editing, error }: { hidden: readonly string[]
         What?
       </button>
       {open && (
-        <ul className="mt-1 mono text-[10px] flex flex-col gap-0.5">
+        <ul className="mt-1 mono text-[10.5px] flex flex-col gap-0.5">
           {NEAT_HIDDEN_PATHS.map((p) => (
-            <li key={p} className={hidden.includes(p) ? "text-mute" : "text-dim/60"}>
+            <li key={p} className="text-mute">
               {p}{hidden.includes(p) ? "" : " (not present)"}
             </li>
           ))}

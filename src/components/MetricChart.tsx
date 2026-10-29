@@ -34,7 +34,7 @@ export function MetricChart({ points, range, kind, container, busy, updatedAt }:
           <polyline key={i} points={pts} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         ))}
       </svg>
-      <div className="flex justify-between text-[10px] text-mute"><span>{agoLabel(range)}</span><span>now</span></div>
+      <div className="flex justify-between text-[10.5px] text-mute"><span>{agoLabel(range)}</span><span>now</span></div>
       <div className="mono text-[10.5px] text-mute tabular-nums">{statsText(stats, suffix)}</div>
       {!busy && isYoung(points, x0, step) && <div className="text-[10.5px] text-mute">History starts when the container started.</div>}
     </div>
