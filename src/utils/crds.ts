@@ -1,8 +1,8 @@
 // CRDs page helpers (v2.4.1). Pure and React-free, so the node test environment covers them.
-// F1: the read version, the CRD fields every custom resource command takes, why "Instances" is
-// disabled, and the remembered "Group by API group" switch.
+// The read version, the CRD fields every custom resource command takes, why "Instances" is disabled, the
+// remembered "Group by API group" switch, and the strings and identity rule of the custom resource writes.
 
-import type { CRD } from "../types/k8s";
+import type { CRD, CustomResourceSelection } from "../types/k8s";
 
 /**
  * The version every read of a CRD's objects uses: `crd.read_version` (the storage version when it is
@@ -50,4 +50,22 @@ export function saveCrdGrouping(on: boolean): boolean {
   } catch {
     return false;
   }
+}
+
+/** kubectl's noun for a CRD: "<plural>.<group>". Used by the delete confirm's kubectl equivalent (`deleteEquiv`). */
+export function crdKubectlNoun(crd: Pick<CRD, "plural" | "group">): string {
+  return `${crd.plural}.${crd.group}`;
+}
+
+/**
+ * The reason a custom resource write is disabled after an explicit RBAC denial. `namespace` is "" for a
+ * cluster-scoped object (and for a CRD that is cluster-scoped): the sentence then says "in this cluster".
+ */
+export function crDeniedReason(verb: "delete" | "update", plural: string, namespace: string): string {
+  return `You don't have permission to ${verb} ${plural} ${namespace ? `in namespace ${namespace}` : "in this cluster"}.`;
+}
+
+/** Same CRD name, namespace and name: the identity of a custom resource (the CRD's name is `<plural>.<group>`, so unique per cluster). */
+export function sameCustomResource(a: CustomResourceSelection, b: CustomResourceSelection): boolean {
+  return a.crd.name === b.crd.name && a.item.namespace === b.item.namespace && a.item.name === b.item.name;
 }

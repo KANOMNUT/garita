@@ -7,7 +7,7 @@ import type { K8sEvent } from "../types/k8s";
  * state, a Warnings-only filter, and severity as a glyph plus a word (never colour alone).
  */
 export function EventsTabContent({
-  events, isLoading, error, onRetry, kind, scopedToKind,
+  events, isLoading, error, onRetry, kind, scopedToKind, childEventsNote = true,
 }: {
   events: K8sEvent[];
   isLoading: boolean;
@@ -17,6 +17,8 @@ export function EventsTabContent({
   kind: string;
   /** False for Helm and Pod: events are matched on name (and namespace) only, so the "this Kind only" note would be untrue. */
   scopedToKind: boolean;
+  /** False drops the sentence about pods and ReplicaSets (custom resources). */
+  childEventsNote?: boolean;
 }) {
   const [eventFilter, setEventFilter] = useState<"all" | "warning">("all");
 
@@ -125,7 +127,7 @@ export function EventsTabContent({
             </div>
           ))}
           <p className="mt-3 pt-2 border-t border-edge-raw/60 text-[11px] text-mute">
-            {scopedToKind ? `Events about this ${kind} only. Its pods and ReplicaSets have their own events. ` : ""}
+            {scopedToKind ? `Events about this ${kind} only. ${childEventsNote ? "Its pods and ReplicaSets have their own events. " : ""}` : ""}
             Kubernetes keeps events for about 1 hour.
           </p>
         </>

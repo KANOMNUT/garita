@@ -20,6 +20,7 @@ import { SettingsView, type SettingsSection } from "./components/SettingsView";
 import { ResourceCreator } from "./components/ResourceCreator";
 import { DeleteNamespaceConfirm } from "./components/DeleteNamespaceConfirm";
 import { CustomResourcePanel } from "./components/CustomResourcePanel";
+import { DeleteCustomResourceConfirm } from "./components/DeleteCustomResourceConfirm";
 import { MergeFromFileModal } from "./components/MergeFromFileModal";
 import { HelmInstallModal } from "./components/HelmInstallModal";
 import {
@@ -41,6 +42,7 @@ import {
   MutatingWebhookView, ValidatingWebhookView, VolumeSnapshotView, CRDInstanceView, NamespacesView,
 } from "./components/ResourceViews";
 import type { ClusterAccess, CustomResourceSelection, MapKind, Pod, ResourceType, SelectedResource, CRD } from "./types/k8s";
+import { sameCustomResource } from "./utils/crds";
 import { RESOURCE_QUERY_KEY, HEALTH_QUERY_KEY, HEALTH_PAGES, type HealthPage, type MainView } from "./utils/resourceQueryKey";
 import { ProblemsPage } from "./components/health/ProblemsPage";
 import { savedSearchKey } from "./utils/savedSearches";
@@ -210,6 +212,8 @@ function AppInner() {
   // custom resource has a runtime group, version and kind, and the per-kind tables are keyed by a static kind (plan D2).
   // The panel renders only while the CRD on screen is that CRD, so a stale selection never shows another CRD's panel.
   const [selectedCr, setSelectedCr] = useState<CustomResourceSelection | null>(null);
+  // The custom resource the delete confirm is open for (the objects list's row trash, or the panel's header trash).
+  const [crToDelete, setCrToDelete] = useState<CustomResourceSelection | null>(null);
   // The two ways into a CRD's objects: the CRDs page's Instances button and the CRD panel's "Show instances" link.
   // The panel closes (the CRD panel would otherwise stay over the list); crdTarget is set before activeResource changes,
   // so the [namespace, activeResource] effect only ever keeps it.
@@ -350,6 +354,8 @@ function AppInner() {
       setSelectedPod(null);
       setSelectedResource(null);
       setSelectedCr(null);
+      // A delete confirm names a context-bound object: a switch while it is open must not aim it at the new cluster.
+      setCrToDelete(null);
       setCrdTarget(null);
       setSearch("");
     }
@@ -956,7 +962,8 @@ function AppInner() {
                   <CRDInstanceView context={currentContext} crd={crdTarget} namespace={namespace} search={search}
                     onBack={() => setActiveResource("crd")}
                     selectedKey={selectedCr ? `${selectedCr.item.namespace}/${selectedCr.item.name}` : null}
-                    onSelect={(item) => setSelectedCr({ crd: crdTarget, item })} />
+                    onSelect={(item) => setSelectedCr({ crd: crdTarget, item })}
+                    onRequestDelete={(item) => setCrToDelete({ crd: crdTarget, item })} />
                 ) : (
                   // Reachable after a context switch clears crdTarget while
                   // activeResource stays "crd-instances" (that effect doesn't
@@ -1022,6 +1029,7 @@ function AppInner() {
                 crd={selectedCr.crd}
                 item={selectedCr.item}
                 onClose={() => setSelectedCr(null)}
+                onRequestDelete={() => setCrToDelete(selectedCr)}
                 onNavigate={(kind, ns, name) => {
                   navigateSearchRef.current = name;
                   setActiveResource(kind);
@@ -1053,6 +1061,12 @@ function AppInner() {
         name={nsToDelete}
         onClose={() => setNsToDelete(null)}
         onDeleted={(n) => { if (n === namespace) setNamespace("all"); }}
+      />
+      <DeleteCustomResourceConfirm
+        context={currentContext}
+        target={crToDelete}
+        onClose={() => setCrToDelete(null)}
+        onDeleted={(t) => { if (selectedCr && sameCustomResource(selectedCr, t)) setSelectedCr(null); }}
       />
       <CommandPalette
         actions={paletteActions}

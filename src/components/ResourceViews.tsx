@@ -28,7 +28,7 @@ import {
   useBulkSyncArgoCdApps, useBulkRefreshArgoCdApps,
   usePermissions, useNamespaceRows,
   useEndpoints, useEndpointSlices, useReplicaSets,
-  useMutatingWebhooks, useValidatingWebhooks, useVolumeSnapshots, useCRDResources,
+  useMutatingWebhooks, useValidatingWebhooks, useVolumeSnapshots, useCRDResources, useCustomResourcePermissions,
 } from "../hooks/useResources";
 import type {
   Deployment, StatefulSet, DaemonSet, Job, CronJob, HPA, CRD,
@@ -45,7 +45,7 @@ import { podStatusStyle } from "../utils/podStatus";
 import { ArgoGlyph } from "./ArgoGlyph";
 import { argoHealthPill, argoSyncPill, type ArgoPill } from "../utils/argoStatus";
 import { chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
-import { crdInstancesReason, crdReadVersion, loadCrdGrouping, saveCrdGrouping } from "../utils/crds";
+import { crDeniedReason, crdInstancesReason, crdReadVersion, loadCrdGrouping, saveCrdGrouping } from "../utils/crds";
 
 interface ViewProps { context: string; namespace: string; search?: string; selectedKey?: string | null; }
 
@@ -3193,9 +3193,10 @@ export const VolumeSnapshotView = memo(function VolumeSnapshotView({ context, na
 // ─── CRD instances (§4.5) ─────────────────────────────────────────────────────
 // The objects of one CRD, reached from the CRDs page (the row's Instances button or the CRD panel's Show instances).
 // A row opens the custom resource panel, which App.tsx hosts (CustomResourcePanel.tsx; plan D2 and D3): the panel
-// is not a SelectedResource, so the selection is the host's. The row key is `${namespace}/${name}` (the panel's
-// identity too). The list follows the namespace picker for a namespaced CRD and ignores it for a cluster-scoped
-// one (crd_list_namespace in crds.rs).
+// is not a SelectedResource, so the selection is the host's. The row trash asks the host's one delete confirm
+// (DeleteCustomResourceConfirm), the same one the panel's header trash opens. The row key is `${namespace}/${name}`
+// (the panel's identity too). The list follows the namespace picker for a namespaced CRD and ignores it for a
+// cluster-scoped one (crd_list_namespace in crds.rs).
 
 const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "name", header: "Name",      sortable: true, sortValue: (r) => r.name,      cell: (r) => <N t={r.name} /> },
@@ -3203,7 +3204,7 @@ const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "age",  header: "Age",       width: 80, sortable: true, sortValue: (r) => parseAge(r.age), cell: (r) => <Dim t={r.age} /> },
 ];
 
-export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search, onBack, selectedKey, onSelect }: {
+export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search, onBack, selectedKey, onSelect, onRequestDelete }: {
   context: string; crd: CRD; namespace: string; search?: string;
   /** "All CRDs": back to the CRDs page. */
   onBack: () => void;
@@ -3211,12 +3212,19 @@ export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, nam
   selectedKey?: string | null;
   /** A row click: open that object's panel. */
   onSelect?: (r: CRDResource) => void;
+  /** The row trash: ask the host to open the delete confirm for this object. */
+  onRequestDelete: (r: CRDResource) => void;
 }) {
   const { data = [], isLoading, error, refetch } = useCRDResources(context, crd, true, namespace);
+  // Fails open (usePermissions' rules): only an explicit denial greys a trash, and the table puts read-only first.
+  const perm = useCustomResourcePermissions(context, crd, namespace);
   return (
     <GenericResourceTable context={context} columns={crdInstanceColumns} data={data} isLoading={isLoading}
       error={error} onRetry={refetch} keyFn={(r) => `${r.namespace}/${r.name}`} search={search}
       selectedKey={selectedKey} onSelect={onSelect}
+      onDelete={onRequestDelete}
+      deleteLabel={(r) => `Delete ${crd.kind} ${r.name}`}
+      deleteReason={(r) => perm.canDelete ? undefined : crDeniedReason("delete", crd.plural, crd.scope === "Cluster" ? "" : r.namespace)}
       title={crd.kind} count={data.length}
       extraLeft={(
         <>

@@ -538,6 +538,76 @@ export function useCustomResourceYamlNeat(
   });
 }
 
+// ─── Custom resource panel (v2.4.1, writes and permissions) ──────────────────
+// Same addressing as the reads: crdRef(crd) plus namespace and name. The two writes go through invokeWrite (the
+// read-only backstop; writeBackstop.test.ts scans for it). The preview is a read, like preview_resource_yaml.
+
+/** PREVIEW-GATE dry run of a YAML save. A one-shot snapshot for one dialog open: a mutation, never cached, never retried. */
+export function usePreviewCustomResourceYaml() {
+  return useMutation<
+    YamlSavePreview,
+    Error,
+    { context: string; crd: CRD; namespace: string; name: string; yaml: string }
+  >({
+    mutationFn: ({ context, crd, namespace, name, yaml }) =>
+      invoke<YamlSavePreview>("preview_custom_resource_yaml", { context, ...crdRef(crd), namespace, name, yaml }),
+    retry: false,
+  });
+}
+
+/** The YAML save of one custom resource (a replace, behind the PREVIEW-GATE). `yaml` is the editor text, never the neat text. */
+export function useApplyCustomResource() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, { context: string; crd: CRD; namespace: string; name: string; yaml: string }>({
+    mutationFn: ({ context, crd, namespace, name, yaml }) =>
+      invokeWrite<void>("apply_custom_resource_yaml", { context, ...crdRef(crd), namespace, name, yaml }),
+    onSuccess: (_d, { context }) => {
+      qc.invalidateQueries({ queryKey: ["crd-resources", context] });
+      qc.invalidateQueries({ queryKey: ["custom-resource", context] });
+      qc.invalidateQueries({ queryKey: ["resource-yaml"] });
+    },
+  });
+}
+
+/** Delete one custom resource. The backend sends the Background propagation policy; there is no parameter for it. */
+export function useDeleteCustomResource() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, { context: string; crd: CRD; namespace: string; name: string }>({
+    mutationFn: ({ context, crd, namespace, name }) =>
+      invokeWrite<void>("delete_custom_resource", { context, ...crdRef(crd), namespace, name }),
+    onSuccess: (_d, { context }) => { qc.invalidateQueries({ queryKey: ["crd-resources", context] }); },
+  });
+}
+
+/**
+ * RBAC hints for the custom resource writes: `delete` and `update` (a YAML save is a PUT) on the CRD's group and plural.
+ * usePermissions' rules, which this cannot reuse (it is keyed by ResourceType): "all" namespaces asks nothing, and an
+ * error, a missing answer or no CRD allows. Only an explicit `allowed: false` denies. A cluster-scoped CRD asks with
+ * namespace "" whatever `namespace` says.
+ */
+export function useCustomResourcePermissions(
+  context: string, crd: CRD | null, namespace: string,
+): { canDelete: boolean; canUpdate: boolean } {
+  const allNamespaces = namespace === "all" && crd?.scope !== "Cluster";
+  const ns = !crd || crd.scope === "Cluster" || allNamespaces ? "" : namespace;
+  const checks: AccessCheck[] = crd
+    ? [
+        { group: crd.group, resource: crd.plural, verb: "delete", namespace: ns },
+        { group: crd.group, resource: crd.plural, verb: "update", namespace: ns },
+      ]
+    : [];
+  const { data, isError } = useQuery<AccessResult[], Error>({
+    queryKey: ["can-i-cr", context, crd?.name, ns],
+    queryFn: () => invoke<AccessResult[]>("can_i", { context, checks }),
+    enabled: !!context && !!crd && !allNamespaces,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  if (allNamespaces || !crd || isError || !data) return { canDelete: true, canUpdate: true };
+  // `!== false` fails open on a missing or malformed index too.
+  return { canDelete: data[0]?.allowed !== false, canUpdate: data[1]?.allowed !== false };
+}
+
 export function usePodMetrics(context: string, namespace: string, pod: string, enabled: boolean) {
   return useQuery<PodMetricsResult, Error>({
     queryKey: ["pod-metrics", context, namespace, pod],

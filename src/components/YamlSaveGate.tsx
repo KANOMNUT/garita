@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { ConfirmModal } from "./ConfirmModal";
 import { DiffRows } from "./DiffRows";
-import { useApplyResource, usePreviewResourceYaml } from "../hooks/useResources";
+import {
+  useApplyCustomResource, useApplyResource, usePreviewCustomResourceYaml, usePreviewResourceYaml,
+} from "../hooks/useResources";
+import type { CRD } from "../types/k8s";
 import { useClusterIdentity } from "../utils/clusterIdentity";
 import { changeCountText, yamlSaveDiff } from "../utils/diffRows";
 import { replaceEquiv } from "../utils/kubectlEquiv";
@@ -21,7 +24,13 @@ import { PRODUCT_NAME } from "../brand";
 interface YamlSaveGateProps {
   context: string;
   namespace: string;
+  /** Ignored when `crd` is set. */
   resourceType: string;
+  /**
+   * A custom resource: the preview and the save go through the custom resource commands (the CRD's own group, version,
+   * kind, plural and scope; `namespace` is "" for a cluster-scoped object). Everything else in the gate is the same.
+   */
+  crd?: CRD;
   name: string;
   kindLabel: string;
   yaml: string;
@@ -52,11 +61,16 @@ function CopyBtn({ label, text }: { label: string; text: string }) {
 }
 
 export function YamlSaveGate({
-  context, namespace, resourceType, name, kindLabel, yaml, hasForm, onOpenForm, onClose, onSaved,
+  context, namespace, resourceType, crd, name, kindLabel, yaml, hasForm, onOpenForm, onClose, onSaved,
 }: YamlSaveGateProps) {
   const identity = useClusterIdentity(context);
-  const preview = usePreviewResourceYaml();
-  const apply = useApplyResource();
+  // Both pairs are called every render (hook rules); `crd` picks which one this dialog uses.
+  const kindPreview = usePreviewResourceYaml();
+  const crPreview = usePreviewCustomResourceYaml();
+  const kindApply = useApplyResource();
+  const crApply = useApplyCustomResource();
+  const preview = crd ? crPreview : kindPreview;
+  const applyPending = crd ? crApply.isPending : kindApply.isPending;
   const [comparedAt, setComparedAt] = useState("");
   const [saveError, setSaveError] = useState("");
   const started = useRef(false);
@@ -64,10 +78,9 @@ export function YamlSaveGate({
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    preview.mutate(
-      { context, namespace, resourceType, name, yaml },
-      { onSuccess: () => setComparedAt(nowText()) },
-    );
+    const onSuccess = () => setComparedAt(nowText());
+    if (crd) crPreview.mutate({ context, crd, namespace, name, yaml }, { onSuccess });
+    else kindPreview.mutate({ context, namespace, resourceType, name, yaml }, { onSuccess });
     // One preview per open: the gate is mounted fresh each time it opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -145,12 +158,13 @@ export function YamlSaveGate({
       }
       status={status}
       kubectlEquivalent={replaceEquiv({ context })}
-      isPending={apply.isPending}
+      isPending={applyPending}
       onCancel={onClose}
       onConfirm={async () => {
         setSaveError("");
         try {
-          await apply.mutateAsync({ context, namespace, resourceType, name, yaml });
+          if (crd) await crApply.mutateAsync({ context, crd, namespace, name, yaml });
+          else await kindApply.mutateAsync({ context, namespace, resourceType, name, yaml });
           onSaved();
         } catch (e) {
           // The dialog stays open, the diff stays, and the editor text is untouched.

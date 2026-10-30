@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CRD_NOT_ESTABLISHED_REASON, CRD_NO_SERVED_VERSION_REASON,
-  crdInstancesReason, crdReadVersion, crdRef, loadCrdGrouping, saveCrdGrouping,
+  crDeniedReason, crdInstancesReason, crdKubectlNoun, crdReadVersion, crdRef, loadCrdGrouping, sameCustomResource, saveCrdGrouping,
 } from "./crds";
-import type { CRD } from "../types/k8s";
+import { deleteEquiv } from "./kubectlEquiv";
+import type { CRD, CustomResourceSelection } from "../types/k8s";
 
 const crd = (over: Partial<CRD> = {}): CRD => ({
   name: "widgets.acme.io", group: "acme.io", kind: "Widget", plural: "widgets", scope: "Namespaced",
@@ -111,5 +112,48 @@ describe("CRD grouping switch (localStorage crds-grouped)", () => {
   it("returns false when there is no storage", () => {
     delete g.localStorage;
     expect(saveCrdGrouping(true)).toBe(false);
+  });
+});
+
+describe("crdKubectlNoun", () => {
+  it("is <plural>.<group>", () => {
+    expect(crdKubectlNoun(crd())).toBe("widgets.acme.io");
+    expect(crdKubectlNoun({ plural: "certificates", group: "cert-manager.io" })).toBe("certificates.cert-manager.io");
+  });
+  it("feeds deleteEquiv: -n for a namespaced object, none for an empty namespace", () => {
+    const noun = crdKubectlNoun(crd());
+    const argv = (namespace: string) => deleteEquiv({ context: "c", namespace, kind: noun, name: "w1" }).commands[0].argv;
+    expect(argv("ns")).toEqual(["kubectl", "delete", "widgets.acme.io", "w1", "-n", "ns", "--context", "c"]);
+    expect(argv("")).toEqual(["kubectl", "delete", "widgets.acme.io", "w1", "--context", "c"]);
+  });
+});
+
+describe("crDeniedReason", () => {
+  it("names the verb, the plural and the namespace", () => {
+    expect(crDeniedReason("delete", "widgets", "ns1")).toBe("You don't have permission to delete widgets in namespace ns1.");
+    expect(crDeniedReason("update", "widgets", "ns1")).toBe("You don't have permission to update widgets in namespace ns1.");
+  });
+  it("says this cluster for an empty namespace", () => {
+    expect(crDeniedReason("delete", "clusterwidgets", "")).toBe("You don't have permission to delete clusterwidgets in this cluster.");
+    expect(crDeniedReason("update", "clusterwidgets", "")).toBe("You don't have permission to update clusterwidgets in this cluster.");
+  });
+});
+
+describe("sameCustomResource", () => {
+  const sel = (over: { crd?: Partial<CRD>; ns?: string; name?: string } = {}): CustomResourceSelection => ({
+    crd: crd(over.crd), item: { name: over.name ?? "w1", namespace: over.ns ?? "ns1", age: "1d" },
+  });
+  it("is true for the same CRD name, namespace and name, whatever the rest says", () => {
+    expect(sameCustomResource(sel(), sel())).toBe(true);
+    expect(sameCustomResource(sel(), { crd: crd({ age: "9d", read_version: "v2" }), item: { name: "w1", namespace: "ns1", age: "9d" } })).toBe(true);
+  });
+  it("is false when any one of the three differs", () => {
+    expect(sameCustomResource(sel(), sel({ crd: { name: "gadgets.acme.io" } }))).toBe(false);
+    expect(sameCustomResource(sel(), sel({ ns: "ns2" }))).toBe(false);
+    expect(sameCustomResource(sel(), sel({ name: "w2" }))).toBe(false);
+  });
+  it("treats a cluster-scoped object (empty namespace) as its own identity", () => {
+    expect(sameCustomResource(sel({ ns: "" }), sel({ ns: "" }))).toBe(true);
+    expect(sameCustomResource(sel({ ns: "" }), sel({ ns: "ns1" }))).toBe(false);
   });
 });

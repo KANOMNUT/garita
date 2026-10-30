@@ -1,11 +1,14 @@
-import { useState } from "react";
-import { ArrowUpRight, Boxes, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowUpRight, Boxes, Save, Trash2, X } from "lucide-react";
 import { useResizablePanel } from "../hooks/useResizablePanel";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import {
-  useCustomResource, useCustomResourceYaml, useCustomResourceYamlNeat, useResourceEvents,
+  useCustomResource, useCustomResourcePermissions, useCustomResourceYaml, useCustomResourceYamlNeat, useResourceEvents,
 } from "../hooks/useResources";
 import type { CRD, CRDResource, CustomResourceDetail, ResourceType } from "../types/k8s";
+import { useClusterIdentity } from "../utils/clusterIdentity";
+import { crDeniedReason } from "../utils/crds";
+import { disabledAttrs, pickDisabledReason } from "../utils/guardrails";
 import { isForbidden } from "../utils/viewState";
 import { loadNeatPref, saveNeatPref } from "../utils/neatYaml";
 import { NEAT_NO_MATCH_HINT } from "../utils/yamlFind";
@@ -14,8 +17,10 @@ import { EventsTabContent } from "./EventsTabContent";
 import { NeatChip, NeatNote } from "./NeatYaml";
 import { KV, resolveManagedBy } from "./ResourceDetailPanel";
 import { YamlFind } from "./YamlFind";
+import { YamlSaveGate } from "./YamlSaveGate";
 
-// The panel of one custom resource (an object of a CRD), v2.4.1. Read view: Overview, Summary, Events and YAML.
+// The panel of one custom resource (an object of a CRD), v2.4.1: Overview, Summary, Events and YAML, plus the two writes,
+// a YAML edit through the Review and save gate and a delete (the host owns the delete confirm).
 //
 // It is a component of its own, not a SelectedResource member (plan D2): a custom resource has a runtime group,
 // version and kind, and the per-kind tables are keyed by a static kind. Every call is a hook in useResources.ts,
@@ -147,7 +152,7 @@ function Summary({ detail, onNavigate }: {
   );
 }
 
-export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }: {
+export function CustomResourcePanel({ context, crd, item, onClose, onNavigate, onRequestDelete }: {
   context: string;
   crd: CRD;
   /** Identity only: name, and namespace ("" when the CRD is cluster-scoped). */
@@ -155,7 +160,11 @@ export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }:
   onClose: () => void;
   /** "Managed by": ("argocd", "", app). */
   onNavigate?: (kind: ResourceType, namespace: string, name: string) => void;
+  /** The header trash asks the host to open the delete confirm (one dialog, also opened by the list's row trash). Without it there is no trash. */
+  onRequestDelete?: () => void;
 }) {
+  const identity = useClusterIdentity(context);
+  const perm = useCustomResourcePermissions(context, crd, item.namespace);
   const { width, startResize } = useResizablePanel("detail-panel-width");
   const [tab, setTab] = useState<Tab>("Overview");
   const namespaced = crd.scope !== "Cluster";
@@ -167,20 +176,43 @@ export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }:
 
   const eventsQ = useResourceEvents(context, item.namespace, item.name, tab === "Events", crd.kind);
 
-  // YAML read view. The neat text is DISPLAY ONLY (Copy neat copies it); the full text is the other query and Copy.
+  // YAML. The neat text is DISPLAY ONLY (Copy neat copies it); the full text is the other query, Copy, and the only
+  // editor seed: the neat text never reaches the editor or a save.
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState("");
+  const [confirmSave, setConfirmSave] = useState(false);
+  useEffect(() => {
+    if (tab !== "YAML") { setEditMode(false); setConfirmSave(false); }
+  }, [tab]);
   const [neat, setNeat] = useState(loadNeatPref);
   const toggleNeat = () => setNeat((v) => { saveNeatPref(!v); return !v; });
   const yamlQ = useCustomResourceYaml(context, crd, item.namespace, item.name, tab === "YAML");
-  const neatQ = useCustomResourceYamlNeat(context, crd, item.namespace, item.name, tab === "YAML" && neat);
+  const neatQ = useCustomResourceYamlNeat(context, crd, item.namespace, item.name, tab === "YAML" && neat && !editMode);
   const yamlContent = yamlQ.data ?? "";
-  const neatShown = neat && !!neatQ.data;
+  const neatShown = neat && !editMode && !!neatQ.data;
   const shownYaml = neatShown && neatQ.data ? neatQ.data.yaml : yamlContent;
-  const yamlSkeleton = yamlQ.isLoading || (neat && neatQ.isLoading);
+  const yamlSkeleton = yamlQ.isLoading || (neat && !editMode && neatQ.isLoading);
   const yamlError = yamlQ.error ? ((yamlQ.error as any)?.message ?? String(yamlQ.error)) : "";
   const copyYaml = useCopyFeedback();
   const yamlCopyLabel = copyYaml.state === "copied"
     ? (neatShown ? "Copied neat YAML" : "Copied")
     : copyYaml.state === "failed" ? "Couldn't copy" : neatShown ? "Copy neat" : "Copy";
+
+  // DISABLE-PRECEDENCE: read-only first, then an explicit RBAC denial. The controls stay present and focusable (never hidden);
+  // their click bails out. Edit has a third, "capability" reason: no YAML to edit yet, or the load failed.
+  const updateReason = pickDisabledReason({
+    readOnly: identity.readOnly,
+    rbac: perm.canUpdate ? undefined : crDeniedReason("update", crd.plural, item.namespace),
+  });
+  const deleteReason = pickDisabledReason({
+    readOnly: identity.readOnly,
+    rbac: perm.canDelete ? undefined : crDeniedReason("delete", crd.plural, item.namespace),
+  });
+  const editReason = pickDisabledReason({
+    readOnly: identity.readOnly,
+    rbac: perm.canUpdate ? undefined : crDeniedReason("update", crd.plural, item.namespace),
+    capability: yamlQ.isLoading ? "The YAML is still loading." : yamlQ.isError ? "The YAML didn't load." : undefined,
+  });
 
   // What Overview and Summary show instead of the object: loading, gone, no access, or a failure.
   let detailState: JSX.Element | null = null;
@@ -235,6 +267,23 @@ export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }:
               </div>
             )}
           </div>
+          {onRequestDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                if (deleteReason) return;
+                // Focus the opener first: the confirm returns focus to what was focused when it opened (WebKit does not focus on click).
+                e.currentTarget.focus();
+                onRequestDelete();
+              }}
+              aria-label={`Delete ${crd.kind} ${item.name}`}
+              title={`Delete ${crd.kind} ${item.name}`}
+              {...disabledAttrs(deleteReason)}
+              className={`h-7 w-7 -mr-1 rounded-md hover:bg-bad/10 text-mute hover:text-bad flex items-center justify-center transition-colors ${FOCUS_RING} ${deleteReason ? "opacity-30 cursor-not-allowed" : ""}`}
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -283,6 +332,7 @@ export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }:
             onRetry={() => { void eventsQ.refetch(); }}
             kind={crd.kind}
             scopedToKind
+            childEventsNote={false}
           />
         )}
 
@@ -306,15 +356,61 @@ export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }:
               // Keyed on the object identity, so the find bar never outlives its object.
               <YamlFind
                 key={`${context}\u0000${crd.name}\u0000${item.namespace}\u0000${item.name}`}
-                text={shownYaml}
+                text={editMode ? editContent : shownYaml}
                 noun="YAML"
                 regionLabel={`${crd.kind} ${item.name} YAML`}
-                edit={null}
+                edit={editMode ? {
+                  onChange: setEditContent,
+                  onKeyDown: (e) => {
+                    // ⌘S / Ctrl+S opens the review gate; it never saves by itself.
+                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+                      e.preventDefault();
+                      if (!updateReason) setConfirmSave(true);
+                    }
+                  },
+                } : null}
                 noMatchHint={neatShown && (neatQ.data?.hidden.length ?? 0) > 0
                   ? { text: NEAT_NO_MATCH_HINT, action: { label: "Search full object", run: toggleNeat } }
                   : null}
               >
-                {({ findButton, bar, content }) => (
+                {({ findButton, bar, content }) => editMode ? (
+                  <>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-warn">Editing — changes apply directly to the cluster</span>
+                      <div className="flex-1" />
+                      {findButton}
+                      <NeatChip on={neat} onToggle={toggleNeat} editing />
+                      <button type="button" onClick={() => setEditMode(false)} className={SMALL_BTN}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { if (updateReason) return; setConfirmSave(true); }}
+                        {...disabledAttrs(updateReason)}
+                        className={`h-6 px-2 rounded-sm bg-accent/20 ring-1 ring-accent/30 text-[10.5px] text-accent hover:bg-accent/30 flex items-center gap-1.5 ${FOCUS_RING} ${updateReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <Save size={12} aria-hidden /> Review &amp; save…
+                      </button>
+                    </div>
+                    {confirmSave && (
+                      <YamlSaveGate crd={crd}
+                        context={context}
+                        namespace={item.namespace}
+                        resourceType="crd-instances"
+                        name={item.name}
+                        kindLabel={crd.kind}
+                        yaml={editContent}
+                        hasForm={false}
+                        onOpenForm={() => {}}
+                        onClose={() => setConfirmSave(false)}
+                        onSaved={() => { setConfirmSave(false); setEditMode(false); }}
+                      />
+                    )}
+                    <NeatNote hidden={[]} editing />
+                    {bar}
+                    {content}
+                  </>
+                ) : (
                   <div className="flex flex-col gap-2 min-w-0">
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
                       {findButton}
@@ -328,6 +424,14 @@ export function CustomResourcePanel({ context, crd, item, onClose, onNavigate }:
                         {yamlCopyLabel}
                       </button>
                       <span role="status" className="sr-only">{copyYaml.state === "idle" ? "" : yamlCopyLabel}</span>
+                      <button
+                        type="button"
+                        onClick={() => { if (editReason) return; setEditContent(yamlQ.data ?? ""); setEditMode(true); }}
+                        {...disabledAttrs(editReason)}
+                        className={`${SMALL_BTN} flex items-center gap-1 ${editReason ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <Save size={12} aria-hidden /> Edit
+                      </button>
                     </div>
                     {neat && (
                       <div className="min-w-0">
