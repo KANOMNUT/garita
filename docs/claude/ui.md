@@ -201,7 +201,7 @@ Prod-accident guard, zero Rust. `src/utils/clusterIdentity.ts`: `localStorage["c
 - **Do not simplify this back: `setClusterIdentity` writes `color` only when `patch.color` is set.** A guardrail toggle (read-only, typed confirm, bulk limit) must leave a stored `"accent"` byte-identical. Writing the normalised `"identity-blue"` would make v1.4.1 (whose reader rejects role names) recolour the cluster to its hash default after a downgrade. An explicit pick writes the role name, so a downgrade after a pick still loses that colour (accepted).
 - The swatches in `ContextSwitcher` are colour-only buttons, so each is named through `IDENTITY_ROLE_LABELS` (Blue, Green, Yellow, Orange, Red, Purple) as `aria-label` and `title`. A new role needs a label.
 
-Surfaces: Sidebar chip, TopBar left rule, `ContextSwitcher` swatches + editor, every `ConfirmModal` (`contextLabel` / `contextColor`). Bespoke write dialogs reuse `ClusterBadge` (exported from `ConfirmModal.tsx`).
+Surfaces: Sidebar chip, TopBar left rule, `ContextSwitcher` swatches + editor, every `ConfirmModal` (`contextLabel` / `contextColor`). Bespoke write dialogs reuse `ClusterBadge` (exported from `ConfirmModal.tsx`). By default it sits above the title with a bottom margin; `inline` drops the margin for a header row. `ResourceCreator` (New) and `ResourceEditor` (Edit) put the badge and the title in one `flex items-center gap-2.5` row: a bare inline badge next to the title aligned the title to the badge's dot, not its text, and left no gap.
 
 ## Read-only mode and guardrails (v1.3.1)
 
