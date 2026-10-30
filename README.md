@@ -82,7 +82,7 @@ Per-release detail is in [`CHANGELOG.md`](CHANGELOG.md).
 - **Config & Storage**: ConfigMaps, Secrets, PersistentVolumeClaims, PersistentVolumes, StorageClasses, ResourceQuotas, LimitRanges, VolumeSnapshots, cert-manager Certificates
 - **RBAC**: ServiceAccounts, Roles, ClusterRoles, RoleBindings, ClusterRoleBindings
 - **Cluster**: Nodes, CRDs, PriorityClasses, Events, Mutating/ValidatingWebhookConfigurations
-- **Custom Resources**: a sidebar tree of every installed CRD, grouped by API group
+- **Custom Resources**: the CRDs page groups every installed CRD by API group; open a CRD's objects to view, edit (checked by a server dry run first) or delete them
 - **Helm** releases, **ArgoCD** Applications, **Flux v2** Kustomizations and HelmReleases
 
 ### Clusters and access
