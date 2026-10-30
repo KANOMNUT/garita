@@ -769,3 +769,10 @@ Recommended option first. Q-R1, Q-R2, Q-R4 and Q-R5 block F5 only; Q-R3 blocks F
 - A (recommended): "Reason" (and "Message" for the neutral box under Q-R1 B).
 - B: "Why it failed".
 - C: no heading; the text sits right under the pill.
+
+### 11.8 Erratum (2026-10-30, W5R)
+
+- An ArgoCD Application panel has no YAML tab: `tabsFor` in `ResourceDetailPanel.tsx` returns Overview, Resources, History, Events and Timeline. The sentences that send the reader to a YAML tab are wrong about the app: §11.1.1 (the cap: "the raw YAML tab keeps the whole text"), §11.1.4 ("The Application's raw YAML tab already shows it unmasked"), §11.2 ("the whole text is in the YAML tab's raw view"), the §11.3 `argocd.md` row ("cap with the YAML tab for the whole text") and Q-R3 with its option B. The whole text is only in the Application object itself (`kubectl get`, the Argo CD UI); the app shows at most 2000 characters.
+- User decision (2026-10-30): the note under a cut message is plain text with no link, "Cut at 2000 characters. The full text is in status.operationState.message on the Application." F5 shipped it that way; `isArgoOperationMessageCut` in `argoStatus.ts` decides when it shows.
+- §11.1.4 stands without the YAML-tab point: anyone who can read the Application can read the field, and free text cannot be masked reliably. That the same text is in the Application's Events comes from upstream source and is not verified.
+- The test is `commands::argocd::rollback_tests::operation_message_display_rules` (the file's only test module), not `argocd::tests::…` as §11.1.1 says.

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **An open ArgoCD panel follows the Applications list.** The panel kept the state the Application had when you clicked it, so after a sync started from the panel failed, neither "Failed" nor the reason showed until you clicked the row again. The panel header, the Last operation badge and History now update with the list.
+- **An open ArgoCD panel follows the Applications list.** The panel kept the state the Application had when you clicked it, so after a sync started from the panel failed, it kept showing the earlier Health, Sync and last operation until you clicked the row again. The panel header, the Last operation badge with its reason, and History now update with the list.
 
 ## [2.4.0] - 2026-10-29
 
