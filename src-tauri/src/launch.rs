@@ -54,7 +54,7 @@ Running {n} while {p} is open brings that window to the front and applies these 
 }
 
 /// Short names printed in `--help`; a test checks each resolves in `normalize_kind`.
-pub const HELP_SHORT_NAMES: [&str; 7] = ["po", "deploy", "svc", "ing", "cm", "secret", "no"];
+pub const HELP_SHORT_NAMES: [&str; 8] = ["po", "deploy", "svc", "ing", "cm", "secret", "no", "ns"];
 
 /// Cap untrusted echoed text at 64 chars with a `...` suffix.
 fn cap(s: &str) -> String {
@@ -104,7 +104,7 @@ pub fn version_text() -> String {
 }
 
 /// Kind token (case-insensitive) -> frontend `ResourceType` string (`src/types/k8s.ts`).
-/// `ns`/`namespace` have no view and `crd-instances` needs a CRD; both stay unmapped.
+/// `crd-instances` needs a CRD, so it stays unmapped.
 pub fn normalize_kind(token: &str) -> Option<&'static str> {
     Some(match token.to_ascii_lowercase().as_str() {
         "po" | "pod" | "pods" => "pods",
@@ -133,6 +133,7 @@ pub fn normalize_kind(token: &str) -> Option<&'static str> {
         "lr" | "limitrange" | "limitranges" => "lr",
         "vs" | "volumesnapshot" | "volumesnapshots" => "vs",
         "no" | "node" | "nodes" => "nodes",
+        "ns" | "namespace" | "namespaces" => "ns",
         "ev" | "event" | "events" => "events",
         "crd" | "crds" | "customresourcedefinition" | "customresourcedefinitions" => "crd",
         "pc" | "priorityclass" | "priorityclasses" => "pc",
@@ -321,7 +322,8 @@ mod tests {
         let a = run(&["bogus", "po"]);
         assert_eq!(a.kind, None);
         assert_eq!(a.ignored, vec!["bogus", "po"]);
-        assert_eq!(run(&["ns"]).kind, None); // no namespaces view
+        // `crd-instances` needs a CRD, so it has no token.
+        assert_eq!(run(&["crd-instances"]).kind, None);
     }
 
     #[test]
@@ -335,6 +337,11 @@ mod tests {
             ("secret", "sec"),
             ("secrets", "sec"),
             ("no", "nodes"),
+            ("ns", "ns"),
+            ("namespace", "ns"),
+            ("namespaces", "ns"),
+            ("NS", "ns"),
+            ("Namespaces", "ns"),
             ("Pods", "pods"),
             ("sts", "sts"),
             ("pvc", "pvc"),
@@ -343,6 +350,24 @@ mod tests {
         ] {
             assert_eq!(run(&[t]).kind.as_deref(), Some(k), "{}", t);
         }
+    }
+
+    #[test]
+    fn namespace_tokens_open_the_namespaces_page() {
+        let a = run(&["ns"]);
+        assert_eq!((a.kind.as_deref(), a.ignored.is_empty()), (Some("ns"), true));
+        // `-n` stays a separate namespace value; the token `ns` is only ever the kind.
+        let a = run(&["--context=c", "-n", "kube-system", "namespaces"]);
+        assert_eq!(a.kind.as_deref(), Some("ns"));
+        assert_eq!(a.namespace.as_deref(), Some("kube-system"));
+        assert!(a.ignored.is_empty());
+        // A second kind token is still ignored; the first one wins.
+        let a = run(&["ns", "po"]);
+        assert_eq!((a.kind.as_deref(), a.ignored), (Some("ns"), vec!["po".to_string()]));
+        // As the value of `-n`, `ns` is a namespace name, not a kind.
+        let a = run(&["-n", "ns"]);
+        assert_eq!((a.namespace.as_deref(), a.kind), (Some("ns"), None));
+        assert!(help_text().contains("no, ns."));
     }
 
     #[test]

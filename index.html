@@ -115,6 +115,8 @@ details p{margin:.5rem 0}
 .shot a{display:block}
 .shot img{display:block;max-width:100%;height:auto;border:1px solid var(--edge2);border-radius:12px}
 .shot figcaption{margin:12px auto 0;text-align:center}
+.gal{display:grid;grid-template-columns:minmax(0,1fr);gap:32px 24px;margin-top:24px}
+.gal .shot{margin:0}
 .name{display:flex;align-items:center;gap:16px;color:var(--mute);margin-top:16px}
 .name svg{flex:none;color:var(--accent)}
 .name p{margin:0}
@@ -130,7 +132,7 @@ header{position:sticky;top:0}
 .btns,.dls{justify-content:center}
 .hero .small{margin-left:auto;margin-right:auto}
 .mobile-note{display:none}
-.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid,.gal{grid-template-columns:repeat(2,minmax(0,1fr))}
 .w2,.w3{grid-column:span 2}
 }
 @media (min-width:960px){
@@ -176,7 +178,7 @@ html{scroll-behavior:auto}
     <a href="https://github.com/KANOMNUT/garita/releases/latest/download/Garita-windows-amd64.msi">Windows .msi</a>
   </div>
   <p class="small" id="dl-note">macOS builds are not notarized: on first launch run <code>xattr -rd com.apple.quarantine /Applications/Garita.app</code> (or <code>~/Applications/Garita.app</code>). Windows installers are unsigned, so SmartScreen will warn.</p>
-  <figure class="shot"><a href="site/demo.png"><img src="site/demo.png" width="1906" height="1012" decoding="async" fetchpriority="high" alt="Garita showing the Pods view of a local kind cluster: node cards, a pod table with CPU and memory bars, and the sidebar of resource kinds."></a><figcaption class="small">A real Garita window on a local kind test cluster.</figcaption></figure>
+  <figure class="shot"><a href="site/demo.png"><img src="site/demo.png" width="1906" height="1200" decoding="async" fetchpriority="high" alt="Garita's Pods view with sample data: summary cards, three node cards with CPU and memory bars, and a table of eleven pods with status, CPU and memory."></a><figcaption class="small">The Pods view, with sample data.</figcaption></figure>
 </div></div>
 
 <section id="features"><div class="wrap">
@@ -195,6 +197,17 @@ html{scroll-behavior:auto}
   </div>
   <p class="also-l">Also included:</p>
   <ul class="also"><li class="chip neu">Helm</li><li class="chip neu">ArgoCD</li><li class="chip neu">Flux</li><li class="chip neu">Who can&hellip;</li><li class="chip neu">Action journal</li><li class="chip neu">Network policies (approximation)</li><li class="chip neu">&#8984;K palette</li></ul>
+</div></section>
+
+<section id="gallery"><div class="wrap">
+  <h2>A closer look</h2>
+  <p class="lede lead">Panels from the app. All screenshots use sample data.</p>
+  <div class="gal">
+    <figure class="shot"><a href="site/full-namespaces.png"><img src="site/gallery-namespaces.png" width="700" height="912" loading="lazy" decoding="async" alt="Garita's Namespaces page with sample data: the namespace legacy-batch is Terminating, and its side panel lists the conditions that keep it from being deleted."></a><figcaption class="small">A namespace stuck in Terminating, and why. Sample data.</figcaption></figure>
+    <figure class="shot"><a href="site/full-pod.png"><img src="site/gallery-pod.png" width="700" height="912" loading="lazy" decoding="async" alt="Garita's Pod panel with sample data: the Summary tab lists the pod's metadata, service account and conditions."></a><figcaption class="small">The Pod panel's Summary: service account and conditions. Sample data.</figcaption></figure>
+    <figure class="shot"><a href="site/full-argocd.png"><img src="site/gallery-argocd.png" width="700" height="912" loading="lazy" decoding="async" alt="Garita's ArgoCD application panel with sample data: Healthy and Synced chips side by side, then the sync options Prune, Dry run and Force with a line of help each, above the Sync, Refresh and Hard refresh buttons."></a><figcaption class="small">ArgoCD: health and sync shown separately, sync options explained before you sync. Sample data.</figcaption></figure>
+    <figure class="shot"><img src="site/gallery-argocd-history.png" width="700" height="912" loading="lazy" decoding="async" alt="The History tab of an ArgoCD application in Garita, with sample data: the newest deployment is marked Current and expanded to show a multi-line commit message and a Roll back button."><figcaption class="small">ArgoCD History: the whole commit message, and the live revision marked. Sample data.</figcaption></figure>
+  </div>
 </div></section>
 
 <section id="safety"><div class="wrap">

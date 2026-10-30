@@ -3,7 +3,7 @@ import {
   Layers, Package, PackageMinus, List, Clock, Briefcase, Network, Globe,
   FileCode, Lock, Database, Server, Activity, TrendingUp, Puzzle, ShieldAlert, GitBranch,
   ShieldCheck, Boxes, FolderGit2, X, RefreshCw, RefreshCcw, GitMerge,
-  Waypoints, Split, Copy, Webhook, Camera,
+  Waypoints, Split, Copy, Webhook, Camera, FolderTree,
 } from "lucide-react";
 import { GenericResourceTable, type Column } from "./GenericResourceTable";
 import { ConfirmModal } from "./ConfirmModal";
@@ -26,7 +26,7 @@ import {
   useDeleteResource, useUninstallHelmRelease,
   useArgoCdAppSets, useArgoCdProjects, useArgoCdRepositories,
   useBulkSyncArgoCdApps, useBulkRefreshArgoCdApps,
-  usePermissions,
+  usePermissions, useNamespaceRows,
   useEndpoints, useEndpointSlices, useReplicaSets,
   useMutatingWebhooks, useValidatingWebhooks, useVolumeSnapshots, useCRDResources,
 } from "../hooks/useResources";
@@ -39,8 +39,12 @@ import type {
   FluxKustomization, FluxHelmRelease, GatewayInfo, HttpRouteInfo,
   ResourceQuotaInfo, LimitRangeInfo, PriorityClassInfo,
   ArgoCdAppSet, ArgoCdProject, ArgoCdRepository,
-  EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow, CRDResource,
+  EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow, CRDResource, NamespaceRow,
 } from "../types/k8s";
+import { podStatusStyle } from "../utils/podStatus";
+import { ArgoGlyph } from "./ArgoGlyph";
+import { argoHealthPill, argoSyncPill, type ArgoPill } from "../utils/argoStatus";
+import { chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
 
 interface ViewProps { context: string; namespace: string; search?: string; selectedKey?: string | null; }
 
@@ -823,6 +827,94 @@ export const PVView = memo(function PVView({ context, search, selectedKey, onSel
   );
 });
 
+// ─── Namespaces (docs/ux/24 §4.4) ─────────────────────────────────────────────
+// Cluster-scoped kind `ns`. Create is TopBar New / ⌘N (the existing namespace form); delete is the typed confirm
+// that App hosts (DeleteNamespaceConfirm), opened from the row trash here and from the panel header.
+
+/** Quiet when normal, loud when not: forty green pills would hide the one Terminating row that matters. */
+function NamespaceStatus({ row }: { row: NamespaceRow }) {
+  if (isTerminating(row)) {
+    // The look of a Terminating pod: same table, same pulse.
+    const s = podStatusStyle("Terminating");
+    const since = deletingFor(row.deletion_timestamp);
+    return (
+      <span
+        title={since ? `Deleting for ${since}` : "This namespace is being deleted."}
+        className={`inline-flex items-center gap-1.5 px-2 py-[3px] rounded-md text-[11px] font-medium ${s.text} ${s.bg} ring-1 ${s.ring}`}
+      >
+        <span className="relative flex h-1.5 w-1.5" aria-hidden>
+          <span className={`absolute inset-0 rounded-full opacity-60 animate-blink ${s.dot}`} />
+          <span className={`relative rounded-full h-1.5 w-1.5 ${s.dot}`} />
+        </span>
+        Terminating
+      </span>
+    );
+  }
+  if (row.phase === "Active") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[11.5px] text-mute">
+        <span className="h-1.5 w-1.5 rounded-full bg-ok" aria-hidden />
+        Active
+      </span>
+    );
+  }
+  if (row.phase === "") return <Mute t="—" />;
+  // A phase this app does not know: the word, neutral.
+  return (
+    <span className="inline-flex items-center px-2 py-[3px] rounded-md text-[11px] font-medium text-mute bg-surface-tint/5 ring-1 ring-edge">
+      {row.phase}
+    </span>
+  );
+}
+
+/** Up to two `key=value` chips, then `+N`. The title lists every label. */
+function NamespaceLabels({ labels }: { labels: Record<string, string> }) {
+  const all = chipLabels(labels);
+  if (all.length === 0) return <Mute t="—" />;
+  return (
+    <span className="flex items-center gap-1 min-w-0" title={all.map(([k, v]) => `${k}=${v}`).join("\n")}>
+      {all.slice(0, 2).map(([k, v]) => (
+        <span key={k} className="mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-surface-tint/5 ring-1 ring-edge text-mute max-w-[150px] truncate">
+          {k}={v}
+        </span>
+      ))}
+      {all.length > 2 && <span className="mono text-[10.5px] text-mute shrink-0">+{all.length - 2}</span>}
+    </span>
+  );
+}
+
+const namespaceColumns: Column<NamespaceRow>[] = [
+  { id: "name",   header: "Name",   sortable: true, sortValue: (r) => r.name,
+    cell: (r) => <span className="mono text-[12px] truncate" title={r.name}>{r.name}</span> },
+  { id: "status", header: "Status", width: 130, sortable: true, sortValue: (r) => r.phase, cell: (r) => <NamespaceStatus row={r} /> },
+  { id: "age",    header: "Age",    width: 80,  sortable: true, sortValue: (r) => parseAge(r.age), cell: (r) => <Mute t={r.age} /> },
+  { id: "labels", header: "Labels", cell: (r) => <NamespaceLabels labels={r.labels} /> },
+];
+
+export const NamespacesView = memo(function NamespacesView({ context, search, selectedKey, onSelect, onRequestDelete }: {
+  context: string;
+  search?: string;
+  selectedKey?: string | null;
+  onSelect?: (r: NamespaceRow) => void;
+  onRequestDelete: (name: string) => void;
+}) {
+  // The page polls (5 s while any row is Terminating); the picker and the forms read the same query without an interval.
+  const { data = [], isLoading, error, refetch } = useNamespaceRows(context, true);
+  const perm = usePermissions(context, "", "ns");
+  return (
+    <GenericResourceTable context={context} columns={namespaceColumns} data={data} isLoading={isLoading}
+      error={error} onRetry={refetch} keyFn={(r) => r.name}
+      selectedKey={selectedKey} onSelect={onSelect} search={search}
+      title="Namespaces" count={data.length} storageKey="ns"
+      emptyIcon={<FolderTree size={32} />} emptyText="No namespaces found."
+      onDelete={(r) => onRequestDelete(r.name)}
+      // The table checks read-only first, so only the RBAC, protected and Terminating reasons are decided here.
+      deleteReason={(r) => namespaceDeleteReason(r, { readOnly: false, canDelete: perm.canDelete })}
+      deleteLabel={(r) => `Delete namespace ${r.name}`}
+    />
+  );
+});
+
 // ─── Nodes ────────────────────────────────────────────────────────────────────
 
 const UsageBar = memo(function UsageBar({ pct }: { pct?: number }) {
@@ -1490,7 +1582,7 @@ const scColumns: Column<StorageClassRow>[] = [
   { id: "name",        header: "Name",           sortable: true, sortValue: (s) => s.name, cell: (s) => (
     <span className="flex items-center gap-1.5">
       <N t={s.name} />
-      {s.is_default && <span className="mono text-[10px] px-1 py-0.5 rounded-sm bg-ok/10 text-ok ring-1 ring-ok/30">default</span>}
+      {s.is_default && <span className="mono text-[10.5px] px-1 py-0.5 rounded-sm bg-ok/10 text-ok ring-1 ring-ok/30">default</span>}
     </span>
   )},
   { id: "provisioner", header: "Provisioner",    sortable: true, sortValue: (s) => s.provisioner, cell: (s) => <Mute t={s.provisioner} /> },
@@ -1625,12 +1717,14 @@ export const PDBView = memo(function PDBView({ context, namespace, search, selec
 
 // ─── ArgoCD Applications ──────────────────────────────────────────────────────
 
+// healthPillClass and healthIcon serve the Certificate "Ready" column only. The Applications list reads the shared
+// pill tables in utils/argoStatus.ts (ArgoPillCell below).
 function healthPillClass(status: string): string {
   switch (status) {
     case "Healthy":     return "bg-ok/10 text-ok ring-1 ring-ok/30";
     case "Degraded":    return "bg-bad/10 text-bad ring-1 ring-bad/30";
     case "Progressing": return "bg-status-progress/10 text-status-progress ring-1 ring-status-progress/30";
-    default:            return "bg-surface-tint/4 text-dim ring-1 ring-edge";
+    default:            return "bg-surface-tint/4 text-mute ring-1 ring-edge";
   }
 }
 
@@ -1643,22 +1737,6 @@ function healthIcon(status: string): string {
   }
 }
 
-function syncPillClass(status: string): string {
-  switch (status) {
-    case "Synced":    return "bg-ok/10 text-ok ring-1 ring-ok/30";
-    case "OutOfSync": return "bg-warn/10 text-warn ring-1 ring-warn/30";
-    default:          return "bg-surface-tint/4 text-dim ring-1 ring-edge";
-  }
-}
-
-function syncIcon(status: string): string {
-  switch (status) {
-    case "Synced":    return "✓";
-    case "OutOfSync": return "↑";
-    default:          return "?";
-  }
-}
-
 const repoShort = (url: string): string => {
   try {
     const parts = url.replace(/\.git$/, "").split("/");
@@ -1667,42 +1745,52 @@ const repoShort = (url: string): string => {
 };
 
 const PILL = "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10.5px] mono font-medium";
+/** A focus ring of at least 3:1 in both themes (X-8, ui.md G6). */
+const ARGO_FOCUS = "outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
+
+/**
+ * A Health or Sync cell of the Applications list. The pill table is the one the cards and the panel read
+ * (`utils/argoStatus.ts`), so a status looks the same in all three; never keep a second map here (argocd.md).
+ */
+function ArgoPillCell({ pill, text }: { pill: ArgoPill; text: string }) {
+  return (
+    <span className={`${PILL} ring-1 ${pill.cls}`}>
+      <ArgoGlyph icon={pill.icon} />
+      {text || "—"}
+    </span>
+  );
+}
 
 const argoColumns: Column<ArgoCdApp>[] = [
   { id: "name",    header: "Name",        sortable: true, sortValue: (a) => a.name,     cell: (a) => <N t={a.name} /> },
   { id: "ns",      header: "Namespace",   width: 130, sortable: true, sortValue: (a) => a.namespace, cell: (a) => <Ns t={a.namespace} /> },
   { id: "project", header: "Project",     width: 120, sortable: true, sortValue: (a) => a.project,   cell: (a) => <Mute t={a.project} /> },
   { id: "health",  header: "Health",      width: 110, sortable: true, sortValue: (a) => a.health_status, cell: (a) => (
-    <span className={`${PILL} ${healthPillClass(a.health_status)}`}>
-      <span>{healthIcon(a.health_status)}</span>
-      {a.health_status || "—"}
-    </span>
+    <ArgoPillCell pill={argoHealthPill(a.health_status)} text={a.health_status} />
   )},
   { id: "sync",    header: "Sync",        width: 100, sortable: true, sortValue: (a) => a.sync_status, cell: (a) => (
-    <span className={`${PILL} ${syncPillClass(a.sync_status)}`}>
-      <span>{syncIcon(a.sync_status)}</span>
-      {a.sync_status || "—"}
-    </span>
+    <ArgoPillCell pill={argoSyncPill(a.sync_status)} text={a.sync_status} />
   )},
   { id: "dest",    header: "Destination", width: 150, cell: (a) => (
     <div className="flex flex-col" title={a.dest_server}>
       <span className="mono text-[11.5px] text-mute truncate max-w-[140px]">{a.dest_namespace || "—"}</span>
-      <span className="mono text-[10px] text-dim truncate max-w-[140px]">{a.dest_server.replace(/^https?:\/\//, "")}</span>
+      <span className="mono text-[10.5px] text-mute truncate max-w-[140px]">{a.dest_server.replace(/^https?:\/\//, "")}</span>
     </div>
   )},
   { id: "repo",    header: "Repo",        width: 160, cell: (a) => (
-    <span className="mono text-[11px] text-dim truncate inline-block max-w-[150px]" title={a.repo_url}>{repoShort(a.repo_url)}</span>
+    <span className="mono text-[11px] text-mute truncate inline-block max-w-[150px]" title={a.repo_url}>{repoShort(a.repo_url)}</span>
   )},
   { id: "rev",     header: "Revision",    width: 100, cell: (a) => (
+    // last_commit and target_revision can be a full chart version, tag or branch name: cut with an ellipsis, whole value in the tooltip.
     <div className="flex flex-col">
-      <span className="mono text-[11.5px] text-mute tabular-nums">{a.last_commit || "—"}</span>
-      <span className="mono text-[10px] text-dim tabular-nums">{a.target_revision || "HEAD"}</span>
+      <span className="mono text-[11.5px] text-mute tabular-nums truncate block max-w-[90px]" title={a.last_commit || undefined}>{a.last_commit || "—"}</span>
+      <span className="mono text-[10.5px] text-mute tabular-nums truncate block max-w-[90px]" title={a.target_revision || undefined}>{a.target_revision || "HEAD"}</span>
     </div>
   )},
   { id: "synced",  header: "Synced",      width: 100, sortable: true, sortValue: (a) => parseAge(a.age), cell: (a) => (
     <div className="flex flex-col">
       <span className="mono text-[11.5px] text-mute tabular-nums">{a.last_synced_at || "—"}</span>
-      <span className="mono text-[10px] text-dim tabular-nums">{a.age}</span>
+      <span className="mono text-[10.5px] text-mute tabular-nums">{a.age}</span>
     </div>
   )},
 ];
@@ -1716,12 +1804,14 @@ function ArgoHealthCard({ label, value, active, color, onClick }: {
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`rounded-lg ring-1 px-2 py-1 flex flex-col items-start min-w-[56px] transition-colors ${
-        active ? "bg-surface-tint/[0.07] ring-accent/40" : "bg-card/70 ring-edge hover:bg-surface-tint/4"
+      aria-pressed={active}
+      className={`rounded-lg ring-1 px-2 py-1 flex flex-col items-start min-w-[56px] transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+        active ? "bg-surface-tint/[0.07] ring-accent/70" : "bg-card/70 ring-edge hover:bg-surface-tint/4"
       }`}
     >
-      <span className="text-[9px] uppercase tracking-wide text-dim font-medium">{label}</span>
+      <span className="text-[10.5px] uppercase tracking-wide text-mute font-medium">{label}</span>
       <span className={`text-[14px] font-semibold tabular-nums leading-tight ${color}`}>{value}</span>
     </button>
   );
@@ -1803,7 +1893,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
 
   const columns = useMemo<Column<ArgoCdApp>[]>(() => [
     {
-      id: "sel", header: "", width: 28,
+      id: "sel", header: "", width: 28, interactive: true,
       cell: (a) => {
         const key = argoKey(a);
         return (
@@ -1837,7 +1927,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
     hardRefresh: {
       title: "Hard refresh applications",
       description: `Hard refresh ${selectedApps.length} application${selectedApps.length !== 1 ? "s" : ""} — clears ArgoCD's cache and re-fetches manifests from git.`,
-      confirmLabel: "Hard Refresh",
+      confirmLabel: "Hard refresh",
     },
   };
 
@@ -1870,27 +1960,27 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
   const bulkBar = selectedApps.length > 0 ? (
     <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
       <span className="mono text-[11px] text-accent font-semibold shrink-0">{selectedApps.length} selected</span>
-      <button onClick={() => setBulkSelected(new Set())} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge flex items-center gap-1">
-        <X size={10} /> Clear
+      <button type="button" onClick={() => setBulkSelected(new Set())} className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-surface-tint/3 ring-1 ring-edge flex items-center gap-1 ${ARGO_FOCUS}`}>
+        <X size={10} aria-hidden /> Clear
       </button>
-      <button onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className="h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge">
+      <button type="button" onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge ${ARGO_FOCUS}`}>
         Select all
       </button>
-      <button onClick={() => { if (bulkReason) return; setConfirmAction("sync"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-accent hover:bg-accent/20 bg-accent/10 ring-1 ring-accent/30 flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <GitMerge size={11} /> Sync
+      <button type="button" onClick={() => { if (bulkReason) return; setConfirmAction("sync"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-accent hover:bg-accent/20 bg-accent/10 ring-1 ring-accent/30 flex items-center gap-1.5 ${ARGO_FOCUS} ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
+        <GitMerge size={11} aria-hidden /> Sync
       </button>
-      <button onClick={() => { if (bulkReason) return; setConfirmAction("refresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <RefreshCw size={11} /> Refresh
+      <button type="button" onClick={() => { if (bulkReason) return; setConfirmAction("refresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${ARGO_FOCUS} ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
+        <RefreshCw size={11} aria-hidden /> Refresh
       </button>
-      <button onClick={() => { if (bulkReason) return; setConfirmAction("hardRefresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
-        <RefreshCcw size={11} /> Hard Refresh
+      <button type="button" onClick={() => { if (bulkReason) return; setConfirmAction("hardRefresh"); }} {...disabledAttrs(bulkReason)} className={`h-6 px-2.5 rounded-sm text-[11px] text-mute hover:text-ink bg-card/70 ring-1 ring-edge flex items-center gap-1.5 ${ARGO_FOCUS} ${bulkReason ? "opacity-50 cursor-not-allowed" : ""}`}>
+        <RefreshCcw size={11} aria-hidden /> Hard refresh
       </button>
       {bulkLimit.message && !identity.readOnly && (
         <span className="text-[10.5px] text-mute max-w-[300px] truncate" title={bulkLimit.message}>{bulkLimit.message}</span>
       )}
     </div>
   ) : (
-    <button onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className="h-6 px-2 rounded-sm text-[11px] text-dim hover:text-ink bg-surface-tint/3 ring-1 ring-edge shrink-0 whitespace-nowrap">
+    <button type="button" onClick={() => setBulkSelected(new Set(shown.map(argoKey)))} className={`h-6 px-2 rounded-sm text-[11px] text-mute hover:text-ink bg-surface-tint/3 ring-1 ring-edge shrink-0 whitespace-nowrap ${ARGO_FOCUS}`}>
       Select all
     </button>
   );
@@ -1906,7 +1996,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
         extra={
           <div className="flex items-center gap-2">
             {bulkResult && (
-              <div className={`mono text-[10.5px] px-2 py-1 rounded ring-1 flex items-center gap-1.5 max-w-[360px] ${
+              <div role={bulkResult.failed.length > 0 ? "alert" : "status"} className={`text-[10.5px] px-2 py-1 rounded ring-1 flex items-center gap-1.5 max-w-[360px] ${
                 bulkResult.failed.length > 0 ? "bg-bad/10 ring-bad/20 text-bad" : "bg-ok/10 ring-ok/20 text-ok"
               }`}>
                 <span className="shrink-0">{bulkResult.ok} succeeded · {bulkResult.failed.length} failed</span>
@@ -1915,7 +2005,7 @@ export const ArgoCDView = memo(function ArgoCDView({ context, search, selectedKe
                     {bulkResult.failed.map(f => f.name).join(", ")}
                   </span>
                 )}
-                <button onClick={() => setBulkResult(null)} className="ml-1 text-dim hover:text-ink shrink-0">✕</button>
+                <button type="button" onClick={() => setBulkResult(null)} aria-label="Dismiss result" className={`ml-1 text-mute hover:text-ink shrink-0 rounded-xs ${ARGO_FOCUS}`}><span aria-hidden>✕</span></button>
               </div>
             )}
             {bulkBar}
@@ -1980,7 +2070,7 @@ export const ArgoCdAppSetView = memo(function ArgoCdAppSetView({ context, search
     { id: "gen",     header: "Generators", width: 160, cell: (s) => (
       <div className="flex flex-wrap gap-1">
         {s.generators.map((g) => (
-          <span key={g} className="mono text-[10px] text-mute bg-surface-tint/4 ring-1 ring-edge-raw/60 px-1 py-0.5 rounded-sm">{g}</span>
+          <span key={g} className="mono text-[10.5px] text-mute bg-surface-tint/4 ring-1 ring-edge-raw/60 px-1 py-0.5 rounded-sm">{g}</span>
         ))}
       </div>
     )},
@@ -2153,7 +2243,7 @@ const certColumns: Column<Certificate>[] = [
   { id: "ns",     header: "Namespace", width: 130, sortable: true, sortValue: (c) => c.namespace, cell: (c) => <Ns t={c.namespace} /> },
   { id: "ready",  header: "Ready",     width: 90, sortable: true, sortValue: (c) => (c.ready ? 1 : 0), cell: (c) => (
     <span className={`${PILL} ${healthPillClass(c.status)}`}>
-      <span>{healthIcon(c.status)}</span>
+      <span aria-hidden>{healthIcon(c.status)}</span>
       {c.ready ? "True" : "False"}
     </span>
   )},

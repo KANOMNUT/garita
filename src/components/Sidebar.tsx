@@ -6,8 +6,7 @@ import {
   Boxes, Layers, Package, List, Clock, Briefcase,
   Network, Globe, FileCode, Lock, Database, Server, Activity,
   ChevronsUpDown, TrendingUp, Puzzle,
-  Shield, ShieldCheck, GitBranch, Anchor, ShieldAlert, FolderGit2,
-  Plus, Trash2,
+  Shield, ShieldCheck, GitBranch, Anchor, ShieldAlert, FolderGit2, FolderTree,
   Waypoints, Split, Copy, Webhook, Camera, ChevronRight, ChevronDown, Settings, History, HeartPulse, Gauge, Search, Archive, FileWarning,
 } from "lucide-react";
 import type { ResourceType, CRD } from "../types/k8s";
@@ -15,10 +14,7 @@ import { HEALTH_PAGES, type HealthPage } from "../utils/resourceQueryKey";
 import { useClusterIdentity, CLUSTER_COLOR_CLASSES } from "../utils/clusterIdentity";
 import { useAppUpdate, useCRDs } from "../hooks/useResources";
 import { noticeLabel } from "../utils/updateState";
-import { ConfirmModal } from "./ConfirmModal";
 import { ReadOnlyChip } from "./ReadOnlyBadge";
-import { disabledAttrs, pickDisabledReason } from "../utils/guardrails";
-import { deleteNamespaceEquiv } from "../utils/kubectlEquiv";
 import { PRODUCT_NAME } from "../brand";
 
 interface NavItemProps {
@@ -46,16 +42,14 @@ const NavItem = memo(function NavItem({ icon, label, active, onClick }: NavItemP
   );
 });
 
-const SidebarSection = memo(function SidebarSection({ label, action, children }: {
+const SidebarSection = memo(function SidebarSection({ label, children }: {
   label: string;
-  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="mt-4">
       <div className="px-3 mb-1.5 flex items-center justify-between">
         <span className="text-[10px] font-semibold tracking-[0.08em] uppercase text-dim">{label}</span>
-        {action}
       </div>
       <div className="flex flex-col">{children}</div>
     </div>
@@ -65,14 +59,8 @@ const SidebarSection = memo(function SidebarSection({ label, action, children }:
 interface SidebarProps {
   active: ResourceType;
   setActive: (v: ResourceType) => void;
-  ns: string;
-  setNs: (v: string) => void;
   currentContext: string;
-  namespaces: string[];
   onOpenSwitcher: () => void;
-  onCreateNamespace?: () => void;
-  /** Rejects with the backend message so the confirm dialog can show it and stay open. */
-  onDeleteNamespace?: (context: string, name: string) => Promise<void>;
   crdTarget?: CRD | null;
   onSelectCrdInstance?: (crd: CRD) => void;
   /** F6: the gear in the footer opens Settings (a main view, not a resource). */
@@ -92,22 +80,16 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  active, setActive, ns: _ns, setNs: _setNs, currentContext, namespaces: _namespaces, onOpenSwitcher,
-  onCreateNamespace, onDeleteNamespace, crdTarget, onSelectCrdInstance, onOpenSettings, onOpenUpdates, settingsActive, onOpenJournal, journalActive, onOpenWhoCan, whoCanActive, healthActive, onOpenHealth,
+  active, setActive, currentContext, onOpenSwitcher,
+  crdTarget, onSelectCrdInstance, onOpenSettings, onOpenUpdates, settingsActive, onOpenJournal, journalActive, onOpenWhoCan, whoCanActive, healthActive, onOpenHealth,
 }: SidebarProps) {
-  const [nsToDelete, setNsToDelete] = useState<string | null>(null);
-  const [nsDeletePending, setNsDeletePending] = useState(false);
-  const [nsDeleteError, setNsDeleteError] = useState("");
   const [appVersion, setAppVersion] = useState("");
-  const [hoveredNs, setHoveredNs] = useState<string | null>(null);
   const [expandedCrdGroups, setExpandedCrdGroups] = useState<Set<string>>(new Set());
   const upd = useAppUpdate();
   const notice = noticeLabel(upd.state, upd.dismissed);
   const noticeVersion = "version" in upd.state ? upd.state.version : null;
   const identity = useClusterIdentity(currentContext);
   const { data: crds = [] } = useCRDs(currentContext);
-  // Entry points stay visible and focusable; read-only disables them with the reason (D1).
-  const nsReason = pickDisabledReason({ readOnly: identity.readOnly });
   useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
 
   // Grouped by CRD group, kinds sorted (§4.5) — a plain array sorted twice is
@@ -136,21 +118,6 @@ export function Sidebar({
     const parts = currentContext.split("-");
     return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
   }, [currentContext]);
-
-  const handleDeleteNs = useCallback(async () => {
-    if (!nsToDelete || !onDeleteNamespace) return;
-    setNsDeleteError("");
-    setNsDeletePending(true);
-    try {
-      await onDeleteNamespace(currentContext, nsToDelete);
-      setNsToDelete(null);
-    } catch (e) {
-      // The dialog stays open with the verbatim message.
-      setNsDeleteError((e as any)?.message ?? String(e));
-    } finally {
-      setNsDeletePending(false);
-    }
-  }, [nsToDelete, currentContext, onDeleteNamespace]);
 
   return (
     <aside className="w-[280px] shrink-0 bg-panel/80 border-r border-edge flex flex-col">
@@ -273,6 +240,7 @@ export function Sidebar({
         </SidebarSection>
 
         <SidebarSection label="Cluster">
+          <NavItem icon={<FolderTree size={15} />} label="Namespaces"     active={active === "ns"}     onClick={() => setActive("ns")} />
           <NavItem icon={<Server size={15} />}   label="Nodes"            active={active === "nodes"}  onClick={() => setActive("nodes")} />
           <NavItem icon={<Activity size={15} />} label="Events"           active={active === "events"} onClick={() => setActive("events")} />
           <NavItem icon={<Puzzle size={15} />}   label="CRDs"             active={active === "crd"}    onClick={() => setActive("crd")} />
@@ -323,73 +291,6 @@ export function Sidebar({
           <NavItem icon={<GitBranch size={15} />} label="Flux Kustomizations" active={active === "flux-ks"}      onClick={() => setActive("flux-ks")} />
           <NavItem icon={<GitBranch size={15} />} label="Flux HelmReleases"   active={active === "flux-hr"}      onClick={() => setActive("flux-hr")} />
         </SidebarSection>
-
-        {/* Namespace management */}
-        {onCreateNamespace && (
-          <SidebarSection
-            label="Namespaces"
-            action={
-              <button
-                onClick={() => { if (nsReason) return; onCreateNamespace?.(); }}
-                {...(nsReason ? disabledAttrs(nsReason) : { title: "Create namespace" })}
-                className={`h-5 w-5 rounded-sm flex items-center justify-center text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors ${nsReason ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                <Plus size={12} />
-              </button>
-            }
-          >
-            <div onMouseLeave={() => setHoveredNs(null)}>
-              {_namespaces.map((ns) => (
-                <div
-                  key={ns}
-                  className="flex items-center gap-1 mx-2 pr-1"
-                  onMouseEnter={() => setHoveredNs(ns)}
-                >
-                  <button
-                    onClick={() => _setNs(ns)}
-                    className={`flex-1 flex items-center h-6 px-2 rounded-md text-[11.5px] mono transition-colors text-left ${
-                      _ns === ns ? "bg-accent/10 text-ink" : "text-mute hover:bg-surface-tint/4 hover:text-ink"
-                    }`}
-                  >
-                    {ns}
-                  </button>
-                  {onDeleteNamespace && ns !== "default" && ns !== "kube-system" && ns !== "kube-public" && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (nsReason) return; setNsDeleteError(""); setNsToDelete(ns); }}
-                      {...(nsReason ? disabledAttrs(nsReason) : { title: `Delete namespace ${ns}` })}
-                      className={`h-5 w-5 rounded flex items-center justify-center transition-colors focus-visible:visible ${
-                        hoveredNs === ns
-                          ? "visible text-dim hover:text-bad hover:bg-bad/10"
-                          : "invisible"
-                      } ${nsReason ? "opacity-50 cursor-not-allowed" : ""}`}
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </SidebarSection>
-        )}
-
-        {/* Delete namespace confirmation */}
-        <ConfirmModal
-          contextLabel={identity.label}
-          contextColor={identity.color}
-          context={identity.context}
-          kubectlEquivalent={nsToDelete ? deleteNamespaceEquiv({ context: currentContext, name: nsToDelete }) : null}
-          open={nsToDelete !== null}
-          title={`Delete namespace ${nsToDelete ?? ""}`}
-          description="Deletes the namespace and everything in it. This can't be undone."
-          confirmLabel="Delete namespace"
-          destructive
-          requireTyping={nsToDelete ?? undefined}
-          requireTypingLabel="Type the namespace name to confirm"
-          status={nsDeleteError ? { tone: "error", text: nsDeleteError } : null}
-          onConfirm={handleDeleteNs}
-          onCancel={() => { setNsToDelete(null); setNsDeleteError(""); }}
-          isPending={nsDeletePending}
-        />
 
       </div>
 

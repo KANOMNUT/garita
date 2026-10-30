@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery, type QueryClient } from "@tanstack/react-query";
-import { useRef, useEffect, useSyncExternalStore } from "react";
+import { useRef, useEffect, useState, useSyncExternalStore } from "react";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke, Channel } from "@tauri-apps/api/core";
@@ -19,11 +19,12 @@ import type {
   EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow,
   DrainPreview, EvictionResult, LogStreamEvent, NeatYaml, PropagationPolicy,
   LaunchArgs, CliStatus, YamlSavePreview, HelmUpgradePreview, LogSettings, AppLogLevel, JournalEntry, WhoCanResult, RuleGrant, UnusedReport, DeprecationReport, ResourceMap, NetpolModel,
-  ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
+  NamespaceRow, ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
 } from "../types/k8s";
 import { METRIC_RANGES, rangeWindow, samePlotExceptRange, targetKey } from "../utils/observability";
 import { newUsageHistory, recordUsage, type UsageHistory } from "../utils/rightSizing";
 import { RESOURCE_QUERY_KEY } from "../utils/resourceQueryKey";
+import { isTerminating, namespaceNames } from "../utils/namespaces";
 import { assertWritable, READ_ONLY_BLOCKS_SHELL } from "../utils/guardrails";
 import {
   canCheck, DEFAULT_PREFS, parsePrefs, reduce, UPDATES_KEY, updateMode,
@@ -149,12 +150,36 @@ export function useSetKubeconfigEnabled() {
 
 // ─── Namespaces ──────────────────────────────────────────────────────────────
 
-export function useNamespaces(context: string) {
-  return useQuery<string[], Error>({
-    queryKey: ["namespaces", context],
-    queryFn: () => invoke<string[]>("list_namespaces", { context }),
+// ONE query for every namespace consumer: key ["namespaces", ctx], data NamespaceRow[]. Every reader spreads
+// namespaceRowsQuery, so no queryFn on that key can put another shape (names, say) into the cache that the
+// picker and the Namespaces page read as rows. The names-only readers add a `select`.
+export const namespaceRowsQuery = (context: string) => ({
+  queryKey: ["namespaces", context] as const,
+  queryFn: () => invoke<NamespaceRow[]>("list_namespace_rows", { context }),
+  staleTime: 60_000,
+});
+
+/**
+ * Rows for the Namespaces page (`poll`: 5 s while any row is Terminating, else 30 s) and the picker
+ * (no interval). Only the page polls, so the always-mounted observers in App and the forms never start
+ * app-wide polling.
+ */
+export function useNamespaceRows(context: string, poll?: boolean) {
+  return useQuery<NamespaceRow[], Error>({
+    ...namespaceRowsQuery(context),
     enabled: !!context,
-    staleTime: 60_000,
+    refetchInterval: poll
+      ? (query) => (query.state.data?.some(isTerminating) ? 5_000 : 30_000)
+      : false,
+  });
+}
+
+/** Names only: the same query as `useNamespaceRows` with a `select`, so the form and page call sites keep their shape. */
+export function useNamespaces(context: string) {
+  return useQuery<NamespaceRow[], Error, string[]>({
+    ...namespaceRowsQuery(context),
+    enabled: !!context,
+    select: namespaceNames,
   });
 }
 
@@ -376,8 +401,13 @@ export function usePodMetricsHistory(context: string, namespace: string) {
   // name collided across namespaces when the picker is "all". Same 20-sample ring as before.
   const history = useRef<UsageHistory>(newUsageHistory());
 
+  const [, setSamples] = useState(0);
   useEffect(() => {
-    if (result.data) recordUsage(history.current, result.data);
+    if (!result.data) return;
+    recordUsage(history.current, result.data);
+    // The rings are mutated in place: this render is what shows the new sample (otherwise the
+    // render that receives the metrics still reads an empty ring and a cell keeps its "req" label).
+    setSamples((n) => n + 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.dataUpdatedAt]);
 
@@ -476,6 +506,10 @@ export function useApplyResource() {
       invokeWrite<void>("apply_resource_yaml", { context, namespace, resourceType, name, yaml }),
     onSuccess: (_d, { resourceType, context, namespace }) => {
       qc.invalidateQueries({ queryKey: [resourceType, context, namespace] });
+      // The list key, as a prefix like useDeleteResource: the line above matches no list key for most kinds, so a saved
+      // list stayed stale until its next poll. Active queries only refetch.
+      const listKey = RESOURCE_QUERY_KEY[resourceType as ResourceType];
+      if (listKey) qc.invalidateQueries({ queryKey: [listKey, context] });
       qc.invalidateQueries({ queryKey: ["resource-yaml"] });
     },
   });
@@ -1174,6 +1208,18 @@ export function useArgoCdApps(context: string) {
   });
 }
 
+/**
+ * The Applications list's cached rows, never fetched or polled from here (`enabled: false`: this observer only reads the
+ * cache). App uses it so the open panel follows the list; `useArgoCdApps` stays the only poller.
+ */
+export function useCachedArgoCdApps(context: string) {
+  return useQuery<ArgoCdApp[], Error>({
+    queryKey: ["argocd-apps", context],
+    queryFn: () => invoke<ArgoCdApp[]>("list_argocd_apps", { context }),
+    enabled: false,
+  });
+}
+
 export function useSyncArgoCdApp() {
   const qc = useQueryClient();
   return useMutation<string, Error, { context: string; namespace: string; name: string; prune?: boolean; dryRun?: boolean; force?: boolean; revision?: string }>({
@@ -1700,6 +1746,7 @@ export const RBAC_RESOURCE: Partial<Record<ResourceType, { group: string; resour
   rq: { group: "", resource: "resourcequotas" },
   lr: { group: "", resource: "limitranges" },
   nodes: { group: "", resource: "nodes" },
+  ns: { group: "", resource: "namespaces" },
   events: { group: "", resource: "events" },
   crd: { group: "apiextensions.k8s.io", resource: "customresourcedefinitions" },
   pc: { group: "scheduling.k8s.io", resource: "priorityclasses" },
@@ -2182,12 +2229,8 @@ export function fetchNamespacesOrNull(qc: QueryClient, context: string): Promise
   // retry: false (the client default is 2) and a ~3 s cap: a slow cluster must not stall the launch (fail open).
   const timeout = new Promise<null>((r) => setTimeout(() => r(null), 3000));
   const fetch = qc
-    .fetchQuery<string[], Error>({
-      queryKey: ["namespaces", context],
-      queryFn: () => invoke<string[]>("list_namespaces", { context }),
-      staleTime: 60_000,
-      retry: false,
-    })
+    .fetchQuery<NamespaceRow[], Error>({ ...namespaceRowsQuery(context), retry: false })
+    .then(namespaceNames)
     .catch(() => null);
   return Promise.race([fetch, timeout]);
 }

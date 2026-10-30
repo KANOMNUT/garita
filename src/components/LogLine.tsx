@@ -99,7 +99,7 @@ export const LogLine = memo(function LogLine({
           </span>
         ))}
         {summary.fields.some((f) => f.long) && !expanded && (
-          <button type="button" onClick={onToggleExpanded} className="ml-2 text-[10px] text-accent hover:underline">Show full value</button>
+          <button type="button" onClick={onToggleExpanded} className="ml-2 rounded-xs text-[10.5px] text-accent hover:underline outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70">Show full value</button>
         )}
       </>
     );
@@ -131,7 +131,7 @@ export const LogLine = memo(function LogLine({
             onClick={onToggleExpanded}
             aria-expanded={expanded}
             aria-label={expanded ? "Collapse JSON" : "Expand JSON"}
-            className="mr-1 text-[9.5px] text-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-accent"
+            className="mr-1 rounded-xs text-[10.5px] text-mute opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-accent outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
           >
             {"{}"}
           </button>

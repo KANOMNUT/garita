@@ -28,8 +28,11 @@ interface LogSourceBarProps {
   timestampsLockedReason?: string;
 }
 
-const selectCls =
-  "h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[11px] mono text-ink focus:outline-hidden focus:ring-accent/40 disabled:opacity-50";
+// A field: a visible boundary (`ring-mute/70`, docs/ux/24 Q14 A) and a focus ring of at least 3:1 (X-8). The select
+// labels are words, so they are sans; only the custom amount (a number) adds `mono`.
+const selectBase =
+  "h-6 px-2 rounded-sm bg-card/80 ring-1 text-[11px] text-ink focus:outline-hidden focus:ring-2 focus:ring-accent/70 disabled:opacity-50";
+const selectCls = `${selectBase} ring-mute/70`;
 
 export function LogSourceBar({
   range, onRangeChange, timestamps, onTimestampsChange, zone, onZoneChange, leading, trailing, disabledRangeReason,
@@ -66,8 +69,8 @@ export function LogSourceBar({
   return (
     <div role="group" aria-label="Source: changes reload the log" className="flex flex-col gap-1">
       <div className="flex items-baseline gap-1.5">
-        <span className="text-[9.5px] uppercase tracking-wider font-semibold text-dim">Source</span>
-        <span className="text-[10px] text-dim">Reloads the log</span>
+        <span className="text-[10.5px] uppercase tracking-wider font-semibold text-mute">Source</span>
+        <span className="text-[10.5px] text-mute">Reloads the log</span>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         {leading}
@@ -97,7 +100,7 @@ export function LogSourceBar({
               onKeyDown={(e) => {
                 if (e.key === "Enter") commitCustom(draftValue, draftUnit);
               }}
-              className={`${selectCls} w-14 ${customError ? "ring-bad/40" : ""}`}
+              className={`${selectBase} mono w-14 ${customError ? "ring-bad/40" : "ring-mute/70"}`}
             />
             <select
               aria-label="Custom range unit"

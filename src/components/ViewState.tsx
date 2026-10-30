@@ -46,7 +46,7 @@ export function ViewState({ state, things, group, message, emptyIcon, onRetry }:
     <div className="py-16 flex flex-col items-center gap-3 text-center">
       <div className="text-dim">{icon}</div>
       <p className="text-[13px] text-mute">{title}</p>
-      {body && <p className="text-[11.5px] text-dim max-w-md whitespace-pre-wrap">{body}</p>}
+      {body && <p className="text-[11.5px] text-mute max-w-md whitespace-pre-wrap">{body}</p>}
       {retry && (
         <button onClick={onRetry} className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25">
           Retry

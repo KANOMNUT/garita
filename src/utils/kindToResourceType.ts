@@ -33,7 +33,7 @@ export const RESOURCE_LABELS: Record<ResourceType, string> = {
   svc: "services", ing: "ingresses", gw: "gateways", httproute: "httproutes",
   cm: "configmaps", sec: "secrets", pvc: "pvcs", pv: "persistentvolumes", sc: "storageclasses",
   cert: "certificates", rq: "resourcequotas", lr: "limitranges",
-  nodes: "nodes", events: "events", crd: "customresourcedefinitions", pc: "priorityclasses",
+  nodes: "nodes", ns: "namespaces", events: "events", crd: "customresourcedefinitions", pc: "priorityclasses",
   netpol: "networkpolicies", sa: "serviceaccounts", roles: "roles", croles: "clusterroles",
   rbindings: "rolebindings", crbindings: "clusterrolebindings", helm: "helm releases",
   argocd: "argocd applications", "flux-ks": "flux kustomizations", "flux-hr": "flux helmreleases",

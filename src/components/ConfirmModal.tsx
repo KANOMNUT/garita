@@ -10,11 +10,12 @@ import { KubectlEquivalent } from "./KubectlEquivalent";
 // §2.3). Exported so PodTable's separate bespoke bulk-confirm dialog can render the
 // identical badge instead of duplicating this markup — that dialog isn't built on
 // top of ConfirmModal, but the guard still belongs on it.
-export function ClusterBadge({ label, color }: { label?: string; color?: IdentityRole }) {
+/** `inline`: the badge sits beside the title in one row (no bottom margin) instead of above it. */
+export function ClusterBadge({ label, color, inline }: { label?: string; color?: IdentityRole; inline?: boolean }) {
   if (!label) return null;
   const c = color ? CLUSTER_COLOR_CLASSES[color] : null;
   return (
-    <div className={`inline-flex items-center gap-1.5 mb-3 max-w-full min-w-0 px-2 py-1 rounded-md bg-surface-tint/3 ring-1 ${c?.chipRing ?? "ring-edge"}`}>
+    <div className={`inline-flex items-center gap-1.5 ${inline ? "" : "mb-3 "}max-w-full min-w-0 px-2 py-1 rounded-md bg-surface-tint/3 ring-1 ${c?.chipRing ?? "ring-edge"}`}>
       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${c?.dot ?? "bg-dim"}`} />
       <span className={`mono text-[10.5px] truncate ${c?.text ?? "text-mute"}`} title={label}>{label}</span>
     </div>

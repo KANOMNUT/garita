@@ -1,5 +1,5 @@
 # Publishes the landing page to GitHub Pages: the root index.html, exactly the
-# same-site files it loads (today site/demo.png) and the Scoop manifest rendered
+# same-site files it loads (the PNGs under site/) and the Scoop manifest rendered
 # from the latest published release at scoop/garita.json. Nothing else in the
 # repository is published. Fails before deploying if a file the page loads is
 # missing, the Scoop manifest cannot be rendered or any download link does not

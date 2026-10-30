@@ -79,7 +79,8 @@ export function mergeTimeline({ kind, events, revisions, helm, argocd, journal }
       out.push(entry({
         // `revision` is already the display form (a 40-hex SHA is shortened by the backend); never cut it again.
         id: `argocd:${a.id}`, ts: a.deployed_at_iso, source: "argocd", title: a.revision ? `ArgoCD synced to ${a.revision}` : "ArgoCD synced",
-        detail: [a.message, a.author && `by ${a.author}`].filter(Boolean).join(". "),
+        // `message` is the whole commit message (History shows all of it); the timeline stays compact with the first line.
+        detail: [a.message.split(/\r?\n/, 1)[0], a.author && `by ${a.author}`].filter(Boolean).join(". "),
       }));
     }
   }

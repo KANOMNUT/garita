@@ -149,9 +149,9 @@ export function ResourceCreator({ open, onClose, context, resourceType, namespac
     >
       <div className="max-w-3xl w-full mx-4 bg-panel rounded-xl ring-1 ring-edge shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
-          <div className="min-w-0">
-            <ClusterBadge label={identity.label} color={identity.color} />
-            <span className="text-[13px] font-semibold text-ink">{title}</span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <ClusterBadge label={identity.label} color={identity.color} inline />
+            <span className="text-[13px] font-semibold text-ink whitespace-nowrap shrink-0">{title}</span>
           </div>
           <div className="flex items-center gap-2">
             {Form && (

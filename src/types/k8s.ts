@@ -155,6 +155,10 @@ export interface Pod {
   ephemeral_containers?: EphemeralContainerInfo[];
   /** spec.priorityClassName (v1.4.0). Optional so MOCK_PODS compiles. */
   priority_class?: string | null;
+  /** spec.serviceAccountName; null when absent. Optional so fixtures compile. */
+  service_account?: string | null;
+  /** status.conditions in API order (shape shared with get_workload_conditions). Optional so fixtures compile. */
+  conditions?: ResourceCondition[];
 }
 
 // v1.3.1 — ephemeral debug containers (mirrors pods.rs EphemeralContainerInfo).
@@ -492,6 +496,8 @@ export interface ArgoCdApp {
   last_commit: string;
   last_synced_at: string;
   operation_phase: string;
+  /** status.operationState.message, for every phase; "" when absent. Trimmed, control characters other than newline and tab removed, cut at 2000 characters with "…" (operation_message_display in argocd.rs). */
+  operation_message: string;
   commit_message: string;
   commit_author: string;
   history?: ArgoCdHistoryEntry[];
@@ -558,13 +564,13 @@ export type ResourceType =
   | "pods" | "deploy" | "sts" | "ds" | "cron" | "jobs" | "hpa" | "pdb" | "rs"
   | "svc" | "ing" | "netpol" | "gw" | "httproute" | "ep" | "eps"
   | "cm" | "sec" | "pv" | "pvc" | "sc" | "cert" | "rq" | "lr" | "vs"
-  | "nodes" | "events" | "crd" | "pc" | "mwc" | "vwc"
+  | "nodes" | "events" | "crd" | "pc" | "mwc" | "vwc" | "ns"
   | "sa" | "roles" | "croles" | "rbindings" | "crbindings"
   | "helm" | "argocd" | "flux-ks" | "flux-hr"
   | "argo-appsets" | "argo-projects" | "argo-repos"
   | "crd-instances";
 
-export type PodStatus = "All" | "Running" | "Pending" | "CrashLoopBackOff" | "ImagePullBackOff" | "Terminating" | "Succeeded";
+export type PodStatus = "All" | "Running" | "Pending" | "CrashLoopBackOff" | "ImagePullBackOff" | "Terminating" | "Succeeded" | "Failed";
 
 // ─── Selected Resource (discriminated union for detail panel) ─────────────────
 
@@ -608,7 +614,8 @@ export type SelectedResource =
   | { kind: "rs";  item: ReplicaSetRow; ns: string }
   | { kind: "mwc"; item: WebhookConfigRow }
   | { kind: "vwc"; item: WebhookConfigRow }
-  | { kind: "vs";  item: VolumeSnapshotRow; ns: string };
+  | { kind: "vs";  item: VolumeSnapshotRow; ns: string }
+  | { kind: "ns";  item: NamespaceRow };
 
 // ─── v0.4.0 additions ────────────────────────────────────────────────────────
 
@@ -628,6 +635,23 @@ export interface ResourceCondition {
   reason: string;
   message: string;
   last_transition: string;
+}
+
+/** Mirrors namespaces.rs NamespaceRow. */
+export interface NamespaceRow {
+  name: string;
+  /** status.phase verbatim: "Active" | "Terminating"; "" when the API sent none. */
+  phase: string;
+  /** Formatted age ("5d", "3h12m"); "—" when unknown. */
+  age: string;
+  /** metadata.labels, keys sorted. */
+  labels: Record<string, string>;
+  /** metadata.deletionTimestamp, RFC 3339; null when not being deleted. */
+  deletion_timestamp: string | null;
+  /** status.conditions in API order. */
+  conditions: ResourceCondition[];
+  /** spec.finalizers in API order. */
+  finalizers: string[];
 }
 
 export interface ServiceAccountRow {

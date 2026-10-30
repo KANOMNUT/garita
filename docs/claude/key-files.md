@@ -8,14 +8,21 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions |
-| `src/components/Sidebar.tsx` | Nav, namespace list, context chip, Custom Resources tree |
-| `src/components/TopBar.tsx` | Draggable header, search, manual refresh, `RESOURCE_LABELS` |
-| `src/components/PodTable.tsx` | Pod list: sort, status tabs, restart pill, bulk ops, CPU/MEM sparklines |
-| `src/components/DetailPanel.tsx` | Pod panel (Overview / Summary / Containers / Events / Logs / Shell / YAML / Metrics / Forward). Owns `useDebugSession` and `logView`. Content keyed `pod.name + "-" + tab` (remount on pod or tab change) |
+| `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions; `panelResource` swaps the selected snapshot for the live row for `ns` and `argocd` (App adds no polling; the `argocd` observer is disabled and only reads the list's cache) |
+| `src/main.tsx` / `src/components/ErrorBoundary.tsx` | `main.tsx` mounts `<ErrorBoundary><App /></ErrorBoundary>` inside `StrictMode` after `initAppearance()`. `ErrorBoundary` is the app's one class component: a render error shows a full-window "Something went wrong" card with a Reload button, never the message, stack or data. See `ui.md` → Error boundary |
+| `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"), context chip, Custom Resources tree. No namespace list |
+| `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu (a `Popover` user) |
+| `src/components/NamespacePicker.tsx` | TopBar namespace picker: trigger + `Popover`, filter, "Terminating" tag, "Manage namespaces" link. Reads `useNamespaceRows`; no writes. See `ui.md` → Namespaces: picker and page |
+| `src/components/DeleteNamespaceConfirm.tsx` | The typed-name delete confirm for a namespace; one instance hosted in `App.tsx`, opened by the Namespaces page row trash and the panel header trash |
+| `src/utils/namespaces.ts` | Pure (with `namespaces.test.ts`): `PROTECTED_NAMESPACES`, `namespaceDeleteReason` and the reason strings, `isTerminating`, `namespaceRows` (picker rows), `namespaceNames`, `chipLabels`, `deletingFor` |
+| `src/components/PodTable.tsx` | Pod list: sort (CPU and Memory by the displayed value), status filter with counts, restart pill, bulk ops (Copy names keeps the selection), CPU/MEM bars and sparklines; Labels and Sort are `Popover` menus |
+| `src/components/DetailPanel.tsx` | Pod panel (Summary / Containers / Events / Logs / Shell / YAML / Metrics / Forward; Summary is the merged Overview and holds Metadata, Conditions, Container States, Labels). Owns `useDebugSession` and `logView`. Content keyed `pod.name + "-" + tab` (remount on pod or tab change) |
+| `src/components/EventsTabContent.tsx` / `src/components/ConditionsTable.tsx` | Shared panel bodies: the Events tab (loading, error with Retry, empty, Warnings-only filter; used by `ResourceDetailPanel` and the Pod panel) and the Summary Conditions card (workloads and pods). See `pods-logs.md` → Pod panel and Pods table |
+| `src/hooks/useCopyFeedback.ts` | `useCopyFeedback(ms = 1500)`: clipboard copy with an inline `idle` / `copied` / `failed` state; no toast (`ui.md`, X-6) |
+| `src/utils/podTableView.ts` | Pure Pod table and panel rules, tested in `podTableView.test.ts`: `barDenominator`, `displayedUsage`, `usageLabel`, `readyFraction`, `isNotReady`, `statusCounts`, `validPort` |
 | `src/components/ResourceDetailPanel.tsx` | Panel for every other kind; tabs from `tabsFor()`. Default Overview / Summary / Events / YAML; ArgoCD Overview / Resources / History / Events; Helm Overview / Values / History / Events; workloads add Pods, Logs, Relationships; TLS Secrets add TLS; `Timeline` (v2.2.0) is added for `deploy`, `sts`, `ds`, `helm`, `argocd`. Hosts the editor pencil and delete |
 | `src/components/ResourceViews.tsx` | Table views for non-pod kinds |
-| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them) |
+| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them). Per-row `deleteReason` / function `deleteLabel` for the row trash; a forbidden list error renders the `ViewState` no-access card. A sortable header is a button inside the `<th>`; the sorted column's `<th>` carries `aria-sort` |
 | `src/utils/tableRows.ts` | Pure `searchRows`, `sortRows`, `shownRows`, `rangeSelect`, `SortState` (v2.3.1): the table's one search predicate and comparator, so `ArgoCDView` selects exactly the rows the table shows. See `argocd.md` |
 | `src/components/ConfirmModal.tsx` | Shared confirm dialog + `ClusterBadge`. See Confirm-on-Destructive |
 | `src/components/NodeDrainDialog.tsx` | Drain dialog on `ConfirmModal` `lg`, Override band, nested force-delete dialog |
@@ -25,6 +32,10 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/launchArgs.ts` | Pure plan for forwarded launch args (strip lines, deferral, namespace check) |
 | `src/utils/cliStatus.ts` | Pure model of `CliStatus` for Settings → Command line |
 | `src/utils/drain.ts` | Pure drain helpers; owns the `deleting` / `force-deleted` row states (never in `EvictionOutcome`) |
+| `src/utils/podStatus.ts` | `POD_STATUS_STYLE`, `podStatusStyle`: the one pod status vocabulary and its token classes, read by `PodTable`, `DetailPanel`, the workload Pods tab and the Node panel's pod list. See `pods-logs.md` |
+| `src/utils/argoStatus.ts` | Pure ArgoCD status logic (with `argoStatus.test.ts`): the Health, Sync and operation pill tables (`argoHealthPill`, `argoSyncPill`, `argoPhasePill`), the last operation's Reason / Message box (`argoOperationNote`, `isArgoOperationMessageCut`), `isArgoHealthy`, the Resources tab filter groups (`filterArgoResources`, `argoHealthCount`, `argoSyncCount`, `visibleHealthFilters`, `ARGO_CHIP_CLS`) and row order (`argoSortScore`, `isDegradedOrMissing`). See `argocd.md` |
+| `src/components/ArgoGlyph.tsx` | `ArgoGlyph({ icon })`: the glyph of an ArgoCD status pill (`ArgoPill.icon`), `aria-hidden`, with the Pause icon for Suspended (the `⏸` character can render as a colour emoji). Used by `ResourceDetailPanel.tsx` (header chips, Resources tab filter chips and rows) and the Applications list in `ResourceViews.tsx`. See `argocd.md` |
+| `src/utils/argoHistory.ts` | `liveHistoryId(history, lastCommit)` (with `argoHistory.test.ts`): the History entry that is running now, by exact match of `ArgoCdHistoryEntry.revision` to `ArgoCdApp.last_commit` (highest `id`; none for `""` or `—`). Drives the neutral **Current** chip. See `argocd.md` |
 | `src/utils/modalLayer.ts` | `useModalLayer`, `isModalOpen`, `isEditableTarget`. See Keyboard layering |
 | `src/components/Popover.tsx` | The one popover primitive; registers a modal layer |
 | `src/components/ObservabilityDialog.tsx` | v2.3.0 per-cluster observability dialog (discovery, Test, Save) and its `ObservabilityDialogHost`. See `pods-logs.md` (External observability), `ui.md` |
@@ -44,6 +55,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/components/edit/` | Edit forms: `ResourceEditor.tsx`, `patch.ts` (RFC 7386, no React), `quantity.ts`, `transforms.ts`, `registry.ts` (`EDIT_FORM`), `forms/*.tsx`. 19 registrations |
 | `src/components/ContextSwitcher.tsx` | Context switcher, identity editor, guardrails |
 | `src/components/NodeStrip.tsx` / `ClusterOverview.tsx` | Node usage bars; cluster summary |
+| `src/utils/nodeStrip.ts` | `stripColumns`, `CARD_MIN_PX`: the node strip's six columns with a minimum card width (`pods-logs.md` → NodeStrip layout) |
 | `src/components/MergeFromFileModal.tsx` / `src/utils/mergePreview.ts` | Merge from file; `previewRows` (React-free, arrays `"replaced"`) |
 | `src/components/HelmInstallModal.tsx` | `helm install`; Helm is not a `CreatableKind` |
 | `src/utils/clusterIdentity.ts` | `localStorage["cluster-identity"]`: colour (`IdentityRole`, legacy names via `LEGACY_IDENTITY_ALIAS`), label, guardrails; `getGuardrailSettings` for the backstop |
@@ -96,7 +108,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/cli.rs` | `get_cli_status`, `install_cli_command`; pure `decide_status`, `plan_install` |
 | `src-tauri/windows/hooks.nsh`, `path.wxs` | NSIS user-PATH hooks and the MSI system-PATH fragment (wired in `tauri.conf.json` `bundle.windows`) |
 | `site/scoop/garita.json` | Scoop manifest template; `pages.yml` renders it from the latest release |
-| `src-tauri/src/commands/pods.rs` | Pods (`containers_status`, `ephemeral_containers`, `default_container` annotation verbatim), `get_pod` (404 → `None`), logs and `stream_pod_logs`, `delete_resource`, `get_resource_yaml` / `_neat`, `apply_resource_yaml` / `preview_resource_yaml` via one `replace_resource_yaml`, `start_debug_container` (only `Patch::Strategic`), `list_pod_metrics` |
+| `src-tauri/src/commands/pods.rs` | Pods (`containers_status`, `ephemeral_containers`, `default_container` annotation verbatim, `service_account` and `conditions` for the Pod Summary), `get_pod` (404 → `None`), logs and `stream_pod_logs`, `delete_resource`, `get_resource_yaml` / `_neat`, `apply_resource_yaml` / `preview_resource_yaml` via one `replace_resource_yaml`, `start_debug_container` (only `Patch::Strategic`), `list_pod_metrics` |
 | `src-tauri/src/commands/nodes.rs` | Nodes (CPU%/MEM% of allocatable), cordon/uncordon/delete/taints. No `drain_node` |
 | `src-tauri/src/commands/drain.rs` | `preview_node_drain`, `evict_pod` (Eviction API only) |
 | `src-tauri/src/commands/deployments.rs` | `list_deployments` only |
@@ -116,9 +128,9 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/apply_file.rs` | Merge from file; `split_yaml_documents`; plurals via discovery |
 | `src-tauri/src/commands/access.rs` | `can_i` (fails open) |
 | `src-tauri/src/commands/admission.rs` | Mutating/validating webhooks; `WebhookConfigRow.matches` |
-| `src-tauri/src/commands/namespaces.rs` | Namespaces |
+| `src-tauri/src/commands/namespaces.rs` | Namespaces: `list_namespace_rows` (`NamespaceRow`: phase, age, labels, deletion time, conditions, finalizers) behind the page, the picker and every names reader |
 | `src-tauri/src/commands/cluster_info.rs` | Cluster metadata, `check_cluster_access`, `list_events`, `get_resource_events(…, kind: Option<String>)` |
-| `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()` |
+| `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()`, `short_revision` / `last_commit_display` (revision display strings), `operation_message_display` (the last operation's message, capped at 2000 characters) |
 | `src-tauri/src/commands/flux.rs`, `gateway.rs`, `certmanager.rs` | CRD lists via `DynamicObject`; empty on 404 |
 | `src-tauri/src/commands/search.rs` | `search_resources` |
 | `src-tauri/src/commands/graph.rs` | `get_resource_graph` |

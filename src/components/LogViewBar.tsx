@@ -33,6 +33,11 @@ interface LogViewBarProps {
   onEscapeEmpty?: () => void;
 }
 
+// The one focus-visible ring of the app's controls (docs/ux/24 X-8: at least 3:1 against the panel in both themes).
+const FOCUS_RING = "outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70";
+// A text field: a visible boundary (Q14 A, `ring-mute/70`) and the same ring on focus.
+const FIELD = "ring-1 ring-mute/70 focus:outline-hidden focus:ring-2 focus:ring-accent/70";
+
 const levelClass: Record<LogLevel, string> = {
   ERROR: "bg-bad/20 text-bad ring-bad/40",
   WARN: "bg-warn/20 text-warn ring-warn/40",
@@ -44,7 +49,7 @@ const levelClass: Record<LogLevel, string> = {
 function Toggle({ label, active, onClick, title }: { label: string; active: boolean; onClick: () => void; title?: string }) {
   return (
     <button type="button" onClick={onClick} title={title} aria-pressed={active}
-      className={`mono text-[10.5px] px-1.5 py-0.5 rounded-sm ring-1 transition-colors ${active ? "bg-accent/20 text-accent ring-accent/40" : "text-dim ring-edge hover:text-ink"}`}>
+      className={`mono text-[10.5px] px-1.5 py-0.5 rounded-sm ring-1 transition-colors ${FOCUS_RING} ${active ? "bg-accent/20 text-accent ring-accent/30" : "text-mute ring-edge hover:text-ink"}`}>
       {label}
     </button>
   );
@@ -107,16 +112,16 @@ export function LogViewBar({
 
   const levelButtons = (
     <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Levels">
-      <span className="text-[10px] text-dim">Levels</span>
+      <span className="text-[10.5px] text-mute">Levels</span>
       {ALL_LEVELS.map((level) => {
         const on = !view.hiddenLevels.includes(level);
         return (
           <button key={level} type="button" onClick={() => setView((old) => toggleLevel(old, level))}
             aria-pressed={on} title={`${LEVEL_WORD[level]}: ${counts[level]} lines${on ? "" : " (hidden)"}`}
-            className={`mono text-[10.5px] px-1.5 py-0.5 rounded-sm ring-1 transition-colors ${on ? levelClass[level] : "text-dim ring-edge hover:text-ink"}`}>
+            className={`mono text-[10.5px] px-1.5 py-0.5 rounded-sm ring-1 transition-colors ${FOCUS_RING} ${on ? levelClass[level] : "text-mute ring-edge hover:text-ink"}`}>
             <span className="mr-1">{LEVEL_GLYPH[level]}</span>
             <span className="hidden sm:inline">{LEVEL_WORD[level]}</span><span className="sm:hidden">{LEVEL_LETTER[level]}</span>
-            <span className="ml-1 text-[9.5px] opacity-80">{counts[level]}</span>
+            <span className="ml-1 text-[10.5px] opacity-80">{counts[level]}</span>
           </button>
         );
       })}
@@ -128,14 +133,14 @@ export function LogViewBar({
       <label className="flex items-center gap-1.5 text-[11px] text-mute">
         Exclude
         <input value={view.exclude} onChange={(e) => patch({ exclude: e.target.value })} onKeyDown={onFieldKey("exclude")}
-          placeholder="text or regex" className="h-6 min-w-0 flex-1 px-2 rounded-sm bg-card/80 ring-1 ring-edge mono text-[11px] text-ink placeholder:text-dim focus:outline-hidden focus:ring-accent/40" />
+          placeholder="text or regex" className={`h-6 min-w-0 flex-1 px-2 rounded-sm bg-card/80 mono text-[11px] text-ink placeholder:text-mute ${FIELD}`} />
       </label>
       <label className="flex items-center gap-1.5 text-[11px] text-mute">
         Highlight
         <input value={view.highlight} onChange={(e) => patch({ highlight: e.target.value })} onKeyDown={onFieldKey("highlight")}
-          placeholder="text or regex" className="h-6 min-w-0 flex-1 px-2 rounded-sm bg-card/80 ring-1 ring-edge mono text-[11px] text-ink placeholder:text-dim focus:outline-hidden focus:ring-accent/40" />
-        {activeMatch && <span className="mono text-[10px] text-dim shrink-0">{activeMatch.index} of {activeMatch.total}</span>}
-        {view.highlight && <><button type="button" onClick={() => onStepMatch(-1)} title="Previous match" className="text-dim hover:text-ink">↑</button><button type="button" onClick={() => onStepMatch(1)} title="Next match" className="text-dim hover:text-ink">↓</button></>}
+          placeholder="text or regex" className={`h-6 min-w-0 flex-1 px-2 rounded-sm bg-card/80 mono text-[11px] text-ink placeholder:text-mute ${FIELD}`} />
+        {activeMatch && <span className="mono text-[10.5px] text-mute shrink-0">{activeMatch.index} of {activeMatch.total}</span>}
+        {view.highlight && <><button type="button" onClick={() => onStepMatch(-1)} title="Previous match" aria-label="Previous match" className={`text-mute hover:text-ink rounded-xs ${FOCUS_RING}`}>↑</button><button type="button" onClick={() => onStepMatch(1)} title="Next match" aria-label="Next match" className={`text-mute hover:text-ink rounded-xs ${FOCUS_RING}`}>↓</button></>}
       </label>
       <div className="flex flex-wrap items-center gap-1.5">
         <Toggle label=".* regex" active={view.regex} onClick={() => patch({ regex: !view.regex })} title="Treat Include, Exclude and Highlight as regular expressions." />
@@ -150,26 +155,25 @@ export function LogViewBar({
 
   return (
     <div ref={rootRef} className="flex flex-col gap-1.5 border-t border-edge-raw/60 pt-2" role="group" aria-label="View: filters the lines already loaded">
-      <div className="flex items-baseline gap-1.5"><span className="text-[9.5px] uppercase tracking-wider font-semibold text-dim">View</span><span className="text-[10px] text-dim">Filters loaded lines</span></div>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1.5 text-[11px] text-mute">
           Include
           <input ref={includeRef as RefObject<HTMLInputElement>} value={view.include} onChange={(e) => patch({ include: e.target.value })} onKeyDown={onFieldKey("include")}
-            placeholder="text or regex" className="h-6 w-32 max-w-[40vw] px-2 rounded-sm bg-card/80 ring-1 ring-edge mono text-[11px] text-ink placeholder:text-dim focus:outline-hidden focus:ring-accent/40" />
+            placeholder="text or regex" className={`h-6 w-32 max-w-[40vw] px-2 rounded-sm bg-card/80 mono text-[11px] text-ink placeholder:text-mute ${FIELD}`} />
         </label>
         {compact ? (
-          <div className="relative"><button ref={filterTriggerRef} type="button" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen}
-            className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono">Filters ({filtersCount(view, true)}) <ChevronDown size={10} className="inline" /></button>
-            <Popover open={filtersOpen} onClose={() => setFiltersOpen(false)} triggerRef={filterTriggerRef} label="Filters the lines already loaded" className="left-0 top-8 w-[min(300px,calc(100vw-3rem))] p-3 flex flex-col gap-2">{details}<button type="button" onClick={() => setView((old) => clearFilters(old))} className="self-end text-[10.5px] text-accent hover:underline">Clear all</button></Popover>
+          <div className="relative"><button ref={filterTriggerRef} type="button" onClick={() => setFiltersOpen((v) => !v)} aria-expanded={filtersOpen} aria-haspopup="dialog"
+            className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink mono ${FOCUS_RING}`}>Filters ({filtersCount(view, true)}) <ChevronDown size={10} aria-hidden className="inline" /></button>
+            <Popover open={filtersOpen} onClose={() => setFiltersOpen(false)} triggerRef={filterTriggerRef} label="Filters the lines already loaded" className="left-0 top-8 w-[min(300px,calc(100vw-3rem))] p-3 flex flex-col gap-2">{details}<button type="button" onClick={() => setView((old) => clearFilters(old))} className={`self-end text-[10.5px] text-accent hover:underline rounded-xs ${FOCUS_RING}`}>Clear all</button></Popover>
           </div>
         ) : <div className="flex min-w-[260px] flex-1 flex-col gap-1.5">{details}</div>}
       </div>
-      {(chips.length > 0 || extraChips) && <div className="flex flex-wrap items-center gap-1"><span className="text-[10px] text-dim">Active:</span>{chips.map((chip) => <button key={chip.id} type="button" onClick={() => setView((old) => removeChip(old, chip.id))} aria-label={`Remove filter: ${chip.label}`} className="mono text-[10px] px-1.5 py-0.5 rounded-sm bg-accent/10 ring-1 ring-accent/20 text-accent hover:bg-accent/20">{chip.label} ×</button>)}{extraChips}<button type="button" onClick={() => setView((old) => clearFilters(old))} className="ml-1 text-[10.5px] text-accent hover:underline">Clear all</button></div>}
+      {(chips.length > 0 || extraChips) && <div className="flex flex-wrap items-center gap-1"><span className="text-[10.5px] text-mute">Active:</span>{chips.map((chip) => <button key={chip.id} type="button" onClick={() => setView((old) => removeChip(old, chip.id))} aria-label={`Remove filter: ${chip.label}`} className={`mono text-[10.5px] px-1.5 py-0.5 rounded-sm bg-accent/10 ring-1 ring-accent/20 text-accent hover:bg-accent/20 ${FOCUS_RING}`}>{chip.label} ×</button>)}{extraChips}<button type="button" onClick={() => setView((old) => clearFilters(old))} className={`ml-1 text-[10.5px] text-accent hover:underline rounded-xs ${FOCUS_RING}`}>Clear all</button></div>}
       {notice && <p role="status" className="text-[10.5px] text-mute">{notice}</p>}
-      <p className="text-[10px] text-dim">Filters match the line text, including any JSON. The Kubernetes timestamp isn't searched.</p>
-      <div className="flex items-center gap-2 min-w-0"><span className="mono text-[10px] text-dim truncate">{countNow}</span><span role="status" aria-live="polite" className="sr-only">{announced}</span>{status && <span className="mono text-[10px] text-mute shrink-0">· {status}</span>}{trailing}<div className="flex-1" />
-        <div className="relative"><button ref={downloadTriggerRef} type="button" disabled={lines.length === 0} onClick={() => downloadItems ? setDownloadOpen((v) => !v) : onDownload(false)} className="h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink disabled:opacity-40 flex items-center gap-1 mono" title={`Downloads what ${PRODUCT_NAME} has loaded, not the full log.`}><Download size={11} /> Download {downloadItems && <ChevronDown size={10} />}</button>
-          {downloadItems && <Popover open={downloadOpen} onClose={() => setDownloadOpen(false)} triggerRef={downloadTriggerRef} label="Download logs" className="right-0 top-8 w-52 py-1">{downloadItems.map((item) => <button key={item.id} type="button" onClick={() => { onDownload(item.id === "visible"); setDownloadOpen(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-mute hover:bg-surface-tint/4 hover:text-ink">{item.label}</button>)}</Popover>}
+      {filtering && <p className="text-[10.5px] text-mute">Filters match the line text, including any JSON. The Kubernetes timestamp isn't searched.</p>}
+      <div className="flex items-center gap-2 min-w-0"><span className="mono text-[10.5px] text-mute truncate">{countNow}</span><span role="status" aria-live="polite" className="sr-only">{announced}</span>{status && <span className="mono text-[10.5px] text-mute shrink-0">· {status}</span>}{trailing}<div className="flex-1" />
+        <div className="relative"><button ref={downloadTriggerRef} type="button" disabled={lines.length === 0} onClick={() => downloadItems ? setDownloadOpen((v) => !v) : onDownload(false)} aria-haspopup={downloadItems ? "dialog" : undefined} aria-expanded={downloadItems ? downloadOpen : undefined} className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] text-mute hover:text-ink disabled:opacity-40 flex items-center gap-1 mono ${FOCUS_RING}`} title={`Downloads what ${PRODUCT_NAME} has loaded, not the full log.`}><Download size={11} aria-hidden /> Download {downloadItems && <ChevronDown size={10} aria-hidden />}</button>
+          {downloadItems && <Popover open={downloadOpen} onClose={() => setDownloadOpen(false)} triggerRef={downloadTriggerRef} label="Download logs" className="right-0 top-8 w-52 py-1">{downloadItems.map((item) => <button key={item.id} type="button" onClick={() => { onDownload(item.id === "visible"); setDownloadOpen(false); }} className="w-full px-3 py-1.5 text-left text-[11px] text-mute hover:bg-surface-tint/4 hover:text-ink outline-hidden focus-visible:bg-surface-tint/6 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70">{item.label}</button>)}</Popover>}
         </div>
       </div>
     </div>

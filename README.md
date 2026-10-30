@@ -4,7 +4,24 @@ Garita (gah-REE-tah) is the Spanish word for a fortress sentry box.
 
 A cross-platform desktop GUI for managing Kubernetes clusters, built with Tauri v2, React 18 and Rust. Every Kubernetes call goes from the Rust backend through kube-rs; there is no `kubectl` binary dependency.
 
-![Garita Pods view on a kind cluster](site/demo.png)
+![Garita's Pods view with sample data: summary cards, three node cards with CPU and memory bars, and a table of eleven pods with status, CPU and memory.](site/demo.png)
+
+*The Pods view, with sample data.*
+
+<table>
+<tr>
+<td align="center" valign="top" width="33%"><a href="site/full-namespaces.png"><img src="site/gallery-namespaces.png" width="260" alt="Garita's Namespaces page with sample data: the namespace legacy-batch is Terminating, and its side panel lists the conditions that keep it from being deleted."></a></td>
+<td align="center" valign="top" width="33%"><a href="site/full-pod.png"><img src="site/gallery-pod.png" width="260" alt="Garita's Pod panel with sample data: the Summary tab lists the pod's metadata, service account and conditions."></a></td>
+<td align="center" valign="top" width="33%"><a href="site/full-argocd.png"><img src="site/gallery-argocd.png" width="260" alt="Garita's ArgoCD application panel with sample data: Healthy and Synced chips side by side, then the sync options Prune, Dry run and Force with a line of help each, above the Sync, Refresh and Hard refresh buttons."></a></td>
+</tr>
+<tr>
+<td align="center" valign="top"><sub>A namespace stuck in Terminating, and why. Sample data.</sub></td>
+<td align="center" valign="top"><sub>The Pod panel's Summary: service account and conditions. Sample data.</sub></td>
+<td align="center" valign="top"><sub>ArgoCD: health and sync shown separately, sync options explained before you sync. Sample data.</sub></td>
+</tr>
+</table>
+
+<sub>All screenshots use sample data. Select one for the full screenshot.</sub>
 
 **Your kubeconfig is read-only to Garita.** It reads your default kubeconfig plus any kubeconfig files you import in-app, by file picker or by pasting YAML, both behind a preview of the contexts the file defines. Imported files are registered by path, never merged into `~/.kube/config`, and removing one deletes nothing from disk. Selecting a cluster in Garita does not change your `kubectl` default.
 

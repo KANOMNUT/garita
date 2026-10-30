@@ -49,7 +49,7 @@ function Strip({ step, line, extra, action, focusRef }: { step: StripStep; line:
     <div ref={focusRef} tabIndex={-1} className="px-4 py-2.5 border-b border-edge flex flex-col gap-1.5 shrink-0 focus:outline-hidden">
       <ol className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px]" aria-label="Debug container progress">
         {STRIP_STEPS.map((s, i) => (
-          <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "text-ok" : i === at ? "text-ink" : "text-dim"}>
+          <li key={s.id} aria-current={i === at ? "step" : undefined} className={i < at ? "text-ok" : i === at ? "text-ink" : "text-mute"}>
             <span aria-hidden>{i < at ? "✓" : i === at ? "●" : "○"}</span> {s.label}
           </li>
         ))}
@@ -104,7 +104,7 @@ export function ShellTab({
 
   const toolbar = (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-edge shrink-0">
-      <span className="text-[11px] text-dim">Container:</span>
+      <span className="text-[11px] text-mute">Container:</span>
       <select
         aria-label="Container"
         value={shellContainer}
@@ -147,7 +147,7 @@ export function ShellTab({
         )}
         <div className="px-4 py-3 flex flex-col items-start gap-1.5" role="status">
           {shellWasOpen.current && <p className="text-[12.5px] text-ink">{shellClosedByReadOnly(clusterLabel || context)}</p>}
-          <p className="text-[11.5px] text-dim">{shellReason}</p>
+          <p className="text-[11.5px] text-mute">{shellReason}</p>
         </div>
       </>
     );
@@ -198,7 +198,7 @@ export function ShellTab({
           line={`[debug] ${session.name} · ${session.image}${session.target ? ` · target: ${session.target}` : ""} · ${dbg.connected ? "attached" : "connecting"}`}
           action={<button type="button" onClick={dbg.detach} className={BTN}>Detach</button>}
         />
-        <p className="px-4 py-1 text-[11px] text-dim shrink-0">Type exit to end it. Closing this tab detaches and leaves it running.</p>
+        <p className="px-4 py-1 text-[11px] text-mute shrink-0">Type exit to end it. Closing this tab detaches and leaves it running.</p>
         <div className="flex-1 min-h-0 overflow-hidden">
           <ShellTerminal
             pod={pod}
@@ -215,7 +215,7 @@ export function ShellTab({
     body = closed?.reason === "error" ? (
       <Card tone="bad" actions={<><button type="button" onClick={dbg.attach} className={BTN_PRIMARY}>Attach</button>{startAnother("Start another…")}</>}>
         <span>Connection lost. {session.name} may still be running. Attach again when the cluster is reachable.</span>
-        {closed.message && <span className="mono text-[11px] text-dim wrap-break-word">{closed.message}</span>}
+        {closed.message && <span className="mono text-[11px] text-mute wrap-break-word">{closed.message}</span>}
       </Card>
     ) : (
       <Card actions={<><button type="button" onClick={dbg.attach} className={BTN_PRIMARY}>Attach</button>{startAnother("Start another…")}</>}>

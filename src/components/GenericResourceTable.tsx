@@ -4,7 +4,7 @@ import { ReadOnlyStrip } from "./ReadOnlyBadge";
 import { useClusterIdentity } from "../utils/clusterIdentity";
 import { ViewState } from "./ViewState";
 import { useApiPresence } from "../hooks/useResources";
-import { viewState } from "../utils/viewState";
+import { isForbidden, viewState } from "../utils/viewState";
 import { disabledAttrs, READ_ONLY_REASON_SHORT } from "../utils/guardrails";
 import { searchRows, sortRows, type SortState } from "../utils/tableRows";
 
@@ -15,6 +15,11 @@ export interface Column<T> {
   sortable?: boolean;
   sortValue?: (item: T) => string | number;
   cell: (item: T) => React.ReactNode;
+  /**
+   * The cell holds a control (a checkbox, button or link). A button cannot contain another control, so the
+   * row's name button (X-1) goes in the first visible column that is not `interactive`.
+   */
+  interactive?: boolean;
 }
 
 interface Props<T> {
@@ -35,8 +40,17 @@ interface Props<T> {
   search?: string;
   storageKey?: string;
   onDelete?: (item: T) => void;
-  /** Tooltip label for the per-row delete button (default "Delete"). */
-  deleteLabel?: string;
+  /**
+   * Name of the per-row delete button (default "Delete"): its `aria-label` always, and its `title` while it is enabled.
+   * A function gives each row its own name ("Delete namespace payments").
+   */
+  deleteLabel?: string | ((item: T) => string);
+  /**
+   * Why this row cannot be deleted, or undefined when it can. Checked after read-only mode, which always wins
+   * (DISABLE-PRECEDENCE). A row with a reason keeps its trash present, focusable and dimmed with the reason as
+   * its description, never hidden. Needs `onDelete`.
+   */
+  deleteReason?: (item: T) => string | undefined;
   /** Icon for the per-row delete button (default <Trash2 size={12} />). */
   deleteIcon?: React.ReactNode;
   /**
@@ -75,7 +89,7 @@ export function GenericResourceTable<T>({
   columns, data, isLoading, error, onRetry, keyFn,
   selectedKey, onSelect, emptyIcon, emptyText = "No resources found",
   title, count, extra, extraLeft, search, storageKey, onDelete,
-  deleteLabel = "Delete", deleteIcon, context, presenceKey, defaultHidden,
+  deleteLabel = "Delete", deleteReason, deleteIcon, context, presenceKey, defaultHidden,
   sort, onSortChange,
 }: Props<T>) {
   const identity = useClusterIdentity(context ?? "");
@@ -145,6 +159,10 @@ export function GenericResourceTable<T>({
   const visibleColumns = columns.filter(
     (col, i) => i === 0 || !hiddenCols.has(col.id),
   );
+  // X-1: the one keyboard stop of a row. The <tr onClick> stays for the mouse; the name cell holds a native
+  // button with no handler, and Enter / Space dispatch a click that bubbles to the row. It cannot wrap a cell
+  // that holds a control, so it goes in the first column that is not `interactive` (-1: none, no button).
+  const nameColIndex = visibleColumns.findIndex((col) => !col.interactive);
 
   if (error && !presenceKey) {
     return (
@@ -155,15 +173,23 @@ export function GenericResourceTable<T>({
           </div>
         )}
         <div className="rounded-xl bg-card/70 ring-1 ring-edge flex-1 min-h-0 flex items-center justify-center flex-col gap-4 p-8">
-          <div className="w-full max-w-2xl rounded-lg bg-bad/6 ring-1 ring-bad/20 p-4 overflow-auto max-h-64">
-            <p className="text-[11.5px] text-bad whitespace-pre-wrap font-mono leading-relaxed">{(error as any)?.message ?? String(error)}</p>
-          </div>
-          <button
-            onClick={onRetry}
-            className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25"
-          >
-            Retry
-          </button>
+          {errorMessage !== null && isForbidden(errorMessage) ? (
+            // Q21: a 403 on a core list is "no access", not a raw error box. No Retry: a 403 repeats (the TopBar refresh re-queries).
+            <ViewState state={{ kind: "no-access", unconfirmed: false }} things={title ?? "resources"} onRetry={onRetry} />
+          ) : (
+            <>
+              <div className="w-full max-w-2xl rounded-lg bg-bad/6 ring-1 ring-bad/20 p-4 overflow-auto max-h-64">
+                <p className="text-[11.5px] text-bad whitespace-pre-wrap font-mono leading-relaxed">{(error as any)?.message ?? String(error)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+              >
+                Retry
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -190,11 +216,14 @@ export function GenericResourceTable<T>({
           {storageKey && (
             <div className="relative" data-col-menu>
               <button
+                type="button"
                 onClick={() => setShowColMenu(v => !v)}
-                className="h-7 w-7 rounded-md flex items-center justify-center text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors"
-                title="Show/hide columns"
+                aria-label="Show or hide columns"
+                aria-expanded={showColMenu}
+                className="h-7 w-7 rounded-md flex items-center justify-center text-dim hover:text-ink hover:bg-surface-tint/6 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                title="Show or hide columns"
               >
-                <Settings size={13} />
+                <Settings size={13} aria-hidden />
               </button>
               {showColMenu && (
                 <div className="absolute right-0 top-8 z-20 bg-surface-overlay rounded-lg ring-1 ring-edge-strong shadow-xl p-2 min-w-[160px]">
@@ -231,13 +260,16 @@ export function GenericResourceTable<T>({
                   <th
                     key={col.id}
                     style={col.width ? { width: col.width } : undefined}
+                    // X-5: the sorted column says so (the PodTable header does the same). The sort control is the button inside.
+                    aria-sort={currentSort?.col === col.id ? (currentSort.asc ? "ascending" : "descending") : undefined}
                     className={`sticky top-0 z-1 bg-panel/95 backdrop-blur-sm border-b border-edge text-left text-[10.5px] uppercase tracking-[0.06em] font-semibold py-2 px-2 first:pl-3 last:pr-3
                       ${currentSort?.col === col.id ? "text-accent" : "text-dim"}`}
                   >
                     {col.sortable ? (
                       <button
+                        type="button"
                         onClick={() => handleSort(col.id)}
-                        className="flex items-center gap-1 hover:text-ink"
+                        className="flex items-center gap-1 rounded-xs hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
                       >
                         {col.header}
                         {currentSort?.col === col.id
@@ -287,6 +319,13 @@ export function GenericResourceTable<T>({
                 sorted.map((item) => {
                   const key = keyFn(item);
                   const isSelected = key === selectedKey;
+                  // Read-only wins; then the view's own per-row reason. A row with a reason shows its trash dimmed,
+                  // never in the enabled look. Exclusive class strings: Tailwind's output order must not decide.
+                  const rowReason = readOnly ? READ_ONLY_REASON_SHORT : deleteReason?.(item);
+                  const trashReveal = rowReason
+                    ? "opacity-0 group-hover:opacity-50 group-focus-within:opacity-50 focus-visible:opacity-50 cursor-not-allowed"
+                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-bad hover:bg-bad/10";
+                  const rowDeleteLabel = typeof deleteLabel === "function" ? deleteLabel(item) : deleteLabel;
                   return (
                     <tr
                       key={key}
@@ -300,18 +339,35 @@ export function GenericResourceTable<T>({
                           key={col.id}
                           className={`px-2 py-2 align-middle ${ci === 0 ? "pl-3 row-bar" : ""} ${!onDelete && ci === visibleColumns.length - 1 ? "pr-3" : ""}`}
                         >
-                          {col.cell(item)}
+                          {onSelect && ci === nameColIndex ? (
+                            <button
+                              type="button"
+                              aria-current={isSelected ? "true" : undefined}
+                              className="max-w-full text-left rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                            >
+                              {col.cell(item)}
+                            </button>
+                          ) : (
+                            col.cell(item)
+                          )}
                         </td>
                       ))}
                       {onDelete && (
                         <td className="px-2 py-2 align-middle w-12 pr-3" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={(e) => { e.stopPropagation(); if (readOnly) return; onDelete(item); }}
-                            {...(readOnly ? disabledAttrs(READ_ONLY_REASON_SHORT) : {})}
-                            className={`h-6 w-6 flex items-center justify-center rounded-sm text-dim hover:text-bad hover:bg-bad/10 transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/60 ${readOnly ? "cursor-not-allowed" : ""}`}
-                            {...(readOnly ? {} : { title: deleteLabel })}
+                            type="button"
+                            aria-label={rowDeleteLabel}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (rowReason) return;
+                              // WebKit does not focus a button on click; the confirm returns focus to the element focused when it opened.
+                              e.currentTarget.focus();
+                              onDelete(item);
+                            }}
+                            {...(rowReason ? disabledAttrs(rowReason) : { title: rowDeleteLabel })}
+                            className={`h-6 w-6 flex items-center justify-center rounded-sm text-mute transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${trashReveal}`}
                           >
-                            {deleteIcon ?? <Trash2 size={12} />}
+                            {deleteIcon ?? <Trash2 size={12} aria-hidden />}
                           </button>
                         </td>
                       )}
