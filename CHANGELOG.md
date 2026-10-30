@@ -7,10 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Node cards on the Pods page no longer run into each other beside a wide panel.** With the detail panel made wide, the six node cards squeezed so far that each CPU and memory graph spilled into the next card and the requests line broke over two lines. The cards now keep a minimum width and the row scrolls sideways when it does not fit.
-
 ## [2.4.0] - 2026-10-30
 
 ### Added
@@ -75,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A long namespace name no longer breaks the cluster name in the top bar over several lines.** In a narrow window the search field gives up to 140 px of its width first, then the namespace is shortened with an ellipsis, and only then the cluster name, so the New button stays in view.
 - **A render error no longer leaves a blank window.** The window shows "Something went wrong" with a Reload button. It shows no error text, stack or data (only the error's type name, such as "TypeError"); the details go to the developer console.
 - **An open ArgoCD panel follows the Applications list.** The panel kept the state the Application had when you clicked it, so after a sync started from the panel failed, it kept showing the earlier Health, Sync and last operation until you clicked the row again. The panel header, the Last operation badge with its reason, and History now update with the list.
+- **Node cards on the Pods page no longer run into each other beside a wide panel.** With the detail panel made wide, the six node cards squeezed so far that each CPU and memory graph spilled into the next card and the requests line broke over two lines. The cards now keep a minimum width and the row scrolls sideways when it does not fit.
 
 ## [2.3.1] - 2026-10-27
 
