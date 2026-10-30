@@ -116,6 +116,7 @@ Each item carries its version tag.
   - YAML save on a real object: a `spec` change (dry-run diff, then saved), a value the CRD's schema refuses, a conflict (edit in another terminal first), an object whose CRD has a conversion webhook. Delete of a namespaced object and a cluster-scoped one (typed name): the panel closes, the journal shows `delete` with kind `<plural>.<group>`, and an object with a finalizer stays with "Deletion requested" until its controller finishes.
   - Read-only mode (Edit, Review & save and both trashes dimmed with the read-only reason), an account that may get but not update or delete the kind (the permission reasons), an account that may list but not get ("You don't have access to read this {Kind}."). Deleting the object with kubectl while its panel is open: within 15 s Overview says it no longer exists.
   - VoiceOver or NVDA: the group header (name, count, expanded state), the Instances and trash buttons' names.
+  - From UX 26 §5 (rows 10 to 15): the native tooltips that carry the disabled reasons (Instances, Show instances, both trashes, Edit); the real 403 text and its delay on the CRDs page and in the panel; what `delete_custom_resource` answers for an object that is already gone; a multi-version CRD (Gateway API serves `v1beta1` and `v1`): the version `crdReadVersion` picks, the `group/version` label, and that the list, panel, YAML and save all use it; scale with 100 or more CRDs in about 30 groups (scroll, collapsing a large group, the 60 s `list_crds` poll with a panel open); the real window header, drag region and sidebar at 1024 x 640. Also confirm the group header's focus `scrollIntoView` (X1) in WKWebView, WebView2 and WebKitGTK.
 - **Edit-form transforms:** `src/components/edit/transforms.ts` is tested through `mergePatch` (`transforms.test.ts`). Transforms still inline in `.tsx` handlers are inspection-only (`check-emit.ts` cannot strip JSX).
 - On Windows the Rust tests need the MSVC `PATH` recipe (`CLAUDE.md` Development).
 
@@ -237,6 +238,15 @@ One run of the harness (`live-verification.md`) on a throwaway kind cluster: Kub
   - A header status chip, a Status column on the objects list, and instance counts per CRD (not chosen: Q4 C, Q8 B, Q5 B/C).
   - One palette entry per CRD kind and a launcher token for a CRD (Q6 A); `crd-instances` stays unmapped on the command line (`launcher.md`).
   - Clickable owner references, clickable rows in the CRD panel's instance preview, a Timeline or Map for custom resources, arrow-key navigation in the grouped table, and remembering which groups are collapsed.
+  - UX 26 polish handed to later (`docs/ux/26-v2.4.1-acceptance.md`):
+    - X4: the edit toolbar wraps at the default 480 px panel width, and "Review & save…" measures about 4.05:1 (inherited from the resource panel).
+    - X7: focus falls to the document after All CRDs, Instances, Show instances and a delete from the panel.
+    - X9: disabled reasons live only in `title` / `aria-describedby`; nothing visible on screen.
+    - X10: a 403 or error shows after about 3.3 s of skeleton (the app-wide `retry: 2`, older).
+    - X11: Delete stays enabled while the panel says the object no longer exists.
+    - X13: `<main>` shows the default focus outline after a row click then Esc (older, `App.tsx`).
+    - X14: the sticky table head covers a row or group header focused by Shift+Tab (older shared-table behaviour; `scroll-pt-9` on the scroll container in `GenericResourceTable.tsx`).
+    - X15: the group label is not sticky, so group bands go blank when the table is scrolled sideways (a `sticky left-0` wrapper around the label and count).
 - **Per-kind sites are synced by hand** (five silent tables + other sites). See Adding a New Resource Type.
 - **Drain** (v1.2.1): no quit warning (closing leaves the node cordoned); does not wait for evicted pods to terminate; "Retry blocked pods" skips `failed` rows.
 - **Helm Values upgrade has no RBAC hint** (v1.3.0, by design): an upgrade spans many kinds; no single `can_i` answers it. The YAML **Save…** is gated by `canUpdate`.
