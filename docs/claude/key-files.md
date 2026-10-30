@@ -55,6 +55,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/components/edit/` | Edit forms: `ResourceEditor.tsx`, `patch.ts` (RFC 7386, no React), `quantity.ts`, `transforms.ts`, `registry.ts` (`EDIT_FORM`), `forms/*.tsx`. 19 registrations |
 | `src/components/ContextSwitcher.tsx` | Context switcher, identity editor, guardrails |
 | `src/components/NodeStrip.tsx` / `ClusterOverview.tsx` | Node usage bars; cluster summary |
+| `src/utils/nodeStrip.ts` | `stripColumns`, `CARD_MIN_PX`: the node strip's six columns with a minimum card width (`pods-logs.md` → NodeStrip layout) |
 | `src/components/MergeFromFileModal.tsx` / `src/utils/mergePreview.ts` | Merge from file; `previewRows` (React-free, arrays `"replaced"`) |
 | `src/components/HelmInstallModal.tsx` | `helm install`; Helm is not a `CreatableKind` |
 | `src/utils/clusterIdentity.ts` | `localStorage["cluster-identity"]`: colour (`IdentityRole`, legacy names via `LEGACY_IDENTITY_ALIAS`), label, guardrails; `getGuardrailSettings` for the backstop |

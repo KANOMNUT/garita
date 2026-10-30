@@ -7,6 +7,7 @@ import { HISTORY_DOWN, RANGE_IDS, RANGE_LABEL, toPercent } from "../utils/metric
 import { Segmented } from "./health/HealthShell";
 import { capacityLevel, capacityRow, reqLine, type CapacityRow } from "../utils/capacity";
 import { Sparkline } from "./Sparkline";
+import { stripColumns } from "../utils/nodeStrip";
 
 // One 65/85 threshold pair for every capacity surface (X7): NodeStrip's red moved from 80 to 85.
 // Literal class pairs (bg for the bar fill, text for the sparkline stroke) so Tailwind sees them.
@@ -100,9 +101,9 @@ const NodeCard = memo(function NodeCard({ node, cpuHistory: sessionCpu, memHisto
         {cap && (() => {
           const req = reqLine(cap);
           return (
-            <div className="flex items-center justify-between" title="Requests, as a share of allocatable.">
+            <div className="flex items-center justify-between gap-2" title="Requests, as a share of allocatable.">
               <span className="text-[10px] text-dim">REQ</span>
-              <span className={`mono text-[10px] tabular-nums inline-flex items-center gap-0.5 ${req.high ? "text-bad" : "text-dim"}`}>
+              <span className={`mono text-[10px] tabular-nums whitespace-nowrap inline-flex items-center gap-0.5 ${req.high ? "text-bad" : "text-dim"}`}>
                 {req.high && <AlertTriangle size={9} aria-hidden />}{req.text}
               </span>
             </div>
@@ -183,24 +184,31 @@ export const NodeStrip = memo(function NodeStrip({ nodes, onViewAll, cpuHistory,
           View all <ChevronRight size={11} />
         </button>
       </div>
-      <div className="grid grid-cols-6 gap-2">
-        {isLoading
-          ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-          : displayed.map((n) => (
-              <NodeCard
-                key={n.name}
-                node={n}
-                cpuHistory={cpuHistory?.get(n.name)}
-                memHistory={memHistory?.get(n.name)}
-                cap={capByNode.get(n.name)}
-                context={context}
-                target={target}
-                range={range}
-                alloc={allocByNode.get(n.name)}
-                onStatus={onStatus}
-              />
-            ))
-        }
+      <div
+        role="group"
+        aria-label="Node cards"
+        tabIndex={0}
+        className="overflow-x-auto rounded-lg outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
+      >
+        <div className="grid gap-2" style={{ gridTemplateColumns: stripColumns(isLoading ? 6 : displayed.length) }}>
+          {isLoading
+            ? Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
+            : displayed.map((n) => (
+                <NodeCard
+                  key={n.name}
+                  node={n}
+                  cpuHistory={cpuHistory?.get(n.name)}
+                  memHistory={memHistory?.get(n.name)}
+                  cap={capByNode.get(n.name)}
+                  context={context}
+                  target={target}
+                  range={range}
+                  alloc={allocByNode.get(n.name)}
+                  onStatus={onStatus}
+                />
+              ))
+          }
+        </div>
       </div>
     </div>
   );

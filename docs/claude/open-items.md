@@ -204,7 +204,7 @@ One run of the harness (`live-verification.md`) on a throwaway kind cluster: Kub
   - **D8, ArgoCD cards at 1024 px with a panel open:** seven cards stack in one column and four rows remain. Use one horizontally scrolling row below about 400 px of list width, or a two-column grid.
   - **D10 and D16, dimmed (`aria-disabled`) controls:** the reason is only a native tooltip (not shown on keyboard focus), and the focus ring fades with the button because `opacity-50` sits on the whole button. Show the reason as visible text on focus, and dim the icon instead (`[&>svg]:opacity-50`), across the `aria-disabled:opacity-50` pattern.
   - **D11, the ArgoCD Resources tab badge appears only after the tab was opened:** the query runs when the tab opens. Prefetch the resources query when the panel opens.
-  - **D12, NodeStrip bars drew as thin lines past the card edge once:** not reproduced. Look again on a real build with a panel open at 1280 px.
+  - **D12, NodeStrip bars and sparklines past the card edge with a wide panel:** fixed in v2.4.0 (the strip keeps a 184 px card minimum and scrolls sideways; `pods-logs.md` → NodeStrip layout). Owed on a real build: the strip with a 900 px panel in WKWebView, WebView2 and WebKitGTK, and that the horizontal scrollbar shows where the OS hides overlay scrollbars.
   - **D17, "0 total" shows while a list is loading** (`GenericResourceTable`): hide the count chip until the query has data.
   - **D18, the create form's cluster chip touches the title** ("[demo]New Namespace"): `gap-2` between them in `ResourceCreator.tsx`.
   - **D20, a table behind an open panel shows only the name and a status dot** (Status and Age are hidden): a product call on a minimum list width or a second density.

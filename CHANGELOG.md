@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Node cards on the Pods page no longer run into each other beside a wide panel.** With the detail panel made wide, the six node cards squeezed so far that each CPU and memory graph spilled into the next card and the requests line broke over two lines. The cards now keep a minimum width and the row scrolls sideways when it does not fit.
+
 ## [2.4.0] - 2026-10-30
 
 ### Added
