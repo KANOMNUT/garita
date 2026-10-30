@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use super::argocd::operation_message_display;
 use super::extras::ResourceCondition;
-use super::pods::{self, NeatYaml, ReplaceTarget, YamlSavePreview};
+use super::pods::{self, is_dns1123_label, NeatYaml, ReplaceTarget, YamlSavePreview};
 use super::resource_edit::{api_resource_for, require_namespace};
 use super::utils::{age_from_timestamp, client_for_context};
 
@@ -183,13 +183,42 @@ pub struct CustomResourceDetail {
     pub finalizers: Vec<String>,
 }
 
+/// A CRD's API group: a DNS subdomain of at least two dot-separated DNS-1123 labels ("acme.io"),
+/// at most 253 bytes. Never empty, never contains `/`.
+fn is_api_group(group: &str) -> bool {
+    group.len() <= 253
+        && group.split('.').count() >= 2
+        && group.split('.').all(is_dns1123_label)
+}
+
+/// A name that is safe as one URL path segment: 1 to 253 characters, not `.` or `..`, none of
+/// `/ % ? #`, no control or whitespace character. Wider than a DNS name on purpose: the API server
+/// owns the exact naming rules (an RBAC name may contain `:`), this only keeps the name inside its
+/// segment.
+fn is_path_segment_name(name: &str) -> bool {
+    let len = name.chars().count();
+    (1..=253).contains(&len)
+        && name != "."
+        && name != ".."
+        && !name.chars().any(|c| matches!(c, '/' | '%' | '?' | '#') || c.is_control() || c.is_whitespace())
+}
+
 /// Validates a request before any network call. Returns the `ApiResource` and the namespace to use
 /// (`Some(ns)` for a namespaced CRD, `None` for a cluster-scoped one, whose namespace is ignored).
 /// Called first by every custom resource command, read or write: a CRD always has a group, and
 /// without the empty-group refusal a webview-supplied `group: ""` with `plural: "secrets"` would
 /// read, replace or delete a core Secret with no reveal, no masking and no Secret rules.
-/// `label` is `kind`, or "custom resource" when `kind` is empty. The messages describe a bad
-/// request, not a failed read or write, so the write commands use them too.
+///
+/// kube-core pastes group, version, namespace, plural and name into the request path unencoded, so
+/// the format checks are defense in depth: a value that came from the cluster (a CRD's group,
+/// version and plural, an object's namespace and name) always passes, and a malformed or hostile
+/// webview call cannot steer the path (for example `group: "x/../../api"` to a core Secret). `kind`
+/// never enters the URL and gets no format check.
+///
+/// Order: empty group; empty version, kind, plural or name; invalid group, version, plural, name;
+/// scope; `require_namespace`; invalid namespace (namespaced only; a cluster-scoped request
+/// ignores its namespace). `label` is `kind`, or "custom resource" when `kind` is empty. The
+/// messages describe a bad request, not a failed read or write, so the write commands use them too.
 pub(crate) fn cr_request<'a>(
     group: &str,
     version: &str,
@@ -208,12 +237,27 @@ pub(crate) fn cr_request<'a>(
             return Err(format!("Failed to get {}: missing {}", label, field));
         }
     }
+    if !is_api_group(group) {
+        return Err(format!("Failed to get {}: invalid API group '{}'", label, group));
+    }
+    if !is_dns1123_label(version) {
+        return Err(format!("Failed to get {}: invalid version '{}'", label, version));
+    }
+    if !is_dns1123_label(plural) {
+        return Err(format!("Failed to get {}: invalid plural '{}'", label, plural));
+    }
+    if !is_path_segment_name(name) {
+        return Err(format!("Failed to get {}: invalid name '{}'", label, name));
+    }
     let namespaced = match scope {
         "Namespaced" => true,
         "Cluster" => false,
         other => return Err(format!("Failed to get {}: unknown scope '{}'", label, other)),
     };
     require_namespace(namespaced, namespace, kind)?;
+    if namespaced && !is_dns1123_label(namespace) {
+        return Err(format!("Failed to get {}: invalid namespace '{}'", label, namespace));
+    }
     let ar = api_resource_for(group, version, kind, plural);
     Ok((ar, if namespaced { Some(namespace) } else { None }))
 }
@@ -626,13 +670,139 @@ mod tests {
         assert_eq!(err, "Failed to get Secret: a custom resource needs an API group");
     }
 
-    /// All six commands run `cr_request` before they connect: with an empty group each returns the
-    /// request error, never "Failed to connect" (the context does not exist).
-    #[tokio::test]
-    async fn every_command_refuses_an_empty_group_before_connecting() {
-        let want = "Failed to get Secret: a custom resource needs an API group";
+    #[test]
+    fn cr_request_accepts_cluster_sourced_values() {
+        let (ar, ns) = cr_request("acme.io", "v1", "Widget", "widgets", "Namespaced", "kube-system", "w-1.a")
+            .expect("ok");
+        assert_eq!(ns, Some("kube-system"));
+        assert_eq!(ar.api_version, "acme.io/v1");
+        // A built-in group, and an RBAC-style name with colons.
+        let (ar, _) = cr_request(
+            "rbac.authorization.k8s.io", "v1", "Role", "roles", "Namespaced", "prod", "system:controller:x",
+        )
+        .expect("ok");
+        assert_eq!((ar.group.as_str(), ar.plural.as_str()), ("rbac.authorization.k8s.io", "roles"));
+        // Versions and plurals with digits and dashes.
+        cr_request("a-b.c1.io", "v1beta1", "Widget", "wid-gets2", "Namespaced", "prod", "w1").expect("ok");
+        // 253 bytes is the longest group, 253 characters the longest name.
+        let group = format!("{}.{}.{}.io", "a".repeat(63), "b".repeat(63), "c".repeat(63));
+        assert!(group.len() <= 253);
+        cr_request(&group, "v1", "Widget", "widgets", "Namespaced", "prod", &"n".repeat(253)).expect("ok");
+    }
+
+    #[test]
+    fn cr_request_cluster_scope_ignores_even_a_hostile_namespace() {
+        let (_, ns) = cr_request("acme.io", "v1", "Gadget", "gadgets", "Cluster", "../ignored", "g1").expect("ok");
+        assert_eq!(ns, None);
+    }
+
+    #[test]
+    fn cr_request_rejects_an_invalid_group() {
+        let long = format!("{}.io", "a".repeat(251));
+        assert_eq!(long.len(), 254);
+        let groups = ["x/../../api", "acme", "Acme.io", "acme..io", "-acme.io", "acme.io-", ".acme.io", "acme.io.", "acme.io/x", "acme io", long.as_str()];
+        for group in groups {
+            let err = cr_request(group, "v1", "Widget", "widgets", "Namespaced", "prod", "w1").expect_err(group);
+            assert_eq!(err, format!("Failed to get Widget: invalid API group '{}'", group));
+        }
+    }
+
+    #[test]
+    fn cr_request_rejects_an_invalid_version() {
+        for version in ["v1/x", "V1", "v1?x", "v1.0", "-v1", "v1 "] {
+            let err = cr_request("acme.io", version, "Widget", "widgets", "Namespaced", "prod", "w1").expect_err(version);
+            assert_eq!(err, format!("Failed to get Widget: invalid version '{}'", version));
+        }
+    }
+
+    #[test]
+    fn cr_request_rejects_an_invalid_plural() {
+        for plural in ["secrets/x", "Widgets", "a.b", "../secrets", "wid_gets"] {
+            let err = cr_request("acme.io", "v1", "Widget", plural, "Namespaced", "prod", "w1").expect_err(plural);
+            assert_eq!(err, format!("Failed to get Widget: invalid plural '{}'", plural));
+        }
+    }
+
+    #[test]
+    fn cr_request_rejects_an_invalid_name() {
+        let long = "n".repeat(254);
+        let names = [".", "..", "a/b", "a%2Fb", "a?b", "a#b", "a b", "a\tb", " a", "a\nb", "a\u{0}b", "a\u{a0}b", long.as_str()];
+        for name in names {
+            let err = cr_request("acme.io", "v1", "Widget", "widgets", "Namespaced", "prod", name).expect_err(name);
+            assert_eq!(err, format!("Failed to get Widget: invalid name '{}'", name));
+        }
+        // A name that merely contains dots is fine, and so is a cluster-scoped request.
+        cr_request("acme.io", "v1", "Gadget", "gadgets", "Cluster", "", "..a").expect("ok");
+        assert_eq!(
+            cr_request("acme.io", "v1", "Gadget", "gadgets", "Cluster", "", "a/b").expect_err("slash"),
+            "Failed to get Gadget: invalid name 'a/b'"
+        );
+    }
+
+    #[test]
+    fn cr_request_rejects_an_invalid_namespace_only_when_namespaced() {
+        for namespace in ["prod/x", "..", "Prod", "a.b", "-p", "p-", "a b"] {
+            let err = cr_request("acme.io", "v1", "Widget", "widgets", "Namespaced", namespace, "w1").expect_err(namespace);
+            assert_eq!(err, format!("Failed to get Widget: invalid namespace '{}'", namespace));
+            // The same value is ignored for a cluster-scoped CRD.
+            cr_request("acme.io", "v1", "Gadget", "gadgets", "Cluster", namespace, "g1").expect("ignored");
+        }
+    }
+
+    #[test]
+    fn cr_request_checks_run_in_the_documented_order() {
+        // An empty field wins over an invalid one.
+        assert_eq!(
+            cr_request("x/../../api", "", "Widget", "widgets", "Namespaced", "prod", "w1").expect_err("empty version"),
+            "Failed to get Widget: missing version"
+        );
+        assert_eq!(
+            cr_request("acme.io", "v1", "Widget", "widgets", "Namespaced", "prod", "").expect_err("empty name"),
+            "Failed to get Widget: missing name"
+        );
+        // The empty group wins over everything.
+        assert_eq!(
+            cr_request("", "V1", "Widget", "Widgets", "Namespaced", "Prod", "a/b").expect_err("empty group"),
+            "Failed to get Widget: a custom resource needs an API group"
+        );
+        // Group, then version, then plural, then name.
+        assert_eq!(
+            cr_request("x/../../api", "V1", "Widget", "Widgets", "Namespaced", "Prod", "a/b").expect_err("group"),
+            "Failed to get Widget: invalid API group 'x/../../api'"
+        );
+        assert_eq!(
+            cr_request("acme.io", "V1", "Widget", "Widgets", "Namespaced", "Prod", "a/b").expect_err("version"),
+            "Failed to get Widget: invalid version 'V1'"
+        );
+        assert_eq!(
+            cr_request("acme.io", "v1", "Widget", "Widgets", "Namespaced", "Prod", "a/b").expect_err("plural"),
+            "Failed to get Widget: invalid plural 'Widgets'"
+        );
+        assert_eq!(
+            cr_request("acme.io", "v1", "Widget", "widgets", "Namespaced", "Prod", "a/b").expect_err("name"),
+            "Failed to get Widget: invalid name 'a/b'"
+        );
+        // Name beats scope; scope beats the namespace checks; an empty namespace is the
+        // require_namespace message, not "invalid namespace".
+        assert_eq!(
+            cr_request("acme.io", "v1", "Widget", "widgets", "Bogus", "Prod", "a/b").expect_err("name over scope"),
+            "Failed to get Widget: invalid name 'a/b'"
+        );
+        assert_eq!(
+            cr_request("acme.io", "v1", "Widget", "widgets", "Bogus", "Prod", "w1").expect_err("scope"),
+            "Failed to get Widget: unknown scope 'Bogus'"
+        );
+        assert_eq!(
+            cr_request("acme.io", "v1", "Widget", "widgets", "Namespaced", "", "w1").expect_err("empty ns"),
+            "Widget is namespace-scoped and requires a namespace"
+        );
+    }
+
+    /// Calls all six commands with `group` on a context that does not exist and expects `want` from
+    /// each: the request check runs before `client_for_context`, so never "Failed to connect".
+    async fn assert_six_refuse(group: &str, want: &str) {
         let args = || {
-            ("no-such-context".to_string(), String::new(), "v1".to_string(), "Secret".to_string(),
+            ("no-such-context".to_string(), group.to_string(), "v1".to_string(), "Secret".to_string(),
              "secrets".to_string(), "Namespaced".to_string(), "prod".to_string(), "db-password".to_string())
         };
         let (c, g, v, k, p, s, ns, n) = args();
@@ -653,6 +823,19 @@ mod tests {
             apply_custom_resource_yaml(c, g, v, k, p, s, ns, n, "a: 1".into()).await.expect_err("apply"),
             want
         );
+    }
+
+    /// All six commands run `cr_request` before they connect: with an empty group each returns the
+    /// request error, never "Failed to connect" (the context does not exist).
+    #[tokio::test]
+    async fn every_command_refuses_an_empty_group_before_connecting() {
+        assert_six_refuse("", "Failed to get Secret: a custom resource needs an API group").await;
+    }
+
+    /// The same for a group that would steer the request path to the core API.
+    #[tokio::test]
+    async fn every_command_refuses_a_path_steering_group_before_connecting() {
+        assert_six_refuse("x/../../api", "Failed to get Secret: invalid API group 'x/../../api'").await;
     }
 
     // ---- cr_conditions -----------------------------------------------------

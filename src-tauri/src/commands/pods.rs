@@ -646,7 +646,7 @@ pub async fn get_pod(context: String, namespace: String, name: String) -> Result
 }
 
 /// `[a-z0-9]([-a-z0-9]*[a-z0-9])?`, at most 63 characters.
-fn is_dns1123_label(s: &str) -> bool {
+pub(crate) fn is_dns1123_label(s: &str) -> bool {
     let b = s.as_bytes();
     if b.is_empty() || b.len() > 63 {
         return false;
