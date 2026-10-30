@@ -1,12 +1,12 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { ChevronDown, ChevronUp, Settings, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Settings, Trash2 } from "lucide-react";
 import { ReadOnlyStrip } from "./ReadOnlyBadge";
 import { useClusterIdentity } from "../utils/clusterIdentity";
 import { ViewState } from "./ViewState";
 import { useApiPresence } from "../hooks/useResources";
 import { isForbidden, viewState } from "../utils/viewState";
 import { disabledAttrs, READ_ONLY_REASON_SHORT } from "../utils/guardrails";
-import { searchRows, sortRows, type SortState } from "../utils/tableRows";
+import { groupRows, searchRows, sortRows, type SortState } from "../utils/tableRows";
 
 export interface Column<T> {
   id: string;
@@ -71,7 +71,16 @@ interface Props<T> {
    */
   sort?: SortState | null;
   onSortChange?: (sort: SortState | null) => void;
+  /**
+   * Group rows under header rows: groups A-Z by key (`groupRows`), search and sort applied inside each group.
+   * A group with no matching row is left out. While a search is set, every group with a match is shown expanded.
+   */
+  groupBy?: (item: T) => string;
+  /** [singular, plural] noun for a group's screen-reader count, e.g. ["CRD", "CRDs"]. Default ["row", "rows"]. */
+  groupNoun?: [string, string];
 }
+
+const GROUP_OPEN_WHILE_SEARCHING = "Groups stay open while a search is set.";
 
 function SkeletonRow({ cols }: { cols: number }) {
   return (
@@ -90,7 +99,7 @@ export function GenericResourceTable<T>({
   selectedKey, onSelect, emptyIcon, emptyText = "No resources found",
   title, count, extra, extraLeft, search, storageKey, onDelete,
   deleteLabel = "Delete", deleteReason, deleteIcon, context, presenceKey, defaultHidden,
-  sort, onSortChange,
+  sort, onSortChange, groupBy, groupNoun = ["row", "rows"],
 }: Props<T>) {
   const identity = useClusterIdentity(context ?? "");
   const readOnly = !!context && identity.readOnly;
@@ -144,6 +153,18 @@ export function GenericResourceTable<T>({
     [filtered, columns, currentSort],
   );
 
+  // Header rows only exist while `groupBy` is set. Collapse state is the table's own, all open on mount, not persisted.
+  const groups = useMemo(() => (groupBy ? groupRows(sorted, groupBy) : null), [sorted, groupBy]);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
   const handleSort = useCallback(
     (colId: string) => {
       const next: SortState = currentSort?.col === colId
@@ -194,6 +215,100 @@ export function GenericResourceTable<T>({
       </div>
     );
   }
+
+  const colSpan = visibleColumns.length + (onDelete ? 1 : 0);
+
+  const renderRow = (item: T) => {
+    const key = keyFn(item);
+    const isSelected = key === selectedKey;
+    // Read-only wins; then the view's own per-row reason. A row with a reason shows its trash dimmed,
+    // never in the enabled look. Exclusive class strings: Tailwind's output order must not decide.
+    const rowReason = readOnly ? READ_ONLY_REASON_SHORT : deleteReason?.(item);
+    const trashReveal = rowReason
+      ? "opacity-0 group-hover:opacity-50 group-focus-within:opacity-50 focus-visible:opacity-50 cursor-not-allowed"
+      : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-bad hover:bg-bad/10";
+    const rowDeleteLabel = typeof deleteLabel === "function" ? deleteLabel(item) : deleteLabel;
+    return (
+      <tr
+        key={key}
+        onClick={() => onSelect?.(item)}
+        className={`border-b border-edge-raw/70 transition-colors group
+          ${onSelect ? "cursor-pointer row-hover" : ""}
+          ${isSelected ? "row-selected" : ""}`}
+      >
+        {visibleColumns.map((col, ci) => (
+          <td
+            key={col.id}
+            className={`px-2 py-2 align-middle ${ci === 0 ? "pl-3 row-bar" : ""} ${!onDelete && ci === visibleColumns.length - 1 ? "pr-3" : ""}`}
+          >
+            {onSelect && ci === nameColIndex ? (
+              <button
+                type="button"
+                aria-current={isSelected ? "true" : undefined}
+                className="max-w-full text-left rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+              >
+                {col.cell(item)}
+              </button>
+            ) : (
+              col.cell(item)
+            )}
+          </td>
+        ))}
+        {onDelete && (
+          <td className="px-2 py-2 align-middle w-12 pr-3" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              aria-label={rowDeleteLabel}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (rowReason) return;
+                // WebKit does not focus a button on click; the confirm returns focus to the element focused when it opened.
+                e.currentTarget.focus();
+                onDelete(item);
+              }}
+              {...(rowReason ? disabledAttrs(rowReason) : { title: rowDeleteLabel })}
+              className={`h-6 w-6 flex items-center justify-center rounded-sm text-mute transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${trashReveal}`}
+            >
+              {deleteIcon ?? <Trash2 size={12} aria-hidden />}
+            </button>
+          </td>
+        )}
+      </tr>
+    );
+  };
+
+  // The rows of every state that is not "the data": loading, the #15 view states, empty, no search hit.
+  // null means "show the data", which the grouped layout renders as one <tbody> per group.
+  // A-11: hold the skeleton while presence loads, so "Nothing here" never flashes before "Not installed".
+  const stateBody: React.ReactNode | null =
+    isLoading || (!!presenceKey && presenceQ.isLoading && data.length === 0) ? (
+      Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={colSpan} />)
+    ) : vs && vs.kind !== "ok" ? (
+      <tr>
+        <td colSpan={colSpan}>
+          <ViewState state={vs} things={title ?? "resources"} group={presence?.group}
+            message={errorMessage ?? undefined} emptyIcon={emptyIcon} onRetry={onRetry} />
+        </td>
+      </tr>
+    ) : data.length === 0 ? (
+      <tr>
+        <td colSpan={colSpan}>
+          <div className="py-16 flex flex-col items-center gap-3">
+            <div className="text-dim">{emptyIcon}</div>
+            <p className="text-[13px] text-mute">{emptyText}</p>
+          </div>
+        </td>
+      </tr>
+    ) : search && filtered.length === 0 ? (
+      <tr>
+        <td colSpan={colSpan}>
+          <div className="py-16 flex flex-col items-center gap-3">
+            <div className="text-dim">{emptyIcon}</div>
+            <p className="text-[13px] text-mute">No results for "{search}"</p>
+          </div>
+        </td>
+      </tr>
+    ) : null;
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
@@ -284,98 +399,40 @@ export function GenericResourceTable<T>({
                 {onDelete && <th className="sticky top-0 z-1 bg-panel/95 backdrop-blur-sm border-b border-edge w-12" />}
               </tr>
             </thead>
-            <tbody>
-              {/* A-11: hold the skeleton while presence loads, so "Nothing here" never flashes before "Not installed". */}
-              {isLoading || (!!presenceKey && presenceQ.isLoading && data.length === 0) ? (
-                Array.from({ length: 8 }).map((_, i) => (
-                  <SkeletonRow key={i} cols={visibleColumns.length + (onDelete ? 1 : 0)} />
-                ))
-              ) : vs && vs.kind !== "ok" ? (
-                <tr>
-                  <td colSpan={visibleColumns.length + (onDelete ? 1 : 0)}>
-                    <ViewState state={vs} things={title ?? "resources"} group={presence?.group}
-                      message={errorMessage ?? undefined} emptyIcon={emptyIcon} onRetry={onRetry} />
-                  </td>
-                </tr>
-              ) : data.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColumns.length + (onDelete ? 1 : 0)}>
-                    <div className="py-16 flex flex-col items-center gap-3">
-                      <div className="text-dim">{emptyIcon}</div>
-                      <p className="text-[13px] text-mute">{emptyText}</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : search && filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColumns.length + (onDelete ? 1 : 0)}>
-                    <div className="py-16 flex flex-col items-center gap-3">
-                      <div className="text-dim">{emptyIcon}</div>
-                      <p className="text-[13px] text-mute">No results for "{search}"</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                sorted.map((item) => {
-                  const key = keyFn(item);
-                  const isSelected = key === selectedKey;
-                  // Read-only wins; then the view's own per-row reason. A row with a reason shows its trash dimmed,
-                  // never in the enabled look. Exclusive class strings: Tailwind's output order must not decide.
-                  const rowReason = readOnly ? READ_ONLY_REASON_SHORT : deleteReason?.(item);
-                  const trashReveal = rowReason
-                    ? "opacity-0 group-hover:opacity-50 group-focus-within:opacity-50 focus-visible:opacity-50 cursor-not-allowed"
-                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 hover:text-bad hover:bg-bad/10";
-                  const rowDeleteLabel = typeof deleteLabel === "function" ? deleteLabel(item) : deleteLabel;
-                  return (
-                    <tr
-                      key={key}
-                      onClick={() => onSelect?.(item)}
-                      className={`border-b border-edge-raw/70 transition-colors group
-                        ${onSelect ? "cursor-pointer row-hover" : ""}
-                        ${isSelected ? "row-selected" : ""}`}
-                    >
-                      {visibleColumns.map((col, ci) => (
-                        <td
-                          key={col.id}
-                          className={`px-2 py-2 align-middle ${ci === 0 ? "pl-3 row-bar" : ""} ${!onDelete && ci === visibleColumns.length - 1 ? "pr-3" : ""}`}
+            {stateBody !== null || !groups ? (
+              <tbody>{stateBody ?? sorted.map((item) => renderRow(item))}</tbody>
+            ) : (
+              groups.map((g) => {
+                // A search shows every group that has a match, expanded: a collapsed group must not hide a hit.
+                const open = !!search || !collapsed.has(g.key);
+                const [one, many] = groupNoun;
+                return (
+                  <tbody key={g.key}>
+                    <tr>
+                      <th
+                        scope="rowgroup"
+                        colSpan={colSpan}
+                        className="p-0 bg-surface-tint/3 border-b border-edge-raw/70 text-left font-normal"
+                      >
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          onClick={() => { if (!search) toggleGroup(g.key); }}
+                          {...disabledAttrs(search ? GROUP_OPEN_WHILE_SEARCHING : undefined)}
+                          className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-[10.5px] font-semibold text-mute hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
                         >
-                          {onSelect && ci === nameColIndex ? (
-                            <button
-                              type="button"
-                              aria-current={isSelected ? "true" : undefined}
-                              className="max-w-full text-left rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
-                            >
-                              {col.cell(item)}
-                            </button>
-                          ) : (
-                            col.cell(item)
-                          )}
-                        </td>
-                      ))}
-                      {onDelete && (
-                        <td className="px-2 py-2 align-middle w-12 pr-3" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            aria-label={rowDeleteLabel}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (rowReason) return;
-                              // WebKit does not focus a button on click; the confirm returns focus to the element focused when it opened.
-                              e.currentTarget.focus();
-                              onDelete(item);
-                            }}
-                            {...(rowReason ? disabledAttrs(rowReason) : { title: rowDeleteLabel })}
-                            className={`h-6 w-6 flex items-center justify-center rounded-sm text-mute transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${trashReveal}`}
-                          >
-                            {deleteIcon ?? <Trash2 size={12} aria-hidden />}
-                          </button>
-                        </td>
-                      )}
+                          <ChevronRight size={11} aria-hidden className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+                          <span className="mono truncate">{g.key}</span>
+                          <span aria-hidden className="mono tabular-nums">{g.rows.length}</span>
+                          <span className="sr-only">, {g.rows.length} {g.rows.length === 1 ? one : many}</span>
+                        </button>
+                      </th>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
+                    {open && g.rows.map((item) => renderRow(item))}
+                  </tbody>
+                );
+              })
+            )}
           </table>
         </div>
       </div>

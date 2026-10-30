@@ -3,7 +3,7 @@ import {
   Layers, Package, PackageMinus, List, Clock, Briefcase, Network, Globe,
   FileCode, Lock, Database, Server, Activity, TrendingUp, Puzzle, ShieldAlert, GitBranch,
   ShieldCheck, Boxes, FolderGit2, X, RefreshCw, RefreshCcw, GitMerge,
-  Waypoints, Split, Copy, Webhook, Camera, FolderTree,
+  Waypoints, Split, Copy, Webhook, Camera, FolderTree, ArrowLeft,
 } from "lucide-react";
 import { GenericResourceTable, type Column } from "./GenericResourceTable";
 import { ConfirmModal } from "./ConfirmModal";
@@ -45,6 +45,7 @@ import { podStatusStyle } from "../utils/podStatus";
 import { ArgoGlyph } from "./ArgoGlyph";
 import { argoHealthPill, argoSyncPill, type ArgoPill } from "../utils/argoStatus";
 import { chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
+import { crdInstancesReason, crdReadVersion, loadCrdGrouping, saveCrdGrouping } from "../utils/crds";
 
 interface ViewProps { context: string; namespace: string; search?: string; selectedKey?: string | null; }
 
@@ -1068,27 +1069,90 @@ const crdColumns: Column<CRD>[] = [
   { id: "age",      header: "Age",       width: 80,  sortable: true, sortValue: (c) => parseAge(c.age), cell: (c) => <Dim t={c.age} /> },
 ];
 
-export const CRDView = memo(function CRDView({ context, search, selectedKey, onSelect }: { context: string; search?: string; selectedKey?: string | null; onSelect?: (c: CRD) => void }) {
+/** A CRD's group header on the CRDs page. A CRD always has a group; the fallback keeps an odd object from drawing an empty header. */
+const crdGroupOf = (c: CRD) => c.group || "(core)";
+const CRD_GROUP_NOUN: [string, string] = ["CRD", "CRDs"];
+
+/**
+ * The row's way to its objects (the row click opens the CRD panel). A CRD that cannot be listed keeps the button, focusable
+ * and dimmed with the reason as its description, never hidden: the click bails out.
+ */
+function InstancesButton({ crd, onOpen }: { crd: CRD; onOpen: (c: CRD) => void }) {
+  const reason = crdInstancesReason(crd);
+  return (
+    <button
+      type="button"
+      aria-label={`Instances of ${crd.kind}`}
+      onClick={(e) => {
+        // The row opens the CRD panel; this button must not.
+        e.stopPropagation();
+        if (reason) return;
+        onOpen(crd);
+      }}
+      {...disabledAttrs(reason)}
+      className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+        reason ? "text-mute opacity-50 cursor-not-allowed" : "text-mute hover:text-ink hover:bg-surface-tint/4"
+      }`}
+    >
+      Instances
+    </button>
+  );
+}
+
+export const CRDView = memo(function CRDView({ context, search, selectedKey, onSelect, onOpenInstances }: {
+  context: string; search?: string; selectedKey?: string | null; onSelect?: (c: CRD) => void;
+  /** The row's Instances button: open the objects of this CRD. */
+  onOpenInstances: (c: CRD) => void;
+}) {
   const identity = useClusterIdentity(context);
   const { data = [], isLoading, error, refetch } = useCRDs(context);
   const [deleteTarget, setDeleteTarget] = useState<CRD | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const deleteResource = useDeleteResource();
   const perm = usePermissions(context, "", "crd");
+  const [grouped, setGrouped] = useState(loadCrdGrouping);
+  // Controlled, so the open sort is Kind A-Z inside each group and the header says so.
+  const [sort, setSort] = useState<SortState | null>({ col: "kind", asc: true });
+  const columns = useMemo<Column<CRD>[]>(() => [
+    ...crdColumns,
+    { id: "instances", header: "Instances", width: 110, interactive: true, cell: (c) => <InstancesButton crd={c} onOpen={onOpenInstances} /> },
+  ], [onOpenInstances]);
   return (
     <>
-      <GenericResourceTable context={context} columns={crdColumns} data={data} isLoading={isLoading}
+      <GenericResourceTable context={context} columns={columns} data={data} isLoading={isLoading}
         error={error} onRetry={refetch} keyFn={(c) => c.name}
         selectedKey={selectedKey} onSelect={onSelect} search={search}
         title="CustomResourceDefinitions" count={data.length}
+        sort={sort} onSortChange={setSort}
+        groupBy={grouped ? crdGroupOf : undefined} groupNoun={CRD_GROUP_NOUN}
         emptyIcon={<Puzzle size={32} />} emptyText="No CRDs found"
         onDelete={perm.canDelete ? setDeleteTarget : undefined}
-        extra={deleteError ? (
-          <div className="mono text-[10.5px] text-bad px-2 py-1 rounded-sm bg-bad/10 ring-1 ring-bad/20 flex items-center gap-1.5">
-            {deleteError}
-            <button onClick={() => setDeleteError("")} className="ml-1 text-dim hover:text-ink">✕</button>
-          </div>
-        ) : undefined}
+        extra={(
+          <>
+            {deleteError && (
+              <div className="mono text-[10.5px] text-bad px-2 py-1 rounded-sm bg-bad/10 ring-1 ring-bad/20 flex items-center gap-1.5">
+                {deleteError}
+                <button onClick={() => setDeleteError("")} className="ml-1 text-dim hover:text-ink">✕</button>
+              </div>
+            )}
+            {/* One name, the pressed state says which way it is set (the same toggle as the ArgoCD Resources tab's "Group by kind"). */}
+            <button
+              type="button"
+              aria-pressed={grouped}
+              onClick={() => {
+                const next = !grouped;
+                setGrouped(next);
+                saveCrdGrouping(next);
+              }}
+              title="Group the CRDs by API group"
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+                grouped ? "bg-surface-tint/8 text-ink ring-edge-strong" : "ring-edge text-mute hover:text-ink hover:bg-surface-tint/4"
+              }`}
+            >
+              Group by API group
+            </button>
+          </>
+        )}
       />
       <ConfirmModal
         contextLabel={identity.label}
@@ -3139,12 +3203,29 @@ const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "age",  header: "Age",       width: 80, sortable: true, sortValue: (r) => parseAge(r.age), cell: (r) => <Dim t={r.age} /> },
 ];
 
-export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search }: { context: string; crd: CRD; namespace: string; search?: string }) {
+export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search, onBack }: {
+  context: string; crd: CRD; namespace: string; search?: string;
+  /** "All CRDs": back to the CRDs page. */
+  onBack: () => void;
+}) {
   const { data = [], isLoading, error, refetch } = useCRDResources(context, crd, true, namespace);
   return (
     <GenericResourceTable context={context} columns={crdInstanceColumns} data={data} isLoading={isLoading}
       error={error} onRetry={refetch} keyFn={(r) => `${r.namespace}/${r.name}`} search={search}
       title={crd.kind} count={data.length}
+      extraLeft={(
+        <>
+          <span className="mono text-[11px] text-mute truncate">{crd.group}/{crdReadVersion(crd)}</span>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            <ArrowLeft size={11} aria-hidden />
+            All CRDs
+          </button>
+        </>
+      )}
       emptyIcon={<Boxes size={32} />} emptyText={`No ${crd.kind} resources found`} />
   );
 });

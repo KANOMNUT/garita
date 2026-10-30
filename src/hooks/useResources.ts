@@ -25,6 +25,7 @@ import { METRIC_RANGES, rangeWindow, samePlotExceptRange, targetKey } from "../u
 import { newUsageHistory, recordUsage, type UsageHistory } from "../utils/rightSizing";
 import { RESOURCE_QUERY_KEY } from "../utils/resourceQueryKey";
 import { isTerminating, namespaceNames } from "../utils/namespaces";
+import { crdReadVersion } from "../utils/crds";
 import { assertWritable, READ_ONLY_BLOCKS_SHELL } from "../utils/guardrails";
 import {
   canCheck, DEFAULT_PREFS, parsePrefs, reduce, UPDATES_KEY, updateMode,
@@ -472,7 +473,7 @@ export function useCRDResources(
   // CRD detail-panel caller, which deliberately lists cluster-wide.
   namespace?: string,
 ) {
-  const version = crd?.versions.split(",")[0].trim() ?? "";
+  const version = crdReadVersion(crd);
   return useQuery<CRDResource[], Error>({
     queryKey: ["crd-resources", context, crd?.name, version, namespace ?? ""],
     queryFn: () => invoke<CRDResource[]>("list_crd_resources", {

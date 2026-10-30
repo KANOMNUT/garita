@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, memo, useCallback } from "react";
+import { useMemo, useState, useEffect, memo } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import markSvg from "../assets/garita-mark.svg?raw";
@@ -7,12 +7,12 @@ import {
   Network, Globe, FileCode, Lock, Database, Server, Activity,
   ChevronsUpDown, TrendingUp, Puzzle,
   Shield, ShieldCheck, GitBranch, Anchor, ShieldAlert, FolderGit2, FolderTree,
-  Waypoints, Split, Copy, Webhook, Camera, ChevronRight, ChevronDown, Settings, History, HeartPulse, Gauge, Search, Archive, FileWarning,
+  Waypoints, Split, Copy, Webhook, Camera, Settings, History, HeartPulse, Gauge, Search, Archive, FileWarning,
 } from "lucide-react";
-import type { ResourceType, CRD } from "../types/k8s";
+import type { ResourceType } from "../types/k8s";
 import { HEALTH_PAGES, type HealthPage } from "../utils/resourceQueryKey";
 import { useClusterIdentity, CLUSTER_COLOR_CLASSES } from "../utils/clusterIdentity";
-import { useAppUpdate, useCRDs } from "../hooks/useResources";
+import { useAppUpdate } from "../hooks/useResources";
 import { noticeLabel } from "../utils/updateState";
 import { ReadOnlyChip } from "./ReadOnlyBadge";
 import { PRODUCT_NAME } from "../brand";
@@ -61,8 +61,6 @@ interface SidebarProps {
   setActive: (v: ResourceType) => void;
   currentContext: string;
   onOpenSwitcher: () => void;
-  crdTarget?: CRD | null;
-  onSelectCrdInstance?: (crd: CRD) => void;
   /** F6: the gear in the footer opens Settings (a main view, not a resource). */
   onOpenSettings?: () => void;
   /** v2.1.0: the update notice opens Settings → Updates and focuses its primary action. */
@@ -81,38 +79,14 @@ interface SidebarProps {
 
 export function Sidebar({
   active, setActive, currentContext, onOpenSwitcher,
-  crdTarget, onSelectCrdInstance, onOpenSettings, onOpenUpdates, settingsActive, onOpenJournal, journalActive, onOpenWhoCan, whoCanActive, healthActive, onOpenHealth,
+  onOpenSettings, onOpenUpdates, settingsActive, onOpenJournal, journalActive, onOpenWhoCan, whoCanActive, healthActive, onOpenHealth,
 }: SidebarProps) {
   const [appVersion, setAppVersion] = useState("");
-  const [expandedCrdGroups, setExpandedCrdGroups] = useState<Set<string>>(new Set());
   const upd = useAppUpdate();
   const notice = noticeLabel(upd.state, upd.dismissed);
   const noticeVersion = "version" in upd.state ? upd.state.version : null;
   const identity = useClusterIdentity(currentContext);
-  const { data: crds = [] } = useCRDs(currentContext);
   useEffect(() => { getVersion().then(setAppVersion).catch(() => {}); }, []);
-
-  // Grouped by CRD group, kinds sorted (§4.5) — a plain array sorted twice is
-  // simpler than a Map for a list this small (dozens of CRDs, not thousands).
-  const crdGroups = useMemo(() => {
-    const groups = new Map<string, CRD[]>();
-    for (const c of crds) {
-      const list = groups.get(c.group) ?? [];
-      list.push(c);
-      groups.set(c.group, list);
-    }
-    return [...groups.entries()]
-      .map(([group, list]): [string, CRD[]] => [group, [...list].sort((a, b) => a.kind.localeCompare(b.kind))])
-      .sort((a, b) => a[0].localeCompare(b[0]));
-  }, [crds]);
-
-  const toggleCrdGroup = useCallback((group: string) => {
-    setExpandedCrdGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) next.delete(group); else next.add(group);
-      return next;
-    });
-  }, []);
 
   const initials = useMemo(() => {
     const parts = currentContext.split("-");
@@ -243,41 +217,11 @@ export function Sidebar({
           <NavItem icon={<FolderTree size={15} />} label="Namespaces"     active={active === "ns"}     onClick={() => setActive("ns")} />
           <NavItem icon={<Server size={15} />}   label="Nodes"            active={active === "nodes"}  onClick={() => setActive("nodes")} />
           <NavItem icon={<Activity size={15} />} label="Events"           active={active === "events"} onClick={() => setActive("events")} />
-          <NavItem icon={<Puzzle size={15} />}   label="CRDs"             active={active === "crd"}    onClick={() => setActive("crd")} />
+          <NavItem icon={<Puzzle size={15} />}   label="CRDs"             active={active === "crd" || active === "crd-instances"} onClick={() => setActive("crd")} />
           <NavItem icon={<List size={15} />}     label="Priority Classes" active={active === "pc"}     onClick={() => setActive("pc")} />
           <NavItem icon={<Webhook size={15} />}  label="Mutating Webhooks"   active={active === "mwc"} onClick={() => setActive("mwc")} />
           <NavItem icon={<Webhook size={15} />}  label="Validating Webhooks" active={active === "vwc"} onClick={() => setActive("vwc")} />
         </SidebarSection>
-
-        {crdGroups.length > 0 && (
-          <SidebarSection label="Custom Resources">
-            {crdGroups.map(([group, list]) => (
-              <div key={group} className="flex flex-col">
-                <button
-                  onClick={() => toggleCrdGroup(group)}
-                  className="flex items-center gap-1.5 mx-2 px-2 h-6 rounded-md text-[11px] text-dim hover:text-ink hover:bg-surface-tint/4 transition-colors"
-                >
-                  {expandedCrdGroups.has(group) ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                  <span className="flex-1 text-left truncate mono">{group || "core"}</span>
-                  <span className="text-dim">{list.length}</span>
-                </button>
-                {expandedCrdGroups.has(group) && list.map((c) => (
-                  <button
-                    key={c.name}
-                    onClick={() => onSelectCrdInstance?.(c)}
-                    className={`group flex items-center gap-2.5 mx-2 pl-7 pr-2 h-7 rounded-md text-[12.5px] transition-colors
-                      ${active === "crd-instances" && crdTarget?.name === c.name
-                        ? "bg-accent/12 text-ink ring-1 ring-accent/25"
-                        : "text-mute hover:bg-surface-tint/4 hover:text-ink"
-                      }`}
-                  >
-                    <span className="flex-1 text-left truncate">{c.kind}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </SidebarSection>
-        )}
 
         <SidebarSection label="Helm">
           <NavItem icon={<Anchor size={15} />} label="Releases" active={active === "helm"} onClick={() => setActive("helm")} />

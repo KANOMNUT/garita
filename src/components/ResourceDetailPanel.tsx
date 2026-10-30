@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useResizablePanel } from "../hooks/useResizablePanel";
 import { GitCompare, X, Boxes, Eye, EyeOff, Copy, Check, AlertTriangle, Play, Square, Wifi, RefreshCw, RefreshCcw, GitMerge, Loader2, Plus, GitCommit, Trash2, Pencil, ArrowUpRight, ChevronRight, StepBack, Network } from "lucide-react";
 import { useResourceYaml, useResourceEvents, useApplyResource, useCRDResources, useNodePods, useCordonNode, useUncordonNode, useDeleteNode, useAddNodeTaint, useRemoveNodeTaint, useStartServicePortForward, usePortForwards, useStopPortForward, useHelmValues, useUpgradeHelmRelease, useHelmHistory, useRollbackHelmRelease, useSyncArgoCdApp, useRollbackArgoCdApp, useRefreshArgoCdApp, useArgoCdCommitInfo, useArgoCdAppResources, useWorkloadPods, useResourceMetadata, useWorkloadConditions, useResourceGraph, useDeleteResource, useDeleteArgoCdApp, useUninstallHelmRelease, useTlsCertificateInfo, usePermissions, useResourceYamlNeat } from "../hooks/useResources";
-import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision, NamespaceRow } from "../types/k8s";
+import type { SelectedResource, ArgoCdResource, ResourceType, MapKind, Pod, GraphNode, PodTemplateSpec, ArgoCdHistoryEntry, TlsCertInfo, HelmRevision, NamespaceRow, CRD } from "../types/k8s";
 import { useRevealedSecret, forgetSecret, forgetHelmValues, useAccessChecks } from "../hooks/useResources";
 import { deniedNamespaces, secretGetCheck } from "../utils/permissionHints";
 import { formatSecretSize, hasRedactionSentinel, helmEditSeed } from "../utils/secretReveal";
@@ -21,6 +21,7 @@ import { NEAT_NO_MATCH_HINT, REDACTED_NO_MATCH_HINT } from "../utils/yamlFind";
 import { PropagationPicker, deleteLabelFor, propagationDependents, usePropagationState } from "./PropagationPicker";
 import { useClusterIdentity } from "../utils/clusterIdentity";
 import { disabledAttrs, pickDisabledReason } from "../utils/guardrails";
+import { crdInstancesReason } from "../utils/crds";
 import {
   argoDeleteEquiv, argoRefreshEquiv, argoRollbackEquiv, argoSyncEquiv, cordonEquiv, deleteEquiv, deleteNodeEquiv,
   helmRollbackEquiv, helmUninstallEquiv, taintEquiv,
@@ -872,9 +873,16 @@ function NodeOverview({ item, context }: { item: import("../types/k8s").NodeReso
 
 // ─── CRD resource list ────────────────────────────────────────────────────────
 
-function CRDOverview({ item, context }: { item: import("../types/k8s").CRD; context: string }) {
+function CRDOverview({ item, context, onOpenCrdInstances }: {
+  item: CRD;
+  context: string;
+  /** "Show instances": open the objects list of this CRD. Without it there is no link. */
+  onOpenCrdInstances?: (crd: CRD) => void;
+}) {
   const { data: resources = [], isLoading } = useCRDResources(context, item, true);
   const isNamespaced = item.scope === "Namespaced";
+  // Disabled, not hidden, when the objects cannot be listed: the reason is the control's description.
+  const instancesReason = crdInstancesReason(item);
 
   return (
     <>
@@ -885,6 +893,20 @@ function CRDOverview({ item, context }: { item: import("../types/k8s").CRD; cont
       <KV k="Versions"    v={item.versions} />
       <KV k="Established" v={item.established ? "True" : "False"} />
       <KV k="Age"         v={item.age} />
+
+      {onOpenCrdInstances && (
+        <button
+          type="button"
+          onClick={() => { if (instancesReason) return; onOpenCrdInstances(item); }}
+          {...disabledAttrs(instancesReason)}
+          className={`mt-3 inline-flex items-center gap-1 text-[11.5px] rounded-xs outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+            instancesReason ? "text-accent opacity-50 cursor-not-allowed" : "text-accent hover:underline"
+          }`}
+        >
+          <ArrowUpRight size={12} aria-hidden />
+          Show instances
+        </button>
+      )}
 
       <div className="mt-4">
         <div className="flex items-center mb-2">
@@ -1080,11 +1102,12 @@ function NamespaceOverview({ row, onNavigate, onShowTab }: {
   );
 }
 
-function OverviewContent({ resource, context, onNavigate, onShowTab, secretReveal }: {
+function OverviewContent({ resource, context, onNavigate, onShowTab, onOpenCrdInstances, secretReveal }: {
   resource: SelectedResource;
   context: string;
   onNavigate?: (kind: ResourceType, namespace: string, name: string) => void;
   onShowTab?: (tab: "Events" | "YAML") => void;
+  onOpenCrdInstances?: (crd: CRD) => void;
   secretReveal: SecretReveal;
 }) {
   // Fetch commit metadata from ArgoCD API lazily — data may not be in the CRD.
@@ -1334,7 +1357,7 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
       );
     }
     case "crd": {
-      return <CRDOverview item={resource.item} context={context!} />;
+      return <CRDOverview item={resource.item} context={context!} onOpenCrdInstances={onOpenCrdInstances} />;
     }
     case "netpol": {
       const n = resource.item;
@@ -2969,11 +2992,13 @@ interface Props {
    * row trash). Without it a Namespace panel has no delete button.
    */
   onRequestNamespaceDelete?: (name: string) => void;
+  /** A CRD panel's "Show instances": open that CRD's objects (the host navigates). Without it the link is not drawn. */
+  onOpenCrdInstances?: (crd: CRD) => void;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ResourceDetailPanel({ resource, context, onClose, onNavigate, compareNonce = 0, onOpenProblems, problemsVisible = true, onOpenMap, onRequestNamespaceDelete }: Props) {
+export function ResourceDetailPanel({ resource, context, onClose, onNavigate, compareNonce = 0, onOpenProblems, problemsVisible = true, onOpenMap, onRequestNamespaceDelete, onOpenCrdInstances }: Props) {
   const identity = useClusterIdentity(context);
   const { width, startResize } = useResizablePanel("detail-panel-width");
   const [tab, setTab] = useState<Tab>("Overview");
@@ -3375,7 +3400,7 @@ export function ResourceDetailPanel({ resource, context, onClose, onNavigate, co
             )}
             <div className="p-4">
               <div className="rounded-xl bg-card/70 ring-1 ring-edge hairline p-3 pt-2">
-                <OverviewContent resource={resource} context={context} onNavigate={onNavigate} onShowTab={setTab} secretReveal={secretReveal} />
+                <OverviewContent resource={resource} context={context} onNavigate={onNavigate} onShowTab={setTab} onOpenCrdInstances={onOpenCrdInstances} secretReveal={secretReveal} />
               </div>
             </div>
           </div>

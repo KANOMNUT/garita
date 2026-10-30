@@ -423,6 +423,8 @@ export interface CRD {
   plural: string;
   scope: string;
   versions: string;
+  /** Mirrors crds.rs CRD.read_version: storage version when served, else first served; "" when none. */
+  read_version: string;
   established: boolean;
   age: string;
 }

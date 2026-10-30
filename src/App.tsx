@@ -190,7 +190,7 @@ function AppInner() {
   // Bumped to focus the primary action of Settings → Updates (palette entry, Sidebar notice).
   const [focusUpdates, setFocusUpdates] = useState(0);
   const openUpdates = () => { setSettingsSection("updates"); setMainView("settings"); setFocusUpdates((n) => n + 1); };
-  // UXP-23: ONE navigation wrapper used by EVERY entry point (Sidebar, CRD tree, NodeStrip
+  // UXP-23: ONE navigation wrapper used by EVERY entry point (Sidebar, NodeStrip
   // "view all", both panels' onNavigate, the palette). It resets mainView directly: an effect
   // on activeResource would never fire when the user re-picks the resource already active.
   const setActiveResource = useCallback((r: ResourceType) => {
@@ -206,6 +206,14 @@ function AppInner() {
   // §4.5 — which CRD kind the "crd-instances" view is currently showing.
   // CRDResource has no detail panel, so this lives outside SelectedResource.
   const [crdTarget, setCrdTarget] = useState<CRD | null>(null);
+  // The two ways into a CRD's objects: the CRDs page's Instances button and the CRD panel's "Show instances" link.
+  // The panel closes (the CRD panel would otherwise stay over the list); crdTarget is set before activeResource changes,
+  // so the [namespace, activeResource] effect only ever keeps it.
+  const openCrdInstances = useCallback((crd: CRD) => {
+    setSelectedResource(null);
+    setCrdTarget(crd);
+    setActiveResource("crd-instances");
+  }, [setActiveResource]);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
@@ -315,7 +323,7 @@ function AppInner() {
     setSelectedPod(null);
     setSelectedResource(null);
     // §4.5: cleared when activeResource changes away from "crd-instances" —
-    // set *before* this effect runs (see Sidebar's onSelectCrdInstance), so
+    // set *before* this effect runs (see openCrdInstances), so
     // this only ever clears it, never races the set.
     if (activeResource !== "crd-instances") setCrdTarget(null);
     if (navigateSearchRef.current !== null) {
@@ -603,8 +611,6 @@ function AppInner() {
           journalActive={mainView === "journal"}
           currentContext={currentContext}
           onOpenSwitcher={() => setSwitcherOpen(true)}
-          crdTarget={crdTarget}
-          onSelectCrdInstance={(crd) => { setCrdTarget(crd); setActiveResource("crd-instances"); }}
         />
 
         <main tabIndex={-1} className="flex-1 min-w-0 flex flex-col">
@@ -812,7 +818,8 @@ function AppInner() {
               {activeResource === "crd" && (
                 <CRDView context={currentContext} search={search}
                   selectedKey={selectedResource?.kind === "crd" ? selectedResource.item.name : null}
-                  onSelect={(item) => setSelectedResource({ kind: "crd", item })} />
+                  onSelect={(item) => setSelectedResource({ kind: "crd", item })}
+                  onOpenInstances={openCrdInstances} />
               )}
               {activeResource === "netpol" && (
                 <NetworkPolicyView context={currentContext} namespace={namespace} search={search}
@@ -939,15 +946,23 @@ function AppInner() {
               )}
               {activeResource === "crd-instances" && (
                 crdTarget ? (
-                  <CRDInstanceView context={currentContext} crd={crdTarget} namespace={namespace} search={search} />
+                  <CRDInstanceView context={currentContext} crd={crdTarget} namespace={namespace} search={search}
+                    onBack={() => setActiveResource("crd")} />
                 ) : (
                   // Reachable after a context switch clears crdTarget while
                   // activeResource stays "crd-instances" (that effect doesn't
                   // touch activeResource) — without this branch the content
-                  // area renders nothing with no way out but the sidebar.
+                  // area renders nothing.
                   <div className="py-16 flex flex-col items-center gap-3">
                     <Boxes size={32} className="text-dim" />
-                    <p className="text-[13px] text-mute">Select a custom resource from the sidebar</p>
+                    <p className="text-[13px] text-mute">Pick a CRD on the CRDs page to see its objects.</p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveResource("crd")}
+                      className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      Open CRDs
+                    </button>
                   </div>
                 )
               )}
@@ -980,6 +995,7 @@ function AppInner() {
                 problemsVisible={mainView === "resources"}
                 onOpenMap={openMap}
                 onRequestNamespaceDelete={setNsToDelete}
+                onOpenCrdInstances={openCrdInstances}
                 context={currentContext}
                 onClose={() => setSelectedResource(null)}
                 onNavigate={(kind, ns, name) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rangeSelect, searchRows, shownRows, sortRows, type SortableColumn } from "./tableRows";
+import { groupRows, rangeSelect, searchRows, shownRows, sortRows, type SortableColumn } from "./tableRows";
 
 interface App { namespace: string; name: string; age: number; health: string }
 
@@ -79,6 +79,34 @@ describe("shownRows", () => {
   });
   it("is the identity with no search and no sort", () => {
     expect(shownRows(apps, undefined, key, columns, null)).toEqual(apps);
+  });
+});
+
+describe("groupRows", () => {
+  it("orders the groups with localeCompare and puts the empty key first", () => {
+    const groups = groupRows(apps, (a) => a.namespace);
+    expect(groups.map((g) => g.key)).toEqual(["argocd", "team-a", "team-b"]);
+    const mixed = [app("zeta", "a"), app("", "b"), app("Beta", "c"), app("alpha", "d")];
+    expect(groupRows(mixed, (a) => a.namespace).map((g) => g.key)).toEqual(["", "alpha", "Beta", "zeta"]);
+  });
+  it("keeps the row order inside a group", () => {
+    const sorted = sortRows(apps, columns, { col: "age", asc: false });
+    const groups = groupRows(sorted, (a) => a.namespace);
+    expect(groups[0].rows.map(key)).toEqual(["argocd/web", "argocd/api"]);
+  });
+  it("returns no group for no rows", () => {
+    expect(groupRows([], (a: App) => a.namespace)).toEqual([]);
+  });
+  it("returns one group when every row has the same key", () => {
+    const groups = groupRows(apps, () => "all");
+    expect(groups).toHaveLength(1);
+    expect(groups[0].key).toBe("all");
+    expect(groups[0].rows).toEqual(apps);
+  });
+  it("does not change the input", () => {
+    const before = [...apps];
+    groupRows(apps, (a) => a.health);
+    expect(apps).toEqual(before);
   });
 });
 

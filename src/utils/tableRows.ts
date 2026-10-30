@@ -54,6 +54,26 @@ export function shownRows<T>(
   return sortRows(searchRows(data, search, keyFn), columns, sort);
 }
 
+export interface RowGroup<T> { key: string; rows: T[] }
+
+/**
+ * `rows` (already searched and sorted) split by `groupOf`. Groups come in `localeCompare` order of
+ * the key (so "" is first); the rows inside a group keep the order they had in `rows`, which is how
+ * the table's sort applies inside each group.
+ */
+export function groupRows<T>(rows: readonly T[], groupOf: (item: T) => string): RowGroup<T>[] {
+  const byKey = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = groupOf(row);
+    const list = byKey.get(key);
+    if (list) list.push(row);
+    else byKey.set(key, [row]);
+  }
+  return [...byKey.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, list]) => ({ key, rows: list }));
+}
+
 /**
  * A checkbox click. With `shift` and an `anchor` found in `order`, set (or, when `key` was
  * already selected, clear) every key from the anchor to `key` in `order`'s order. Otherwise
