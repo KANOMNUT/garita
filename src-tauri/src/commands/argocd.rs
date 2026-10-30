@@ -660,6 +660,10 @@ pub struct ArgoCdApp {
     pub last_commit: String,
     pub last_synced_at: String,
     pub operation_phase: String,
+    /// `status.operationState.message`: the controller's text about the last operation, for every
+    /// phase (the frontend chooses which phases it shows). Empty when absent or not a string,
+    /// never a dash. Display form from `operation_message_display`.
+    pub operation_message: String,
     pub commit_message: String,
     pub commit_author: String,
     pub history: Vec<ArgoCdHistoryEntry>,
@@ -714,6 +718,35 @@ pub(crate) fn history_entry_message(message: &str) -> String {
         .to_string()
 }
 
+/// Longest `operation_message` sent to the webview, in characters (Unicode scalar values, not
+/// bytes). The Applications list is polled and carries every Application, so the cap bounds the
+/// payload; the Application's raw YAML keeps the whole text.
+pub(crate) const OPERATION_MESSAGE_MAX_CHARS: usize = 2000;
+
+/// Display form of `status.operationState.message`, which is untrusted controller text (API
+/// server and webhook refusals, Helm, Kustomize and plugin output). In this order: lines are
+/// joined with `\n` (so a CRLF message loses its `\r`); control characters other than `\n` and
+/// `\t` are dropped (an ANSI colour sequence loses its ESC byte, its printable rest stays);
+/// leading and trailing whitespace is trimmed (inner blank lines and indentation stay); a result
+/// longer than `OPERATION_MESSAGE_MAX_CHARS` characters keeps its first
+/// `OPERATION_MESSAGE_MAX_CHARS` characters followed by `…` (U+2026). A result of exactly the
+/// limit is unchanged. Never byte-slices and never panics.
+pub(crate) fn operation_message_display(message: &str) -> String {
+    let joined = message.lines().collect::<Vec<_>>().join("\n");
+    let cleaned: String = joined
+        .chars()
+        .filter(|c| *c == '\n' || *c == '\t' || !c.is_control())
+        .collect();
+    let trimmed = cleaned.trim();
+    if trimmed.chars().count() > OPERATION_MESSAGE_MAX_CHARS {
+        let mut cut: String = trimmed.chars().take(OPERATION_MESSAGE_MAX_CHARS).collect();
+        cut.push('\u{2026}');
+        cut
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn time_ago(iso: &str) -> String {
     use chrono::{DateTime, Utc};
     if iso.is_empty() { return "\u{2014}".to_string(); }
@@ -753,6 +786,11 @@ pub async fn list_argocd_apps(context: String) -> Result<Vec<ArgoCdApp>, String>
         let last_commit = last_commit_display(status["sync"]["revision"].as_str().unwrap_or(""));
         let last_synced_at = time_ago(status["operationState"]["finishedAt"].as_str().unwrap_or(""));
         let operation_phase = str_or_dash(&status["operationState"]["phase"]);
+        // Not `str_or_dash`: an absent message is "", so the frontend tests emptiness only.
+        let operation_message = status["operationState"]["message"]
+            .as_str()
+            .map(operation_message_display)
+            .unwrap_or_default();
         // ArgoCD stores revisionMetadata in multiple places depending on version/state.
         // Try all three paths: last operation result, current sync state, last history entry.
         let history_message = status["history"].as_array()
@@ -844,6 +882,7 @@ pub async fn list_argocd_apps(context: String) -> Result<Vec<ArgoCdApp>, String>
             last_commit,
             last_synced_at,
             operation_phase,
+            operation_message,
             commit_message,
             commit_author,
             history,
@@ -1549,6 +1588,49 @@ mod rollback_tests {
             last_commit_display("0123456789abcdef0123456789abcdef0123456g"),
             "0123456789abcdef0123456789abcdef0123456g"
         );
+    }
+
+    #[test]
+    fn operation_message_display_rules() {
+        let max = OPERATION_MESSAGE_MAX_CHARS;
+        assert_eq!(max, 2000);
+        // Empty and whitespace only give "".
+        assert_eq!(operation_message_display(""), "");
+        assert_eq!(operation_message_display("   "), "");
+        assert_eq!(operation_message_display(" \n\t \r\n  \n"), "");
+        // Surrounding spaces and newlines are trimmed.
+        assert_eq!(operation_message_display("  \n failed to apply \n\n"), "failed to apply");
+        // CRLF becomes LF.
+        assert_eq!(operation_message_display("a\r\nb"), "a\nb");
+        // An inner blank line, indentation and a tab survive.
+        assert_eq!(
+            operation_message_display("one\n\n  two\tthree\nfour"),
+            "one\n\n  two\tthree\nfour"
+        );
+        // A lone CR and other control characters are dropped, not turned into line breaks.
+        assert_eq!(operation_message_display("a\rb\u{0}c\u{7f}d"), "abcd");
+        // An ANSI colour sequence loses its ESC byte and keeps its printable rest.
+        assert_eq!(
+            operation_message_display("\u{1b}[31mfailed\u{1b}[0m"),
+            "[31mfailed[0m"
+        );
+        // Exactly the limit is unchanged and has no ellipsis.
+        let exact = "x".repeat(max);
+        assert_eq!(operation_message_display(&exact), exact);
+        // One over the limit is cut to the limit plus an ellipsis.
+        let over = "x".repeat(max + 1);
+        assert_eq!(operation_message_display(&over), format!("{}\u{2026}", "x".repeat(max)));
+        // Multi-byte text is cut on characters, not bytes (a byte slice would panic here).
+        let wide = "\u{e9}".repeat(2500);
+        let cut = operation_message_display(&wide);
+        assert_eq!(cut, format!("{}\u{2026}", "\u{e9}".repeat(max)));
+        assert_eq!(cut.chars().count(), max + 1);
+        // The limit counts the result after control characters are dropped and trimmed.
+        let padded = format!("  \u{1b}{}\u{1b}\n ", "x".repeat(max));
+        assert_eq!(operation_message_display(&padded), "x".repeat(max));
+        // Four-byte characters too.
+        let crabs = "\u{1f980}".repeat(max + 5);
+        assert_eq!(operation_message_display(&crabs), format!("{}\u{2026}", "\u{1f980}".repeat(max)));
     }
 
     #[test]
