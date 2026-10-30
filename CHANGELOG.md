@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A detail panel for custom resources.** Click an object in a CRD's list to open a panel with Overview (kind, API version, namespace or scope, age, phase when the object reports one, generation, owners, finalizers, and the deletion time while it is being deleted), Summary (conditions, labels, annotations, and the ArgoCD application that manages it), Events, and YAML with Neat, Find and Copy. Only a `Ready` condition is coloured; the status of every other condition type is plain text. **Edit** the YAML and **Review & save** it: the API server checks the change in a dry run first, and the review shows what would change, or why it was refused. **Delete** the object from the panel or from its row; a cluster-scoped object asks you to type its name, and the delete is recorded in the Journal. Edit, Review & save and Delete are disabled, with the reason as their tooltip, in read-only mode or when your account may not update or delete that kind.
+
+### Changed
+
+- **Custom resources moved from the sidebar to the CRDs page.** The sidebar's Custom Resources list is gone. The CRDs page (Cluster section) groups CRDs by API group under headers you can collapse; a search keeps every group with a match open. **Group by API group** switches back to the flat list, and the choice is remembered. Each CRD row has an **Instances** button, and the CRD's panel has a **Show instances** link, that open the list of that CRD's objects; **All CRDs** goes back. Both are disabled, with the reason, when the CRD is not established yet or serves no version.
+- **A CRD's objects are read at its storage version.** When a CRD serves several versions, the objects list and the new panel use the storage version if it is served, and otherwise the first served version, so the same version is read everywhere.
+
 ## [2.4.0] - 2026-10-30
 
 ### Added

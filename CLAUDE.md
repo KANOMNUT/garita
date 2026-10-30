@@ -119,6 +119,7 @@ How multi-agent runs work here. The Boot step in every `.claude/agents/*.md` mak
 - v2.3.0 tests: Rust `observability::tests` (`proxy_path`, `classify`, `read_capped`, `valid_tenant`, discovery rules and reasons, sort order), `prometheus::tests` (each template, `parse_matrix`, caps, `outcome`, per-flavour classifiers), `logs_backend::tests` (presets, queries, Loki and VictoriaLogs parsing); TS `observability`, `metricChart`, `segmented`, `lineage`, `focusBanner` (`resourceMap`), `elbow`, `spreadLabels`, `clampToGap` and the routing invariant (`graphLayout`), plus additions to `clusterIdentity`, `logSource` and `rightSizing`.
 - v2.3.1 tests (TS only, no Rust change): `tableRows`, `yamlFind`, `platform`, plus additions to `resourceMap` (the kind filter helpers, and `prepareMap` grouping pods before hiding kinds).
 - v2.4.0 tests: Rust `namespaces::tests` (`namespace_row`: Active, Terminating conditions in order, defaults, serialised field names), the `convert_pod` additions in `pods.rs` (`service_account`, `conditions` order and defaults), the `ns` rows in `resource_edit.rs` (`gvk_for` aliases, `cluster_scoped_set_is_exactly_the_null_namespace_kinds`), `last_commit_display_rules`, `history_entry_message_rules` and `operation_message_display_rules` (`argocd.rs`, module `rollback_tests`), and the `ns` kind tokens in `launch::tests`; TS `namespaces`, `podStatus`, `podTableView`, `argoStatus` (with `argoOperationNote` and `isArgoOperationMessageCut`), `argoHistory`, `nodeStrip`, plus additions to `scope` (`ns` cluster-scoped), `launchArgs` (kind `ns`) and `timeline` (an ArgoCD entry keeps only the first line of its commit message).
+- v2.4.1 tests: Rust `crds::tests` (`cr_request`: the empty-group refusal, the `invalid API group` / `version` / `plural` / `name` / `namespace` cases that exercise `is_api_group` and `is_path_segment_name`, `cr_request_checks_run_in_the_documented_order`, and the command-level `every_command_refuses_an_empty_group_before_connecting` / `every_command_refuses_a_path_steering_group_before_connecting` (`x/../../api`); `cr_conditions`; `cr_detail` and its serialised field names; `read_version`; `cr_journal_kind`), the `pods.rs` additions (`ReplaceError::apply_message` labels, `invalid_yaml_preview`), `live::crds` (`src-tauri/src/live/crds.rs`, runs under `make live`); TS `crds` (`crdReadVersion`, `crdRef`, `crdInstancesReason`, `loadCrdGrouping` / `saveCrdGrouping`, `crdKubectlNoun` with `deleteEquiv`, `crDeniedReason`, `sameCustomResource`) and `groupRows` in `tableRows`.
 
 ## Requirements
 
@@ -131,10 +132,10 @@ Per-feature contracts live in `docs/claude/`. Most carry "do not simplify this b
 | Touching… | Read |
 |---|---|
 | Where a file lives | `key-files.md` |
-| Resource kinds, per-kind tables, cluster scope | `resource-types.md` |
+| Resource kinds, per-kind tables, cluster scope, CRD instances and `cr_request` | `resource-types.md` |
 | Pods, containers, logs (filters, JSON, multi-pod narrowing), shell, debug containers, metrics | `pods-logs.md` |
-| TopBar, panels, ⌘K, `ConfirmModal`, keyboard/Esc, cluster identity, theme/accent/colour tokens, read-only/guardrails, Settings, compare, field managers, app views (Journal, Who can, Health pages), resource map (incl. the Kinds filter), NetworkPolicy view, change timeline, YAML find (`⌘F` / `Ctrl+F` in the YAML views) | `ui.md` |
-| Create/edit forms, `patch.ts`, validators, merge-from-file, delete, neat YAML, TLS, previews, diff rows, kubectl equivalents, rollout diff, Secret values in the webview | `writes.md` |
+| TopBar, panels, ⌘K, `ConfirmModal`, keyboard/Esc, cluster identity, theme/accent/colour tokens, read-only/guardrails, Settings, compare, field managers, app views (Journal, Who can, Health pages), resource map (incl. the Kinds filter), NetworkPolicy view, change timeline, YAML find (`⌘F` / `Ctrl+F` in the YAML views), CRDs page (grouping), custom resource panel | `ui.md` |
+| Create/edit forms, `patch.ts`, validators, merge-from-file, delete, neat YAML, TLS, previews, diff rows, kubectl equivalents, rollout diff, Secret values in the webview, custom resource YAML save and delete | `writes.md` |
 | App log, Diagnostics, action journal (`app_log.rs`, `journal.rs`, `commands/diagnostics.rs`) | `diagnostics.md` |
 | Helm (incl. redacted Values, release decoding) | `helm.md` |
 | ArgoCD | `argocd.md` |
