@@ -1208,6 +1208,18 @@ export function useArgoCdApps(context: string) {
   });
 }
 
+/**
+ * The Applications list's cached rows, never fetched or polled from here (`enabled: false`: this observer only reads the
+ * cache). App uses it so the open panel follows the list; `useArgoCdApps` stays the only poller.
+ */
+export function useCachedArgoCdApps(context: string) {
+  return useQuery<ArgoCdApp[], Error>({
+    queryKey: ["argocd-apps", context],
+    queryFn: () => invoke<ArgoCdApp[]>("list_argocd_apps", { context }),
+    enabled: false,
+  });
+}
+
 export function useSyncArgoCdApp() {
   const qc = useQueryClient();
   return useMutation<string, Error, { context: string; namespace: string; name: string; prune?: boolean; dryRun?: boolean; force?: boolean; revision?: string }>({

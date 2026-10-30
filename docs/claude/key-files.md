@@ -8,7 +8,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions |
+| `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions; `panelResource` swaps the selected snapshot for the live row for `ns` and `argocd` (cache reads, no polling) |
 | `src/main.tsx` / `src/components/ErrorBoundary.tsx` | `main.tsx` mounts `<ErrorBoundary><App /></ErrorBoundary>` inside `StrictMode` after `initAppearance()`. `ErrorBoundary` is the app's one class component: a render error shows a full-window "Something went wrong" card with a Reload button, never the message, stack or data. See `ui.md` → Error boundary |
 | `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"), context chip, Custom Resources tree. No namespace list |
 | `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu (a `Popover` user) |
@@ -33,7 +33,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/cliStatus.ts` | Pure model of `CliStatus` for Settings → Command line |
 | `src/utils/drain.ts` | Pure drain helpers; owns the `deleting` / `force-deleted` row states (never in `EvictionOutcome`) |
 | `src/utils/podStatus.ts` | `POD_STATUS_STYLE`, `podStatusStyle`: the one pod status vocabulary and its token classes, read by `PodTable`, `DetailPanel`, the workload Pods tab and the Node panel's pod list. See `pods-logs.md` |
-| `src/utils/argoStatus.ts` | Pure ArgoCD status logic (with `argoStatus.test.ts`): the Health, Sync and operation pill tables (`argoHealthPill`, `argoSyncPill`, `argoPhasePill`), `isArgoHealthy`, the Resources tab filter groups (`filterArgoResources`, `argoHealthCount`, `argoSyncCount`, `visibleHealthFilters`, `ARGO_CHIP_CLS`) and row order (`argoSortScore`, `isDegradedOrMissing`). See `argocd.md` |
+| `src/utils/argoStatus.ts` | Pure ArgoCD status logic (with `argoStatus.test.ts`): the Health, Sync and operation pill tables (`argoHealthPill`, `argoSyncPill`, `argoPhasePill`), the last operation's Reason / Message box (`argoOperationNote`, `isArgoOperationMessageCut`), `isArgoHealthy`, the Resources tab filter groups (`filterArgoResources`, `argoHealthCount`, `argoSyncCount`, `visibleHealthFilters`, `ARGO_CHIP_CLS`) and row order (`argoSortScore`, `isDegradedOrMissing`). See `argocd.md` |
 | `src/components/ArgoGlyph.tsx` | `ArgoGlyph({ icon })`: the glyph of an ArgoCD status pill (`ArgoPill.icon`), `aria-hidden`, with the Pause icon for Suspended (the `⏸` character can render as a colour emoji). Used by `ResourceDetailPanel.tsx` (header chips, Resources tab filter chips and rows) and the Applications list in `ResourceViews.tsx`. See `argocd.md` |
 | `src/utils/argoHistory.ts` | `liveHistoryId(history, lastCommit)` (with `argoHistory.test.ts`): the History entry that is running now, by exact match of `ArgoCdHistoryEntry.revision` to `ArgoCdApp.last_commit` (highest `id`; none for `""` or `—`). Drives the neutral **Current** chip. See `argocd.md` |
 | `src/utils/modalLayer.ts` | `useModalLayer`, `isModalOpen`, `isEditableTarget`. See Keyboard layering |
@@ -129,7 +129,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/admission.rs` | Mutating/validating webhooks; `WebhookConfigRow.matches` |
 | `src-tauri/src/commands/namespaces.rs` | Namespaces: `list_namespace_rows` (`NamespaceRow`: phase, age, labels, deletion time, conditions, finalizers) behind the page, the picker and every names reader |
 | `src-tauri/src/commands/cluster_info.rs` | Cluster metadata, `check_cluster_access`, `list_events`, `get_resource_events(…, kind: Option<String>)` |
-| `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()`, `short_revision` / `last_commit_display` (revision display strings) |
+| `src-tauri/src/commands/argocd.rs` | ArgoCD apps/appsets/projects/repos, sync/refresh/rollback, `k8s_resource_health()`, `argo_api_resource()`, `short_revision` / `last_commit_display` (revision display strings), `operation_message_display` (the last operation's message, capped at 2000 characters) |
 | `src-tauri/src/commands/flux.rs`, `gateway.rs`, `certmanager.rs` | CRD lists via `DynamicObject`; empty on 404 |
 | `src-tauri/src/commands/search.rs` | `search_resources` |
 | `src-tauri/src/commands/graph.rs` | `get_resource_graph` |

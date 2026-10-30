@@ -53,8 +53,8 @@ import { PROTECTED_NAMESPACES, PROTECTED_NAMESPACE_REASON, chipLabels, deletingF
 import { liveHistoryId } from "../utils/argoHistory";
 import { ArgoGlyph } from "./ArgoGlyph";
 import {
-  ARGO_CHIP_CLS, ARGO_NEUTRAL_CLS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount,
-  argoSyncPill, filterArgoResources, isArgoHealthy, isDegradedOrMissing, visibleHealthFilters,
+  ARGO_CHIP_CLS, ARGO_NEUTRAL_CLS, ARGO_OPERATION_MESSAGE_MAX_CHARS, SYNC_FILTERS, argoHealthCount, argoHealthPill, argoOperationNote, argoPhasePill, argoSortScore, argoSyncCount,
+  argoSyncPill, filterArgoResources, isArgoHealthy, isArgoOperationMessageCut, isDegradedOrMissing, visibleHealthFilters,
   type ArgoHealthStatus, type ArgoPill, type ArgoSyncStatus,
 } from "../utils/argoStatus";
 
@@ -1460,11 +1460,30 @@ function OverviewContent({ resource, context, onNavigate, onShowTab, secretRevea
           {/* Health and Sync are the header chips. Only the last operation stays here, labelled so it is not read as a third status. */}
           {a.operation_phase && a.operation_phase !== "—" && (() => {
             const pp = argoPhasePill(a.operation_phase);
+            // ARGO-8: the controller's own text for the last operation. Red "Reason" for Failed / Error, neutral "Message" for
+            // Running / Terminating (a retrying sync stays Running). Plain text, verbatim, wrapped in full, never clamped.
+            const note = argoOperationNote(a.operation_phase, a.operation_message);
             return (
-              <div className="flex items-center gap-2 mb-3">
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ring-1 ${pp.cls}`}>
-                  <span aria-hidden>{pp.icon}</span>Last operation: {a.operation_phase}
-                </span>
+              <div className="mb-3">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ring-1 ${pp.cls}`}>
+                    <span aria-hidden>{pp.icon}</span>Last operation: {a.operation_phase}
+                  </span>
+                </div>
+                {note && (
+                  <div className={`mt-2 p-2.5 rounded-lg ring-1 ${note.failed ? "bg-bad/6 ring-bad/30" : "bg-surface-tint/3 ring-edge-raw/60"}`}>
+                    <div className={`text-[10.5px] uppercase tracking-wide mb-1 ${note.failed ? "text-bad" : "text-mute"}`}>
+                      {note.failed ? "Reason" : "Message"}
+                    </div>
+                    <p className="text-[12px] text-ink whitespace-pre-wrap wrap-break-word">{note.text}</p>
+                    {/* An Application panel has no YAML tab (tabsFor), so the hint names the field, never a tab. */}
+                    {isArgoOperationMessageCut(note.text) && (
+                      <p className="mt-1.5 text-[11px] text-mute wrap-break-word">
+                        Cut at {ARGO_OPERATION_MESSAGE_MAX_CHARS} characters. The full text is in <span className="mono">status.operationState.message</span> on the Application.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}

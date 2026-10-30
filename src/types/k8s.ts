@@ -496,6 +496,8 @@ export interface ArgoCdApp {
   last_commit: string;
   last_synced_at: string;
   operation_phase: string;
+  /** status.operationState.message, for every phase; "" when absent. Trimmed, control characters other than newline and tab removed, cut at 2000 characters with "…" (operation_message_display in argocd.rs). */
+  operation_message: string;
   commit_message: string;
   commit_author: string;
   history?: ArgoCdHistoryEntry[];

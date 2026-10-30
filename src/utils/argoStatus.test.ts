@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ARGO_CHIP_CLS, ARGO_NEUTRAL_CLS, HEALTH_FILTERS, SYNC_FILTERS,
-  argoHealthCount, argoHealthPill, argoPhasePill, argoSortScore, argoSyncCount, argoSyncPill,
-  filterArgoResources, isArgoHealthy, isDegradedOrMissing, visibleHealthFilters,
+  ARGO_OPERATION_MESSAGE_MAX_CHARS, argoHealthCount, argoHealthPill, argoOperationNote, argoPhasePill, argoSortScore, argoSyncCount, argoSyncPill,
+  filterArgoResources, isArgoHealthy, isArgoOperationMessageCut, isDegradedOrMissing, visibleHealthFilters,
 } from "./argoStatus";
 
 const res = (health_status: string, sync_status: string) => ({ health_status, sync_status });
@@ -155,5 +155,72 @@ describe("chip classes", () => {
       expect(ARGO_CHIP_CLS[s].off, s).toBeTruthy();
       expect(ARGO_CHIP_CLS[s].on).not.toBe(ARGO_CHIP_CLS[s].off);
     }
+  });
+});
+
+describe("argoOperationNote", () => {
+  const REFUSAL = "one or more objects failed to apply, reason: Deployment.apps \"web\" is invalid:\n  spec.replicas: Invalid value: -1";
+
+  it("gives a failed note for Failed and Error, with the text unchanged", () => {
+    expect(argoOperationNote("Failed", REFUSAL)).toEqual({ text: REFUSAL, failed: true });
+    expect(argoOperationNote("Error", "ComparisonError: repository not found")).toEqual({
+      text: "ComparisonError: repository not found", failed: true,
+    });
+  });
+
+  it("gives a neutral note for Running and Terminating (a retrying sync is still Running)", () => {
+    const retry = "one or more objects failed to apply, reason: x. Retrying attempt #2 at 3:04PM.";
+    expect(argoOperationNote("Running", retry)).toEqual({ text: retry, failed: false });
+    expect(argoOperationNote("Terminating", "Operation terminated")).toEqual({ text: "Operation terminated", failed: false });
+  });
+
+  it("gives nothing for an empty or whitespace-only message, whatever the phase", () => {
+    for (const phase of ["Failed", "Error", "Running", "Terminating"]) {
+      expect(argoOperationNote(phase, ""), phase).toBeNull();
+      expect(argoOperationNote(phase, " \n\t "), phase).toBeNull();
+    }
+  });
+
+  it("gives nothing for Succeeded, even with upstream's sentence", () => {
+    expect(argoOperationNote("Succeeded", "successfully synced (all tasks run)")).toBeNull();
+  });
+
+  it("gives nothing for no phase, a dash, a phase the table does not list, or a differently cased phase", () => {
+    for (const phase of ["", "—", "Odd", "failed", "running"]) {
+      expect(argoOperationNote(phase, "some text"), phase).toBeNull();
+    }
+  });
+
+  it("does not resolve inherited object keys as a phase", () => {
+    for (const k of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(argoOperationNote(k, "some text"), k).toBeNull();
+    }
+  });
+
+  it("keeps line breaks and indentation of the text", () => {
+    expect(argoOperationNote("Failed", "a\n\n  b")?.text).toBe("a\n\n  b");
+  });
+});
+
+describe("isArgoOperationMessageCut", () => {
+  const n = ARGO_OPERATION_MESSAGE_MAX_CHARS;
+
+  it("is true for the limit plus the ellipsis the backend adds", () => {
+    expect(isArgoOperationMessageCut("x".repeat(n) + "…")).toBe(true);
+  });
+
+  it("counts characters, not UTF-16 units: 2000 four-byte characters plus the ellipsis are cut", () => {
+    expect(isArgoOperationMessageCut("😀".repeat(n) + "…")).toBe(true);
+  });
+
+  it("is false for a message of the limit or less, with or without a trailing ellipsis", () => {
+    expect(isArgoOperationMessageCut("x".repeat(n))).toBe(false);
+    expect(isArgoOperationMessageCut("x".repeat(n - 1) + "…")).toBe(false);
+    expect(isArgoOperationMessageCut("waiting for…")).toBe(false);
+    expect(isArgoOperationMessageCut("")).toBe(false);
+  });
+
+  it("is false for a long text that does not end with the ellipsis", () => {
+    expect(isArgoOperationMessageCut("x".repeat(n + 5))).toBe(false);
   });
 });

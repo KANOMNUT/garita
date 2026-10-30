@@ -23,7 +23,7 @@ import { MergeFromFileModal } from "./components/MergeFromFileModal";
 import { HelmInstallModal } from "./components/HelmInstallModal";
 import {
   useKubeContexts, useClusterAccess,
-  useNamespaces, useNamespaceRows, startLaunchArgs, fetchNamespacesOrNull, useClusterInfo, useNodeMetricsHistory, usePodMetricsHistory, usePods, useNodeCapacity,
+  useNamespaces, useNamespaceRows, useCachedArgoCdApps, startLaunchArgs, fetchNamespacesOrNull, useClusterInfo, useNodeMetricsHistory, usePodMetricsHistory, usePods, useNodeCapacity,
   detectLegacyInstall,
 } from "./hooks/useResources";
 import { useActiveContext } from "./hooks/useActiveContext";
@@ -253,6 +253,9 @@ function AppInner() {
   // A Namespace is selected as a snapshot of its list row, and the page polls while one is Terminating. The panel reads the
   // live row (same query, no extra fetch) so it shows Terminating after a delete; a name that left the list keeps its snapshot.
   const { data: nsRows } = useNamespaceRows(currentContext);
+  // Same for an ArgoCD Application: the panel follows the Applications list's cached row (a failed sync turns it Failed and
+  // shows the reason without a reselect). This observer is disabled: it reads the cache, only the list view polls.
+  const { data: argoApps } = useCachedArgoCdApps(currentContext);
   const { data: clusterAccess, error: clusterAccessError } = useClusterAccess(currentContext);
   const [accessBannerDismissed, setAccessBannerDismissed] = useState(false);
   const { data: clusterInfo } = useClusterInfo(currentContext);
@@ -569,10 +572,17 @@ function AppInner() {
 
   const isPodView = activeResource === "pods";
   const panelResource = useMemo<SelectedResource | null>(() => {
-    if (selectedResource?.kind !== "ns") return selectedResource;
-    const live = nsRows?.find((r) => r.name === selectedResource.item.name);
-    return live ? { kind: "ns", item: live } : selectedResource;
-  }, [selectedResource, nsRows]);
+    if (selectedResource?.kind === "ns") {
+      const live = nsRows?.find((r) => r.name === selectedResource.item.name);
+      return live ? { kind: "ns", item: live } : selectedResource;
+    }
+    if (selectedResource?.kind === "argocd") {
+      const { name, namespace } = selectedResource.item;
+      const live = argoApps?.find((r) => r.name === name && r.namespace === namespace);
+      return live ? { kind: "argocd", item: live, ns: selectedResource.ns } : selectedResource;
+    }
+    return selectedResource;
+  }, [selectedResource, nsRows, argoApps]);
 
   return (
     <div className="w-full h-full overflow-hidden grain bg-base flex flex-col">

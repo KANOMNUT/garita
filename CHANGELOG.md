@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The ArgoCD Overview shows why the last sync failed.** Under "Last operation: Failed" (or "Error") a red "Reason" box shows the message the Argo CD controller recorded, such as the object the API server refused and why. An auto-sync that is retrying stays "Running"; its message, with "Retrying attempt #N", shows in a neutral "Message" box. The text is shown as the controller wrote it, wraps in full and keeps its line breaks. A message longer than 2000 characters is cut, and a note under it says where the whole text lives (`status.operationState.message` on the Application).
+
+### Fixed
+
+- **An open ArgoCD panel follows the Applications list.** The panel kept the state the Application had when you clicked it, so after a sync started from the panel failed, neither "Failed" nor the reason showed until you clicked the row again. The panel header, the Last operation badge and History now update with the list.
+
 ## [2.4.0] - 2026-10-29
 
 ### Added

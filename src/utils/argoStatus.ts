@@ -49,6 +49,30 @@ export function argoPhasePill(phase: string): ArgoPill {
   return lookup(PHASE_PILL, phase) ?? { label: phase, icon: "?", cls: ARGO_NEUTRAL_CLS };
 }
 
+export interface ArgoOperationNote { text: string; failed: boolean }
+
+/**
+ * What the Overview shows under the "Last operation" pill, or null for nothing. The text is the controller's own
+ * (`status.operationState.message`), passed on as it is. Failed and Error give the red Reason box. Running and
+ * Terminating give the neutral Message box: an auto-sync with retries stays Running while its message carries the
+ * failure and "Retrying attempt #N". Succeeded (a fixed sentence upstream), a phase the table does not list, and an
+ * empty message give nothing. Phases are matched exactly, like the pill tables, so "constructor" matches nothing.
+ */
+export function argoOperationNote(phase: string, message: string): ArgoOperationNote | null {
+  if (!message.trim()) return null;
+  if (phase === "Failed" || phase === "Error") return { text: message, failed: true };
+  if (phase === "Running" || phase === "Terminating") return { text: message, failed: false };
+  return null;
+}
+
+/** Longest message the backend sends, in characters; `OPERATION_MESSAGE_MAX_CHARS` in argocd.rs. A longer one is cut and ends with "…". */
+export const ARGO_OPERATION_MESSAGE_MAX_CHARS = 2000;
+
+/** True when the backend cut the text: more than the limit in characters (not UTF-16 units) and the "…" it adds. */
+export function isArgoOperationMessageCut(text: string): boolean {
+  return text.endsWith("…") && Array.from(text).length > ARGO_OPERATION_MESSAGE_MAX_CHARS;
+}
+
 /** Header "Healthy": the Health status alone. An OutOfSync Application is still Healthy. */
 export function isArgoHealthy(healthStatus: string): boolean {
   return healthStatus === "Healthy";
