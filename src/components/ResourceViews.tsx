@@ -1113,10 +1113,16 @@ export const CRDView = memo(function CRDView({ context, search, selectedKey, onS
   const [grouped, setGrouped] = useState(loadCrdGrouping);
   // Controlled, so the open sort is Kind A-Z inside each group and the header says so.
   const [sort, setSort] = useState<SortState | null>({ col: "kind", asc: true });
-  const columns = useMemo<Column<CRD>[]>(() => [
-    ...crdColumns,
-    { id: "instances", header: "Instances", width: 110, interactive: true, cell: (c) => <InstancesButton crd={c} onOpen={onOpenInstances} /> },
-  ], [onOpenInstances]);
+  // Instances sits right after Name, not last: with long CRD names the table is wider than its pane and a last column is
+  // off screen. The row's name button stays in Name, the first column that is not `interactive`.
+  const columns = useMemo<Column<CRD>[]>(() => {
+    const instances: Column<CRD> = {
+      id: "instances", header: "Instances", width: 110, interactive: true,
+      cell: (c) => <InstancesButton crd={c} onOpen={onOpenInstances} />,
+    };
+    const [name, ...rest] = crdColumns;
+    return [name, instances, ...rest];
+  }, [onOpenInstances]);
   return (
     <>
       <GenericResourceTable context={context} columns={columns} data={data} isLoading={isLoading}
@@ -3216,14 +3222,19 @@ export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, nam
   onRequestDelete: (r: CRDResource) => void;
 }) {
   const { data = [], isLoading, error, refetch } = useCRDResources(context, crd, true, namespace);
+  // A cluster-scoped CRD's objects have no namespace, so the column would show a dash on every row.
+  const columns = useMemo(
+    () => (crd.scope === "Cluster" ? crdInstanceColumns.filter((c) => c.id !== "ns") : crdInstanceColumns),
+    [crd.scope],
+  );
   // Fails open (usePermissions' rules): only an explicit denial greys a trash, and the table puts read-only first.
   const perm = useCustomResourcePermissions(context, crd, namespace);
   return (
-    <GenericResourceTable context={context} columns={crdInstanceColumns} data={data} isLoading={isLoading}
+    <GenericResourceTable context={context} columns={columns} data={data} isLoading={isLoading}
       error={error} onRetry={refetch} keyFn={(r) => `${r.namespace}/${r.name}`} search={search}
       selectedKey={selectedKey} onSelect={onSelect}
       onDelete={onRequestDelete}
-      deleteLabel={(r) => `Delete ${crd.kind} ${r.name}`}
+      deleteLabel={(r) => `Delete ${crd.kind} ${r.name}${r.namespace ? ` in namespace ${r.namespace}` : ""}`}
       deleteReason={(r) => perm.canDelete ? undefined : crDeniedReason("delete", crd.plural, crd.scope === "Cluster" ? "" : r.namespace)}
       title={crd.kind} count={data.length}
       extraLeft={(
@@ -3232,7 +3243,7 @@ export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, nam
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+            className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
           >
             <ArrowLeft size={11} aria-hidden />
             All CRDs

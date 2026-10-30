@@ -412,11 +412,14 @@ export function GenericResourceTable<T>({
                       <th
                         scope="rowgroup"
                         colSpan={colSpan}
-                        className="p-0 bg-surface-tint/3 border-b border-edge-raw/70 text-left font-normal"
+                        className="p-0 bg-surface-tint/3 border-b border-edge text-left font-normal"
                       >
                         <button
                           type="button"
                           aria-expanded={open}
+                          // The button spans the whole table, which can be wider than its pane. Without this the browser
+                          // centres it on focus and the table scrolls sideways, taking every group label off screen.
+                          onFocus={(e) => e.currentTarget.scrollIntoView({ block: "nearest", inline: "start" })}
                           onClick={() => { if (!search) toggleGroup(g.key); }}
                           {...disabledAttrs(search ? GROUP_OPEN_WHILE_SEARCHING : undefined)}
                           className={`w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-[10.5px] font-semibold text-mute outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70 ${search ? "cursor-default" : "hover:text-ink"}`}
