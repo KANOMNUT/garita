@@ -7,15 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **The ArgoCD Overview shows why the last sync failed.** Under "Last operation: Failed" (or "Error") a red "Reason" box shows the message the Argo CD controller recorded, such as the object the API server refused and why. An auto-sync that is retrying stays "Running"; its message, with "Retrying attempt #N", shows in a neutral "Message" box. The text is shown as the controller wrote it, wraps in full and keeps its line breaks. A message longer than 2000 characters is cut, and a note under it says where the whole text lives (`status.operationState.message` on the Application).
-
-### Fixed
-
-- **An open ArgoCD panel follows the Applications list.** The panel kept the state the Application had when you clicked it, so after a sync started from the panel failed, it kept showing the earlier Health, Sync and last operation until you clicked the row again. The panel header, the Last operation badge with its reason, and History now update with the list.
-
-## [2.4.0] - 2026-10-29
+## [2.4.0] - 2026-10-30
 
 ### Added
 
@@ -24,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pods table: sort by CPU and Memory, and a count on every status.** Both columns sort by the number they show (usage when metrics are available, otherwise the request), from the header or the Sort menu ("CPU most first"). Each status button shows how many pods have that status under the current label and search filters. When a status or label filter leaves nothing, the empty state offers "Clear status and label filters".
 - **Copy buttons say what happened.** "Copy pod name", the YAML "Copy" and "Copy neat", and the Pods table's "Copy names" switch to "Copied …" for a moment, or to "Couldn't copy" when the clipboard is denied. Screen readers announce the same text.
 - **ArgoCD History marks the revision that is running now.** The entry whose revision the Application is on carries a neutral "Current" tag, so the list no longer invites a rollback to the revision already deployed. The tag appears only when the revision matches exactly (a chart version such as `10.11.12` never matches `10.11.1`), and not for a multi-source Application.
+- **The ArgoCD Overview shows why the last sync failed.** Under "Last operation: Failed" (or "Error") a red "Reason" box shows the message the Argo CD controller recorded, such as the object the API server refused and why. An auto-sync that is retrying stays "Running"; its message, with "Retrying attempt #N", shows in a neutral "Message" box. The text is shown as the controller wrote it, wraps in full and keeps its line breaks. A message longer than 2000 characters is cut, and a note under it says where the whole text lives (`status.operationState.message` on the Application).
 
 ### Changed
 
@@ -77,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Pods table's Labels and Sort menus fit the window.** They used to open downwards at a fixed height, so on a short window their lower rows ran past the bottom edge and could not be reached. Each menu now takes the room below its button and scrolls inside, or opens upwards when there is little room below.
 - **A long namespace name no longer breaks the cluster name in the top bar over several lines.** In a narrow window the search field gives up to 140 px of its width first, then the namespace is shortened with an ellipsis, and only then the cluster name, so the New button stays in view.
 - **A render error no longer leaves a blank window.** The window shows "Something went wrong" with a Reload button. It shows no error text, stack or data (only the error's type name, such as "TypeError"); the details go to the developer console.
+- **An open ArgoCD panel follows the Applications list.** The panel kept the state the Application had when you clicked it, so after a sync started from the panel failed, it kept showing the earlier Health, Sync and last operation until you clicked the row again. The panel header, the Last operation badge with its reason, and History now update with the list.
 
 ## [2.3.1] - 2026-10-27
 

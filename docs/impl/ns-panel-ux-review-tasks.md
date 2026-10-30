@@ -776,3 +776,12 @@ Recommended option first. Q-R1, Q-R2, Q-R4 and Q-R5 block F5 only; Q-R3 blocks F
 - User decision (2026-10-30): the note under a cut message is plain text with no link, "Cut at 2000 characters. The full text is in status.operationState.message on the Application." F5 shipped it that way; `isArgoOperationMessageCut` in `argoStatus.ts` decides when it shows.
 - §11.1.4 stands without the YAML-tab point: anyone who can read the Application can read the field, and free text cannot be masked reliably. That the same text is in the Application's Events comes from upstream source and is not verified.
 - The test is `commands::argocd::rollback_tests::operation_message_display_rules` (the file's only test module), not `argocd::tests::…` as §11.1.1 says.
+
+### 11.9 User decisions in this run
+
+Copied from the run ledger when the run closed. Newest first.
+
+- 2026-10-30: Q-V1 = A: leave the neutral Message box look for v2.4.0 (logged as D28 in open-items).
+- 2026-10-30: cut note for a 2000-char message = plain note, no link ("Cut at 2000 characters. The full text is in status.operationState.message on the Application."); ArgoCD panels have no YAML tab, so the plan §11 pointer to the YAML tab is void.
+- 2026-10-29 (answers to P1 §11.7): Q-R1 = B (Failed and Error in the red "Reason" box; Running and Terminating in a neutral "Message" box); Q-R2 = A (the open ArgoCD panel follows the list's cached row; `useResources.ts` + `App.tsx` join F5; CHANGELOG Fixed line); Q-R3 = A (verbatim, plain text, not logged); Q-R4 = A (no change to the Applications list); Q-R5 = A (headings "Reason" and "Message").
+- 2026-10-29: add the ArgoCD sync-failure reason (ARGO-8, Q8) to the v2.4.0 release, through the agent team.
