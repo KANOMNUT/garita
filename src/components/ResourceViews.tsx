@@ -3190,12 +3190,12 @@ export const VolumeSnapshotView = memo(function VolumeSnapshotView({ context, na
   );
 });
 
-// ─── CRD instances (§4.5 — wiring only, no detail panel) ─────────────────────
-// CRDResource is {name, namespace, age} only — nothing worth a detail panel,
-// so no onSelect and no delete, matching ArgoCdRepositoryView's shape.
-// useCRDResources takes no namespace arg (frozen 3-arg call, unchanged) — the
-// list is cluster-wide by construction, same "view lists cluster-wide even
-// though the objects may be namespaced" precedent as argo-repos/argo-appsets.
+// ─── CRD instances (§4.5) ─────────────────────────────────────────────────────
+// The objects of one CRD, reached from the CRDs page (the row's Instances button or the CRD panel's Show instances).
+// A row opens the custom resource panel, which App.tsx hosts (CustomResourcePanel.tsx; plan D2 and D3): the panel
+// is not a SelectedResource, so the selection is the host's. The row key is `${namespace}/${name}` (the panel's
+// identity too). The list follows the namespace picker for a namespaced CRD and ignores it for a cluster-scoped
+// one (crd_list_namespace in crds.rs).
 
 const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "name", header: "Name",      sortable: true, sortValue: (r) => r.name,      cell: (r) => <N t={r.name} /> },
@@ -3203,15 +3203,20 @@ const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "age",  header: "Age",       width: 80, sortable: true, sortValue: (r) => parseAge(r.age), cell: (r) => <Dim t={r.age} /> },
 ];
 
-export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search, onBack }: {
+export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search, onBack, selectedKey, onSelect }: {
   context: string; crd: CRD; namespace: string; search?: string;
   /** "All CRDs": back to the CRDs page. */
   onBack: () => void;
+  /** `${namespace}/${name}` of the object whose panel is open. */
+  selectedKey?: string | null;
+  /** A row click: open that object's panel. */
+  onSelect?: (r: CRDResource) => void;
 }) {
   const { data = [], isLoading, error, refetch } = useCRDResources(context, crd, true, namespace);
   return (
     <GenericResourceTable context={context} columns={crdInstanceColumns} data={data} isLoading={isLoading}
       error={error} onRetry={refetch} keyFn={(r) => `${r.namespace}/${r.name}`} search={search}
+      selectedKey={selectedKey} onSelect={onSelect}
       title={crd.kind} count={data.length}
       extraLeft={(
         <>

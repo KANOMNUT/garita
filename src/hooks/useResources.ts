@@ -19,13 +19,13 @@ import type {
   EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow,
   DrainPreview, EvictionResult, LogStreamEvent, NeatYaml, PropagationPolicy,
   LaunchArgs, CliStatus, YamlSavePreview, HelmUpgradePreview, LogSettings, AppLogLevel, JournalEntry, WhoCanResult, RuleGrant, UnusedReport, DeprecationReport, ResourceMap, NetpolModel,
-  NamespaceRow, ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
+  NamespaceRow, CustomResourceDetail, ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
 } from "../types/k8s";
 import { METRIC_RANGES, rangeWindow, samePlotExceptRange, targetKey } from "../utils/observability";
 import { newUsageHistory, recordUsage, type UsageHistory } from "../utils/rightSizing";
 import { RESOURCE_QUERY_KEY } from "../utils/resourceQueryKey";
 import { isTerminating, namespaceNames } from "../utils/namespaces";
-import { crdReadVersion } from "../utils/crds";
+import { crdReadVersion, crdRef } from "../utils/crds";
 import { assertWritable, READ_ONLY_BLOCKS_SHELL } from "../utils/guardrails";
 import {
   canCheck, DEFAULT_PREFS, parsePrefs, reduce, UPDATES_KEY, updateMode,
@@ -487,6 +487,54 @@ export function useCRDResources(
     }),
     enabled: enabled && !!context && !!crd && !!version,
     refetchInterval: 30_000,
+  });
+}
+
+// ─── Custom resource panel (v2.4.1, reads) ───────────────────────────────────
+// A custom resource is addressed by its CRD (crdRef: group, version, kind, plural, scope, all flat) plus namespace and
+// name; the scope comes from the CRD, never from the namespace value. `namespace` is "" for a cluster-scoped object.
+// The version is crdReadVersion(crd), the same one useCRDResources lists with. `enabled` also gates the polling.
+
+/** One object, display shape. Data is null when the object is gone (the command answers null on a 404). */
+export function useCustomResource(
+  context: string, crd: CRD | null, namespace: string, name: string, enabled: boolean,
+) {
+  const version = crdReadVersion(crd);
+  return useQuery<CustomResourceDetail | null, Error>({
+    queryKey: ["custom-resource", context, crd?.name, version, namespace, name],
+    queryFn: () => invoke<CustomResourceDetail | null>("get_custom_resource", { context, ...crdRef(crd!), namespace, name }),
+    enabled: enabled && !!context && !!crd && !!version && !!name,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  });
+}
+
+/**
+ * The full YAML of one object. No kind is named "cr", so this key cannot collide with ["resource-yaml", kind, ...], and
+ * every existing "resource-yaml" prefix invalidation refreshes it. The editor seed (F3) must read this, never the neat text.
+ */
+export function useCustomResourceYaml(
+  context: string, crd: CRD | null, namespace: string, name: string, enabled: boolean,
+) {
+  const version = crdReadVersion(crd);
+  return useQuery<string, Error>({
+    queryKey: ["resource-yaml", "cr", context, crd?.name, version, namespace, name],
+    queryFn: () => invoke<string>("get_custom_resource_yaml", { context, ...crdRef(crd!), namespace, name }),
+    enabled: enabled && !!context && !!crd && !!version && !!name,
+    staleTime: 30_000,
+  });
+}
+
+/** The neat YAML of one object: DISPLAY ONLY, like useResourceYamlNeat. It never reaches an editor or a save. */
+export function useCustomResourceYamlNeat(
+  context: string, crd: CRD | null, namespace: string, name: string, enabled: boolean,
+) {
+  const version = crdReadVersion(crd);
+  return useQuery<NeatYaml, Error>({
+    queryKey: ["resource-yaml", "neat", "cr", context, crd?.name, version, namespace, name],
+    queryFn: () => invoke<NeatYaml>("get_custom_resource_yaml_neat", { context, ...crdRef(crd!), namespace, name }),
+    enabled: enabled && !!context && !!crd && !!version && !!name,
+    staleTime: 30_000,
   });
 }
 

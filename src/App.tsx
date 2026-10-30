@@ -19,6 +19,7 @@ import { canCompare } from "./utils/resourceCompare";
 import { SettingsView, type SettingsSection } from "./components/SettingsView";
 import { ResourceCreator } from "./components/ResourceCreator";
 import { DeleteNamespaceConfirm } from "./components/DeleteNamespaceConfirm";
+import { CustomResourcePanel } from "./components/CustomResourcePanel";
 import { MergeFromFileModal } from "./components/MergeFromFileModal";
 import { HelmInstallModal } from "./components/HelmInstallModal";
 import {
@@ -39,7 +40,7 @@ import {
   EndpointsView, EndpointSliceView, ReplicaSetView,
   MutatingWebhookView, ValidatingWebhookView, VolumeSnapshotView, CRDInstanceView, NamespacesView,
 } from "./components/ResourceViews";
-import type { ClusterAccess, MapKind, Pod, ResourceType, SelectedResource, CRD } from "./types/k8s";
+import type { ClusterAccess, CustomResourceSelection, MapKind, Pod, ResourceType, SelectedResource, CRD } from "./types/k8s";
 import { RESOURCE_QUERY_KEY, HEALTH_QUERY_KEY, HEALTH_PAGES, type HealthPage, type MainView } from "./utils/resourceQueryKey";
 import { ProblemsPage } from "./components/health/ProblemsPage";
 import { savedSearchKey } from "./utils/savedSearches";
@@ -204,8 +205,11 @@ function AppInner() {
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [selectedResource, setSelectedResource] = useState<SelectedResource | null>(null);
   // §4.5 — which CRD kind the "crd-instances" view is currently showing.
-  // CRDResource has no detail panel, so this lives outside SelectedResource.
   const [crdTarget, setCrdTarget] = useState<CRD | null>(null);
+  // The object whose custom resource panel is open, with the CRD it was listed under. Not a SelectedResource member: a
+  // custom resource has a runtime group, version and kind, and the per-kind tables are keyed by a static kind (plan D2).
+  // The panel renders only while the CRD on screen is that CRD, so a stale selection never shows another CRD's panel.
+  const [selectedCr, setSelectedCr] = useState<CustomResourceSelection | null>(null);
   // The two ways into a CRD's objects: the CRDs page's Instances button and the CRD panel's "Show instances" link.
   // The panel closes (the CRD panel would otherwise stay over the list); crdTarget is set before activeResource changes,
   // so the [namespace, activeResource] effect only ever keeps it.
@@ -322,6 +326,7 @@ function AppInner() {
   useEffect(() => {
     setSelectedPod(null);
     setSelectedResource(null);
+    setSelectedCr(null);
     // §4.5: cleared when activeResource changes away from "crd-instances" —
     // set *before* this effect runs (see openCrdInstances), so
     // this only ever clears it, never races the set.
@@ -344,6 +349,7 @@ function AppInner() {
       if (pending?.ns && pending.ctx === currentContext) setNamespace(pending.ns);
       setSelectedPod(null);
       setSelectedResource(null);
+      setSelectedCr(null);
       setCrdTarget(null);
       setSearch("");
     }
@@ -563,6 +569,7 @@ function AppInner() {
           if (isEditableTarget(e.target)) return;
           setSelectedPod(null);
           setSelectedResource(null);
+          setSelectedCr(null);
         }
       }
       // Single-letter shortcuts ignore anything the user types into (input,
@@ -947,7 +954,9 @@ function AppInner() {
               {activeResource === "crd-instances" && (
                 crdTarget ? (
                   <CRDInstanceView context={currentContext} crd={crdTarget} namespace={namespace} search={search}
-                    onBack={() => setActiveResource("crd")} />
+                    onBack={() => setActiveResource("crd")}
+                    selectedKey={selectedCr ? `${selectedCr.item.namespace}/${selectedCr.item.name}` : null}
+                    onSelect={(item) => setSelectedCr({ crd: crdTarget, item })} />
                 ) : (
                   // Reachable after a context switch clears crdTarget while
                   // activeResource stays "crd-instances" (that effect doesn't
@@ -1003,6 +1012,21 @@ function AppInner() {
                   setActiveResource(kind);
                   if (ns) setNamespace(ns);
                   setSelectedResource(null);
+                }}
+              />
+            )}
+            {selectedCr && crdTarget && activeResource === "crd-instances" && selectedCr.crd.name === crdTarget.name && (
+              <CustomResourcePanel
+                key={`${selectedCr.crd.name}/${selectedCr.item.namespace}/${selectedCr.item.name}`}
+                context={currentContext}
+                crd={selectedCr.crd}
+                item={selectedCr.item}
+                onClose={() => setSelectedCr(null)}
+                onNavigate={(kind, ns, name) => {
+                  navigateSearchRef.current = name;
+                  setActiveResource(kind);
+                  if (ns) setNamespace(ns);
+                  setSelectedCr(null);
                 }}
               />
             )}

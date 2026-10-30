@@ -419,7 +419,7 @@ export function GenericResourceTable<T>({
                           aria-expanded={open}
                           onClick={() => { if (!search) toggleGroup(g.key); }}
                           {...disabledAttrs(search ? GROUP_OPEN_WHILE_SEARCHING : undefined)}
-                          className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-[10.5px] font-semibold text-mute hover:text-ink outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70"
+                          className={`w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-[10.5px] font-semibold text-mute outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/70 ${search ? "cursor-default" : "hover:text-ink"}`}
                         >
                           <ChevronRight size={11} aria-hidden className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
                           <span className="mono truncate">{g.key}</span>

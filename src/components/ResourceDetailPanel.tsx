@@ -69,12 +69,13 @@ const INSET_RING = "outline-hidden focus-visible:ring-2 focus-visible:ring-inset
 /**
  * A label and a value. The value carries `title` so a cut-off value can still be read. `wrap` breaks a long value
  * (a repository URL, a chart path) over several lines instead of cutting its tail, which is the part that differs.
+ * `title` replaces the value as the tooltip (the custom resource panel's Age row says the creation time).
  */
-function KV({ k, v, mono = true, wrap = false }: { k: string; v: string; mono?: boolean; wrap?: boolean }) {
+export function KV({ k, v, mono = true, wrap = false, title }: { k: string; v: string; mono?: boolean; wrap?: boolean; title?: string }) {
   return (
     <div className={`flex ${wrap ? "items-start" : "items-baseline"} gap-3 py-1.5 border-b border-edge-raw/60 last:border-b-0`}>
       <span className="text-[11px] text-mute w-[110px] shrink-0">{k}</span>
-      <span title={v} className={`text-[12px] text-ink ${mono ? "mono" : ""} ${wrap ? "min-w-0 break-all" : "truncate"}`}>{v}</span>
+      <span title={title ?? v} className={`text-[12px] text-ink ${mono ? "mono" : ""} ${wrap ? "min-w-0 break-all" : "truncate"}`}>{v}</span>
     </div>
   );
 }
