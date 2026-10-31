@@ -4,7 +4,7 @@ Multi-agent runs die on the session rate limit. Several agents can die at once, 
 
 ## Rules
 
-1. **Files, not context.** Everything lives in `.claude/checkpoints/<branch>/`, where `/` in the branch name becomes `-`. The directory is gitignored: it is run-scoped scratch, stays out of path-limited commits and out of `git status`, and survives `/clear`, restarts and new sessions on the same checkout. It is not `.claude/agent-memory/`, which is tracked memory that outlives a run.
+1. **Files, not context.** Everything lives in `.claude/checkpoints/<branch>/`, where `/` in the branch name becomes `-`. The directory is gitignored: it is run-scoped scratch, stays out of path-limited commits and out of `git status`, and survives `/clear`, restarts and new sessions on the same checkout. It is not `.claude/agent-memory/`, the agents' memory, which outlives a run; that directory is gitignored too (`.gitignore`: personal settings and agent memory stay local), so it lives only on the maintainer's machine and is never committed.
    - `ledger.md`: one per run. The main session (or whoever dispatches) is its only writer.
    - `<task-id>-<agent>.md`: one checkpoint per task. Only the agent that owns the task writes it. The brief names the file, so two agents never share one.
    - `snapshots.md`: appended by the StopFailure hook. Nobody edits it.

@@ -38,6 +38,7 @@ pub async fn verb_noun(context: String, namespace: String, extra: Option<bool>) 
 
 - Typed: `Api::<T>::namespaced(client, &ns)` or `Api::all(client)`.
 - CRDs: `DynamicObject` + `ApiResource`; `Api::all_with` for cluster-wide lists, `Api::namespaced_with` otherwise. For a new CRD group, discover the version (`kube::discovery::group` + `recommended_kind`; only `DiscoveryError::MissingApiGroup` means "not installed"), see `argo_api_resource` in `argocd.rs`.
+- Objects of a user's CRD (v2.4.1): take group, version, kind, plural and scope from the CRD row and run `cr_request` (`crds.rs`) before connecting; kube-core pastes these and the namespace and name into the URL unencoded.
 - `StorageClass` fields sit on the struct (`sc.provisioner`), no `.spec`.
 - Exec/attach: `terminal_size()` is a `futures` `Sender`; use `try_send`, skip size 0.
 

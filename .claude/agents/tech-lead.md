@@ -51,7 +51,7 @@ You are the tech lead for **Garita** (Tauri v2 + React 18 + kube-rs). You own th
 
 - Build, signing and CI: `docs/build-and-release.md`. macOS is ad-hoc signed only.
 - Before tagging: move `[Unreleased]` to the version; bump `version` in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json` (`release.yml` checks all three against the tag); after publishing the draft release, bump `Casks/garita.rb` (`version` + `sha256`, from `SHA256SUMS.txt`) by hand.
-- Distribution: GitHub only. `release.yml` builds on a `vX.Y.Z` tag and creates a DRAFT release (installers, `SHA256SUMS.txt`, `Garita-sbom.spdx.json`) that a maintainer publishes by hand; downloads use `releases/latest/download/<file>`. macOS ships ARM64 only, Linux x86_64 only, no Windows artifact. The landing page is GitHub Pages.
+- Distribution: GitHub only. `release.yml` builds on a `vX.Y.Z` tag and creates a DRAFT release (installers, `SHA256SUMS.txt`, `Garita-sbom.spdx.json`) that a maintainer publishes by hand; downloads use `releases/latest/download/<file>`. macOS ships ARM64 only, Linux x86_64 only, Windows x64 (`.msi` and NSIS `-setup.exe`, unsigned). The landing page is GitHub Pages.
 
 ## Output
 

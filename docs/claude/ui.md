@@ -308,7 +308,7 @@ Settings → Updates, the Sidebar notice and the palette entry "Settings: Update
 
 `ResourceCompareDialog.tsx` + `utils/resourceCompare.ts`: compare an object with the same kind in another namespace or cluster, read via `get_resource_json` with that `context`.
 
-- **Eligible:** every `SelectedResource` kind except `pods` (noise), `helm` (no object), `argo-appsets` / `argo-projects` (`gvk_for` cannot reach them), and views without a detail panel. `canCompare` uses a closed `EXCLUDED` set: a new kind is eligible unless added.
+- **Eligible:** every `SelectedResource` kind except `pods` (noise), `helm` (no object), `argo-appsets` / `argo-projects` (`gvk_for` cannot reach them), and the views `argo-repos` (no detail panel) and `crd-instances` (a custom resource has no `gvk_for` row, and its panel has no Compare by the v2.4.1 user decision). `canCompare` uses a closed `EXCLUDED` set: a new kind is eligible unless added.
 - Entry: panel header Compare button; palette "Compare … with…" while an eligible resource is selected (`compareNonce`).
 - **A read:** `ignoreGuardrails`, never blocked by read-only, RBAC hints or typed confirm. Secret `data` masked.
 - Closed ignore list: status, managed fields, uid, resourceVersion, generation, creation time, name, namespace. Only toggle: status. Same `KubeContext.server` on both sides: "You are comparing an object with itself". `classifyReadError` maps the other side's rejection to no access / not installed / not found / unreachable / error. Other name is free text.

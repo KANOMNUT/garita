@@ -149,7 +149,7 @@ CRD-backed views get Not installed / No access / Nothing here from `list_api_pre
 
 `quotas.rs`, typed. PriorityClass is cluster-scoped (`Api::all()`). `LimitRange.spec.limits` is `Vec<LimitRangeItem>`, not `Option`. Sidebar: RQ/LR under Config & Storage, PC under Cluster.
 
-## Coverage — six kinds + the CRD instance tree (v1.2.0)
+## Coverage — six kinds (v1.2.0) and CRD instances (v2.4.1)
 
 | kind | Rust file | API | Delete arm | cluster-scoped |
 |---|---|---|---|---|

@@ -176,7 +176,7 @@ ArgoCD/Flux revert edits on the next sync (~3 min). Banner: *"Managed by **{app}
 | 1, full | `cm`, `sec`, `deploy`/`sts`/`ds`, `svc`, `ing`, `roles`/`croles`, `rbindings`/`crbindings`, `argocd` | 12 (8 components) |
 | 2, narrow | `pvc`, `sa`, `rq`, `lr`, `cron`, `flux-ks`, `flux-hr` | 7 |
 
-No edit form: `jobs` (template immutable), `netpol`/`gw`/`httproute` (nested list-of-list; YAML is better), `pv` (rarely edited), `sc` (almost nothing mutable), `ns` (no detail panel). `deploy`/`sts`/`ds` are one component (identical `spec.template.spec.containers` path). **`replicas` is not in the form**: `WorkloadActions` owns scale/restart/pause/rollback.
+No edit form: `jobs` (template immutable), `netpol`/`gw`/`httproute` (nested list-of-list; YAML is better), `pv` (rarely edited), `sc` (almost nothing mutable), `ns` (a named skip of v2.4.0: labels are edited in the Namespace panel's YAML tab through the Review and save gate; `ui.md` → Namespaces: picker and page). `deploy`/`sts`/`ds` are one component (identical `spec.template.spec.containers` path). **`replicas` is not in the form**: `WorkloadActions` owns scale/restart/pause/rollback.
 
 ## Key & Quantity Validators (v1.1.0)
 
