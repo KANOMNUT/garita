@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-10-31
+
 ### Added
 
 - **A detail panel for custom resources.** Click an object in a CRD's list to open a panel with Overview (kind, API version, namespace or scope, age, phase when the object reports one, generation, owners, finalizers, and the deletion time while it is being deleted), Summary (conditions, labels, annotations, and the ArgoCD application that manages it), Events, and YAML with Neat, Find and Copy. Only a `Ready` condition is coloured; the status of every other condition type is plain text. **Edit** the YAML and **Review & save** it: the API server checks the change in a dry run first, and the review shows what would change, or why it was refused. **Delete** the object from the panel or from its row; a cluster-scoped object asks you to type its name, and the delete is recorded in the Journal. Edit, Review & save and Delete are disabled, with the reason as their tooltip, in read-only mode or when your account may not update or delete that kind.
