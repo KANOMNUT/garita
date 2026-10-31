@@ -1,6 +1,6 @@
 {
   "productName": "Garita",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "identifier": "io.github.kanomnut.garita",
   "build": {
     "frontendDist": "../dist",

@@ -10,6 +10,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 |---|---|
 | `src/live/mod.rs` | Gate (`ctx()`, `context_allowed`), `Ns` (owned namespace), `kubectl`/`helm` wrappers, `eventually`, `js` |
 | `src/live/{workloads,logs,preview,access,health,rbac,proxy}.rs` | The areas: drain/eviction, events, delete propagation, rollback, debug container, logs, YAML and Helm previews, `can_i`, per-kind reads, presence, problems, capacity, unused, deprecations, who-can, proxy |
+| `src/live/crds.rs` | The custom resource commands (v2.4.1) run on a built-in API group: a `Role` (`rbac.authorization.k8s.io/v1`) in the test's own namespace. It passes `cr_request` (a non-empty group), the `ReplaceTarget::Custom` arm, the dry run, the conflict and the delete on a real API server, and writes only inside a `garita-live-*` namespace (T51-6). Run it with `make live` |
 | `scripts/live/run.sh` | Whole flow: kind cluster, proxies, kubeconfig, `cargo test`, teardown |
 | `scripts/live/kind-config.yaml` | Control plane plus two workers |
 | `scripts/live/fixtures/*.yaml`, `fixtures/chart/` | Applied by the tests into their own namespaces (`__NS__` is replaced); a tiny Helm chart |
@@ -54,6 +55,7 @@ No test stops a proxy container. Squid allows `CONNECT` to port 6443 only and ke
 ## What it cannot cover
 
 - A denied `can_i` / SSAR (kind's admin kubeconfig cannot be denied); read-only-user behaviour.
+- A real CRD (v2.4.1): the harness never writes cluster-scoped objects (T51-6) and kind ships no CRD, so `live/crds.rs` uses a built-in group. A conversion webhook, a status subresource and schema validation by an installed CRD stay unobserved (`open-items.md`).
 - Exec-plugin auth (GKE/EKS/AKS), and exec-plugin behind a proxy.
 - OOMKilled: Docker Desktop kind reports the kill as reason `Error` (exit 137), so the `oom-killed` Problems rule never fires there.
 - `pvc-pending` without `GARITA_LIVE_SLOW=1`.

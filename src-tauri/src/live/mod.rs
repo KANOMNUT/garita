@@ -8,6 +8,7 @@
 //! Config (T51-5): `CONFIG_DIR` is never set under test, so only `$KUBECONFIG` is read.
 
 mod access;
+mod crds;
 mod health;
 mod logs;
 mod preview;

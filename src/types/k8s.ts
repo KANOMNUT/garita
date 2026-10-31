@@ -423,6 +423,8 @@ export interface CRD {
   plural: string;
   scope: string;
   versions: string;
+  /** Mirrors crds.rs CRD.read_version: storage version when served, else first served; "" when none. */
+  read_version: string;
   established: boolean;
   age: string;
 }
@@ -431,6 +433,41 @@ export interface CRDResource {
   name: string;
   namespace: string;
   age: string;
+}
+
+/** Mirrors crds.rs CustomResourceOwner. */
+export interface CustomResourceOwner {
+  kind: string;
+  name: string;
+  controller: boolean;
+}
+
+/** Mirrors crds.rs CustomResourceDetail (get_custom_resource; the command returns null when the object is gone). */
+export interface CustomResourceDetail {
+  name: string;
+  /** "" for a cluster-scoped object. */
+  namespace: string;
+  api_version: string;
+  kind: string;
+  age: string;
+  /** RFC 3339, or "". */
+  created: string;
+  deletion_timestamp: string | null;
+  generation: number | null;
+  observed_generation: number | null;
+  /** status.phase, else status.state; "" when neither is a string. */
+  phase: string;
+  conditions: ResourceCondition[];
+  labels: Record<string, string>;
+  annotations: Record<string, string>;
+  owners: CustomResourceOwner[];
+  finalizers: string[];
+}
+
+/** Frontend only: the object a custom resource panel or delete confirm acts on, with the CRD it was listed under. */
+export interface CustomResourceSelection {
+  crd: CRD;
+  item: CRDResource;
 }
 
 export interface ContainerUsage {

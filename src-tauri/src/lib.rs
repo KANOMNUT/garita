@@ -117,7 +117,11 @@ use commands::{
     context::{get_current_context, list_contexts},
     launcher::get_launch_args,
     cli::{get_cli_status, install_cli_command},
-    crds::{list_crds, list_crd_resources},
+    crds::{
+        apply_custom_resource_yaml, delete_custom_resource, get_custom_resource,
+        get_custom_resource_yaml, get_custom_resource_yaml_neat, list_crd_resources, list_crds,
+        preview_custom_resource_yaml,
+    },
     deployments::list_deployments,
     diagnostics::{get_log_settings, list_journal, open_log_folder, open_release_page, set_log_level},
     drain::{evict_pod, preview_node_drain},
@@ -264,6 +268,12 @@ pub fn run() {
             // CRDs
             list_crds,
             list_crd_resources,
+            get_custom_resource,
+            get_custom_resource_yaml,
+            get_custom_resource_yaml_neat,
+            delete_custom_resource,
+            preview_custom_resource_yaml,
+            apply_custom_resource_yaml,
             // admission webhooks
             list_mutating_webhooks,
             list_validating_webhooks,

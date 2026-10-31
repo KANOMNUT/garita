@@ -3,7 +3,7 @@ import {
   Layers, Package, PackageMinus, List, Clock, Briefcase, Network, Globe,
   FileCode, Lock, Database, Server, Activity, TrendingUp, Puzzle, ShieldAlert, GitBranch,
   ShieldCheck, Boxes, FolderGit2, X, RefreshCw, RefreshCcw, GitMerge,
-  Waypoints, Split, Copy, Webhook, Camera, FolderTree,
+  Waypoints, Split, Copy, Webhook, Camera, FolderTree, ArrowLeft,
 } from "lucide-react";
 import { GenericResourceTable, type Column } from "./GenericResourceTable";
 import { ConfirmModal } from "./ConfirmModal";
@@ -28,7 +28,7 @@ import {
   useBulkSyncArgoCdApps, useBulkRefreshArgoCdApps,
   usePermissions, useNamespaceRows,
   useEndpoints, useEndpointSlices, useReplicaSets,
-  useMutatingWebhooks, useValidatingWebhooks, useVolumeSnapshots, useCRDResources,
+  useMutatingWebhooks, useValidatingWebhooks, useVolumeSnapshots, useCRDResources, useCustomResourcePermissions,
 } from "../hooks/useResources";
 import type {
   Deployment, StatefulSet, DaemonSet, Job, CronJob, HPA, CRD,
@@ -45,6 +45,7 @@ import { podStatusStyle } from "../utils/podStatus";
 import { ArgoGlyph } from "./ArgoGlyph";
 import { argoHealthPill, argoSyncPill, type ArgoPill } from "../utils/argoStatus";
 import { chipLabels, deletingFor, isTerminating, namespaceDeleteReason } from "../utils/namespaces";
+import { crDeniedReason, crdInstancesReason, crdReadVersion, loadCrdGrouping, saveCrdGrouping } from "../utils/crds";
 
 interface ViewProps { context: string; namespace: string; search?: string; selectedKey?: string | null; }
 
@@ -1068,27 +1069,96 @@ const crdColumns: Column<CRD>[] = [
   { id: "age",      header: "Age",       width: 80,  sortable: true, sortValue: (c) => parseAge(c.age), cell: (c) => <Dim t={c.age} /> },
 ];
 
-export const CRDView = memo(function CRDView({ context, search, selectedKey, onSelect }: { context: string; search?: string; selectedKey?: string | null; onSelect?: (c: CRD) => void }) {
+/** A CRD's group header on the CRDs page. A CRD always has a group; the fallback keeps an odd object from drawing an empty header. */
+const crdGroupOf = (c: CRD) => c.group || "(core)";
+const CRD_GROUP_NOUN: [string, string] = ["CRD", "CRDs"];
+
+/**
+ * The row's way to its objects (the row click opens the CRD panel). A CRD that cannot be listed keeps the button, focusable
+ * and dimmed with the reason as its description, never hidden: the click bails out.
+ */
+function InstancesButton({ crd, onOpen }: { crd: CRD; onOpen: (c: CRD) => void }) {
+  const reason = crdInstancesReason(crd);
+  return (
+    <button
+      type="button"
+      aria-label={`Instances of ${crd.kind}`}
+      onClick={(e) => {
+        // The row opens the CRD panel; this button must not.
+        e.stopPropagation();
+        if (reason) return;
+        onOpen(crd);
+      }}
+      {...disabledAttrs(reason)}
+      className={`h-6 px-2 rounded-sm bg-card/80 ring-1 ring-edge text-[10.5px] outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+        reason ? "text-mute opacity-50 cursor-not-allowed" : "text-mute hover:text-ink hover:bg-surface-tint/4"
+      }`}
+    >
+      Instances
+    </button>
+  );
+}
+
+export const CRDView = memo(function CRDView({ context, search, selectedKey, onSelect, onOpenInstances }: {
+  context: string; search?: string; selectedKey?: string | null; onSelect?: (c: CRD) => void;
+  /** The row's Instances button: open the objects of this CRD. */
+  onOpenInstances: (c: CRD) => void;
+}) {
   const identity = useClusterIdentity(context);
   const { data = [], isLoading, error, refetch } = useCRDs(context);
   const [deleteTarget, setDeleteTarget] = useState<CRD | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const deleteResource = useDeleteResource();
   const perm = usePermissions(context, "", "crd");
+  const [grouped, setGrouped] = useState(loadCrdGrouping);
+  // Controlled, so the open sort is Kind A-Z inside each group and the header says so.
+  const [sort, setSort] = useState<SortState | null>({ col: "kind", asc: true });
+  // Instances sits right after Name, not last: with long CRD names the table is wider than its pane and a last column is
+  // off screen. The row's name button stays in Name, the first column that is not `interactive`.
+  const columns = useMemo<Column<CRD>[]>(() => {
+    const instances: Column<CRD> = {
+      id: "instances", header: "Instances", width: 110, interactive: true,
+      cell: (c) => <InstancesButton crd={c} onOpen={onOpenInstances} />,
+    };
+    const [name, ...rest] = crdColumns;
+    return [name, instances, ...rest];
+  }, [onOpenInstances]);
   return (
     <>
-      <GenericResourceTable context={context} columns={crdColumns} data={data} isLoading={isLoading}
+      <GenericResourceTable context={context} columns={columns} data={data} isLoading={isLoading}
         error={error} onRetry={refetch} keyFn={(c) => c.name}
         selectedKey={selectedKey} onSelect={onSelect} search={search}
         title="CustomResourceDefinitions" count={data.length}
+        sort={sort} onSortChange={setSort}
+        groupBy={grouped ? crdGroupOf : undefined} groupNoun={CRD_GROUP_NOUN}
         emptyIcon={<Puzzle size={32} />} emptyText="No CRDs found"
         onDelete={perm.canDelete ? setDeleteTarget : undefined}
-        extra={deleteError ? (
-          <div className="mono text-[10.5px] text-bad px-2 py-1 rounded-sm bg-bad/10 ring-1 ring-bad/20 flex items-center gap-1.5">
-            {deleteError}
-            <button onClick={() => setDeleteError("")} className="ml-1 text-dim hover:text-ink">✕</button>
-          </div>
-        ) : undefined}
+        extra={(
+          <>
+            {deleteError && (
+              <div className="mono text-[10.5px] text-bad px-2 py-1 rounded-sm bg-bad/10 ring-1 ring-bad/20 flex items-center gap-1.5">
+                {deleteError}
+                <button onClick={() => setDeleteError("")} className="ml-1 text-dim hover:text-ink">✕</button>
+              </div>
+            )}
+            {/* One name, the pressed state says which way it is set (the same toggle as the ArgoCD Resources tab's "Group by kind"). */}
+            <button
+              type="button"
+              aria-pressed={grouped}
+              onClick={() => {
+                const next = !grouped;
+                setGrouped(next);
+                saveCrdGrouping(next);
+              }}
+              title="Group the CRDs by API group"
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70 ${
+                grouped ? "bg-surface-tint/8 text-ink ring-edge-strong" : "ring-edge text-mute hover:text-ink hover:bg-surface-tint/4"
+              }`}
+            >
+              Group by API group
+            </button>
+          </>
+        )}
       />
       <ConfirmModal
         contextLabel={identity.label}
@@ -3126,12 +3196,13 @@ export const VolumeSnapshotView = memo(function VolumeSnapshotView({ context, na
   );
 });
 
-// ─── CRD instances (§4.5 — wiring only, no detail panel) ─────────────────────
-// CRDResource is {name, namespace, age} only — nothing worth a detail panel,
-// so no onSelect and no delete, matching ArgoCdRepositoryView's shape.
-// useCRDResources takes no namespace arg (frozen 3-arg call, unchanged) — the
-// list is cluster-wide by construction, same "view lists cluster-wide even
-// though the objects may be namespaced" precedent as argo-repos/argo-appsets.
+// ─── CRD instances (§4.5) ─────────────────────────────────────────────────────
+// The objects of one CRD, reached from the CRDs page (the row's Instances button or the CRD panel's Show instances).
+// A row opens the custom resource panel, which App.tsx hosts (CustomResourcePanel.tsx; plan D2 and D3): the panel
+// is not a SelectedResource, so the selection is the host's. The row trash asks the host's one delete confirm
+// (DeleteCustomResourceConfirm), the same one the panel's header trash opens. The row key is `${namespace}/${name}`
+// (the panel's identity too). The list follows the namespace picker for a namespaced CRD and ignores it for a
+// cluster-scoped one (crd_list_namespace in crds.rs).
 
 const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "name", header: "Name",      sortable: true, sortValue: (r) => r.name,      cell: (r) => <N t={r.name} /> },
@@ -3139,12 +3210,46 @@ const crdInstanceColumns: Column<CRDResource>[] = [
   { id: "age",  header: "Age",       width: 80, sortable: true, sortValue: (r) => parseAge(r.age), cell: (r) => <Dim t={r.age} /> },
 ];
 
-export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search }: { context: string; crd: CRD; namespace: string; search?: string }) {
+export const CRDInstanceView = memo(function CRDInstanceView({ context, crd, namespace, search, onBack, selectedKey, onSelect, onRequestDelete }: {
+  context: string; crd: CRD; namespace: string; search?: string;
+  /** "All CRDs": back to the CRDs page. */
+  onBack: () => void;
+  /** `${namespace}/${name}` of the object whose panel is open. */
+  selectedKey?: string | null;
+  /** A row click: open that object's panel. */
+  onSelect?: (r: CRDResource) => void;
+  /** The row trash: ask the host to open the delete confirm for this object. */
+  onRequestDelete: (r: CRDResource) => void;
+}) {
   const { data = [], isLoading, error, refetch } = useCRDResources(context, crd, true, namespace);
+  // A cluster-scoped CRD's objects have no namespace, so the column would show a dash on every row.
+  const columns = useMemo(
+    () => (crd.scope === "Cluster" ? crdInstanceColumns.filter((c) => c.id !== "ns") : crdInstanceColumns),
+    [crd.scope],
+  );
+  // Fails open (usePermissions' rules): only an explicit denial greys a trash, and the table puts read-only first.
+  const perm = useCustomResourcePermissions(context, crd, namespace);
   return (
-    <GenericResourceTable context={context} columns={crdInstanceColumns} data={data} isLoading={isLoading}
+    <GenericResourceTable context={context} columns={columns} data={data} isLoading={isLoading}
       error={error} onRetry={refetch} keyFn={(r) => `${r.namespace}/${r.name}`} search={search}
+      selectedKey={selectedKey} onSelect={onSelect}
+      onDelete={onRequestDelete}
+      deleteLabel={(r) => `Delete ${crd.kind} ${r.name}${r.namespace ? ` in namespace ${r.namespace}` : ""}`}
+      deleteReason={(r) => perm.canDelete ? undefined : crDeniedReason("delete", crd.plural, crd.scope === "Cluster" ? "" : r.namespace)}
       title={crd.kind} count={data.length}
+      extraLeft={(
+        <>
+          <span className="mono text-[11px] text-mute truncate">{crd.group}/{crdReadVersion(crd)}</span>
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-1 shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded-sm text-[10.5px] font-medium ring-1 ring-edge text-mute hover:text-ink hover:bg-surface-tint/4 transition-colors outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            <ArrowLeft size={11} aria-hidden />
+            All CRDs
+          </button>
+        </>
+      )}
       emptyIcon={<Boxes size={32} />} emptyText={`No ${crd.kind} resources found`} />
   );
 });

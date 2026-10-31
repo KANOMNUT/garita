@@ -6,7 +6,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 `delete_resource(context, namespace, resource_type, name, propagation: Option<String>)`. Pure, tested `delete_params_for`: `None`, `""`, `"background"` → Background; `"foreground"` → Foreground; `"orphan"` → Orphan; anything else → `Failed to delete: unknown propagation policy '…'` **before** the client is built. Every arm (typed macros and `DynamicObject`) uses it.
 
-**Always send Background explicitly.** With no policy the server default applies, and for `batch/v1` Jobs that is **orphan** (deleting a Job left its pods). kubectl sends Background. `delete_namespace(context, name)` is its own command and also sends Background explicitly, through `delete_params_for(None)` (the namespace controller removes the contents either way, so the effect is unchanged). Checks: `grep -n "DeleteParams::default()" src-tauri/src/commands/extras.rs` is empty; `grep -rn "DeleteParams::default()" src-tauri/src` matches only `delete_pod` (`pods.rs`), `delete_node` (`nodes.rs`) and `delete_argocd_app` (`argocd.rs`). `delete_pod`, `delete_node` and `delete_argocd_app` are separate commands that keep the library default on purpose (no dependents to orphan, or an ArgoCD finalizer choice).
+**Always send Background explicitly.** With no policy the server default applies, and for `batch/v1` Jobs that is **orphan** (deleting a Job left its pods). kubectl sends Background. `delete_namespace(context, name)` is its own command and also sends Background explicitly, through `delete_params_for(None)` (the namespace controller removes the contents either way, so the effect is unchanged). `delete_custom_resource` (v2.4.1) does the same and takes no propagation parameter. Checks: `grep -n "DeleteParams::default()" src-tauri/src/commands/extras.rs` is empty; `grep -rn "DeleteParams::default()" src-tauri/src` matches only `delete_pod` (`pods.rs`), `delete_node` (`nodes.rs`) and `delete_argocd_app` (`argocd.rs`). `delete_pod`, `delete_node` and `delete_argocd_app` are separate commands that keep the library default on purpose (no dependents to orphan, or an ArgoCD finalizer choice).
 
 - **Picker** (radio group in the delete confirm) only for `deploy sts ds jobs rs cron`, per-row and panel header. Resets to Background on open and sends the policy explicitly. Other kinds omit it; the backend sends Background.
 - **ArgoCD cascade is a finalizer choice, never `propagationPolicy`.** `delete_argocd_app` ("Delete app + resources" / "Delete app only") adds or clears finalizers.
@@ -35,6 +35,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 - Backend: one `delete_resource` in `pods.rs`, matching `resource_type` to a typed `Api` or `DynamicObject`. Unsupported kinds: `Err("delete_resource: unsupported resource type '<k>'")`.
 - Hook: `useDeleteResource()` calls `invokeWrite("delete_resource", { context, namespace, resourceType, name, propagation })` (`propagation` optional) and invalidates via `RESOURCE_QUERY_KEY` (`src/utils/resourceQueryKey.ts`).
 - UI: per-row in `GenericResourceTable` and the `ResourceDetailPanel` header, both behind `ConfirmModal`. Cluster-scoped kinds require typing the name (`requireTyping`).
+- Custom resources do not use `delete_resource` (its `resource_type` match is per kind and has no dynamic arm). They have `delete_custom_resource` beside it, with its own hook, `useDeleteCustomResource`, and its own confirm; see Custom resources (v2.4.1).
 
 ## TLS Certificate Tab (v1.0.0)
 
@@ -175,7 +176,7 @@ ArgoCD/Flux revert edits on the next sync (~3 min). Banner: *"Managed by **{app}
 | 1, full | `cm`, `sec`, `deploy`/`sts`/`ds`, `svc`, `ing`, `roles`/`croles`, `rbindings`/`crbindings`, `argocd` | 12 (8 components) |
 | 2, narrow | `pvc`, `sa`, `rq`, `lr`, `cron`, `flux-ks`, `flux-hr` | 7 |
 
-No edit form: `jobs` (template immutable), `netpol`/`gw`/`httproute` (nested list-of-list; YAML is better), `pv` (rarely edited), `sc` (almost nothing mutable), `ns` (no detail panel). `deploy`/`sts`/`ds` are one component (identical `spec.template.spec.containers` path). **`replicas` is not in the form**: `WorkloadActions` owns scale/restart/pause/rollback.
+No edit form: `jobs` (template immutable), `netpol`/`gw`/`httproute` (nested list-of-list; YAML is better), `pv` (rarely edited), `sc` (almost nothing mutable), `ns` (a named skip of v2.4.0: labels are edited in the Namespace panel's YAML tab through the Review and save gate; `ui.md` → Namespaces: picker and page). `deploy`/`sts`/`ds` are one component (identical `spec.template.spec.containers` path). **`replicas` is not in the form**: `WorkloadActions` owns scale/restart/pause/rollback.
 
 ## Key & Quantity Validators (v1.1.0)
 
@@ -229,7 +230,7 @@ Both writes go through a **PREVIEW-GATE**: an `lg` `ConfirmModal` runs a server 
 
 ### One replace path
 
-`apply_resource_yaml` and `preview_resource_yaml` both call `replace_resource_yaml(client, namespace, resource_type, name, yaml, dry_run, live_raw)` (`pods.rs`). **The per-kind replace macros exist only there**, so the preview validates exactly what Save does (`PostParams { dry_run: true, .. }`). `ReplaceError::apply_message` keeps the old error strings (`Invalid YAML: …`, `Failed to apply <label>: …`, `Unsupported resource type: …`).
+`apply_resource_yaml` and `preview_resource_yaml` both call `replace_resource_yaml(client, namespace, target, name, yaml, dry_run, live_raw)` (`pods.rs`), where `target` is a `ReplaceTarget`: `Kind(&str)` for the per-kind arms, or `Custom { ar, namespaced }` for a custom resource (v2.4.1). The command bodies are shared too: `apply_replace` and `preview_replace` hold the save and the dry run, and the commands (`apply_resource_yaml`, `preview_resource_yaml`, `apply_custom_resource_yaml`, `preview_custom_resource_yaml`) call them, each adding only its own request checks, connection and log line. **The per-kind replace macros and the custom arm exist only in `replace_resource_yaml`**, so the preview validates exactly what Save does (`PostParams { dry_run: true, .. }`); a second replace function would be a second path. `ReplaceError::apply_message` keeps the old error strings (`Invalid YAML: …`, `Failed to apply <label>: …`, `Unsupported resource type: …`).
 
 ### `preview_resource_yaml` outcomes
 
@@ -246,7 +247,7 @@ Pure `classify_replace_error(code)`: 409 conflict, else rejected. **`Err` = prev
 
 ### `dropped_paths`
 
-The YAML tab deserialises into pinned `k8s-openapi` structs, so newer fields drop silently on save. Pure `dropped_paths(raw, typed)` lists sorted dotted paths (`[i]` for indices) non-empty in raw live but missing from its typed round-trip. Values null, `{}`, `[]` are ignored; objects recurse; arrays recurse by index; top-level `status` skipped; scalars not compared. `[]` for `DynamicObject` kinds or a failed round-trip.
+The YAML tab deserialises into pinned `k8s-openapi` structs, so newer fields drop silently on save. Pure `dropped_paths(raw, typed)` lists sorted dotted paths (`[i]` for indices) non-empty in raw live but missing from its typed round-trip. Values null, `{}`, `[]` are ignored; objects recurse; arrays recurse by index; top-level `status` skipped; scalars not compared. `[]` for `DynamicObject` kinds (a custom resource is always one: the custom arm has no typed round-trip, so nothing is dropped) or a failed round-trip.
 
 Every dropped path is one the user did not edit (the editor is seeded from the typed fetch). The gate lists them with an acknowledgement ("Save and drop N fields"), offers "Open form" when `EDIT_FORM` has the kind, and `yamlSaveDiff` removes them from the live side (empty = absent). Cannot report unknown `metadata.*` fields (`ObjectMeta` is typed).
 
@@ -267,6 +268,23 @@ Non-zero dry run exit: `Ok` + `rejected` with trimmed stderr, **except** a `frie
 - Loading = `phase="review"` + `confirmDisabled`, **never `running` / `isPending`**, so a hung dry run can be cancelled. Initial focus "Back to editor" (`initialFocus="cancel"`, `cancelLabel`). The dialog never edits the editor text.
 - **Rejected blocks; unavailable requires a typed name** ("Save without preview" / "Upgrade without preview"). Never conflate them.
 - The preview is a read (not backstopped). The real write (`useApplyResource`, `useUpgradeHelmRelease`) is backstopped and logged.
+
+## Custom resources (v2.4.1)
+
+The objects of a CRD (not a `SelectedResource` member; the reads, the host rule and `cr_request` are in `resource-types.md` → CRD instances and the custom resource panel) can be edited as YAML and deleted from `CustomResourcePanel.tsx`; the objects list has the row trash. There is no Compare, no Field managers and no guided form for them (`crd-instances` is in `EXCLUDED` in `resourceCompare.ts`; no `EDIT_FORM` entry).
+
+**YAML save goes through the same PREVIEW-GATE.** `YamlSaveGate` takes an optional `crd?: CRD`. When it is set, the gate's preview and save use `usePreviewCustomResourceYaml` / `useApplyCustomResource` with `{ context, crd, namespace, name, yaml }`, and `resourceType` is ignored (the panel passes `"crd-instances"`). Both hook pairs are called on every render and `crd` picks one. Everything else is unchanged: the states, the typed name for "Save without preview" after an `Err`, `replaceEquiv`, and `contextLabel` / `contextColor`. The panel passes `hasForm={false}` and a no-op `onOpenForm`.
+- `preview_custom_resource_yaml` and `apply_custom_resource_yaml` run `cr_request` first, then the one replace path (`ReplaceTarget::Custom`, above). The YAML is parsed as one document into a `DynamicObject` (never the multi-document iterator). An unparseable document is an `invalid` outcome, returned before the app connects. `dropped_paths` is always `[]`.
+- The apply error text uses the CRD's kind as its label (`Failed to apply Widget: …`); the built-in kinds' text is unchanged.
+- A CRD with a status subresource ignores `status` in a replace. The review already leaves `status` out of the comparison ("Ignored in the comparison: status, managed fields, …").
+- **The editor is seeded from the full YAML** (`useCustomResourceYaml`), never from the neat text; the neat query is off while editing.
+- **Disabled, never hidden.** Edit, Review & save…, `⌘S` / `Ctrl+S`, the panel's trash and the row trash are disabled with one reason, read-only first, then an explicit RBAC denial (`crDeniedReason`; `useCustomResourcePermissions` checks `update` and `delete` and fails open). Edit has a third reason after those two: "The YAML is still loading." or "The YAML didn't load." Review & save and `⌘S` use only the first two. The click handlers bail out when a reason is set; `invokeWrite` is the backstop.
+- **No discard confirm** (user decision Q11 A): Cancel, a tab switch, closing the panel or selecting another object drops the edit, as in the resource panel's and the Pod panel's YAML editors.
+- The edit banner reads "Editing — changes apply directly to the cluster", the resource panel's string, kept on purpose. The "Merge, never Apply" rule is about the merge UI and does not cover it; the save button reads "Review & save…".
+
+**Delete.** `delete_custom_resource` sends Background explicitly through `delete_params_for(None)`. There is no propagation parameter and no picker. One `DeleteCustomResourceConfirm`, hosted in `App.tsx` outside the TopBar `<header>`, serves the row trash and the panel's header trash. It is destructive, its title is `Delete {Kind} {name}`, a cluster-scoped object requires the name typed, and its kubectl equivalent is `kubectl delete <plural>.<group> <name> -n <ns> --context <ctx>` (no `-n` for a cluster-scoped object). A failed delete keeps the dialog open with the backend message; the message clears when the target changes. After a success the host closes the panel if it showed that object. A context switch clears the target, so a confirm cannot be aimed at another cluster.
+
+**Journal.** `delete_custom_resource` and `apply_custom_resource_yaml` call `log_write` on every attempt, failures included, with the kind `<plural>.<group>` (`cr_journal_kind`; for example `widgets.acme.io`); the preview logs only the Debug read line.
 
 ## Secret values in the webview (v1.4.1, #33)
 
@@ -296,6 +314,8 @@ Non-zero dry run exit: `Ok` + `rejected` with trimmed stderr, **except** a `frie
 | `install_helm_release` dry run | one string | success returns a fixed line, never helm's output (`install_output`); errors unchanged |
 | `get_helm_values` | values YAML | redacted unless `reveal: Some(true)`; see `helm.md` |
 | `get_tls_certificate_info` | `tls.crt` / `ca.crt` fields | parsed backend-side; `tls.key` never read |
+
+The custom resource commands (v2.4.1) need no row: `cr_request` refuses an empty API group, so they cannot name a core Secret. That check is defense in depth (the webview is not a security boundary); the controls above are what keep Secret values behind a reveal. See `resource-types.md` → CRD instances and the custom resource panel.
 
 ## Shared diff rows (v1.3.1)
 

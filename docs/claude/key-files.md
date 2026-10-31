@@ -10,20 +10,23 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 |------|---------|
 | `src/App.tsx` | Root layout, keyboard shortcuts, React Query wiring, `mainView`, palette actions; `panelResource` swaps the selected snapshot for the live row for `ns` and `argocd` (App adds no polling; the `argocd` observer is disabled and only reads the list's cache) |
 | `src/main.tsx` / `src/components/ErrorBoundary.tsx` | `main.tsx` mounts `<ErrorBoundary><App /></ErrorBoundary>` inside `StrictMode` after `initAppearance()`. `ErrorBoundary` is the app's one class component: a render error shows a full-window "Something went wrong" card with a Reload button, never the message, stack or data. See `ui.md` → Error boundary |
-| `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"), context chip, Custom Resources tree. No namespace list |
+| `src/components/Sidebar.tsx` | Nav (Namespaces is the first row of "Cluster"; the CRDs row is active on `crd` and `crd-instances`), context chip. No namespace list and no Custom Resources tree |
 | `src/components/TopBar.tsx` | Draggable header, breadcrumb (hosts `NamespacePicker`), search, manual refresh, New menu (a `Popover` user) |
 | `src/components/NamespacePicker.tsx` | TopBar namespace picker: trigger + `Popover`, filter, "Terminating" tag, "Manage namespaces" link. Reads `useNamespaceRows`; no writes. See `ui.md` → Namespaces: picker and page |
 | `src/components/DeleteNamespaceConfirm.tsx` | The typed-name delete confirm for a namespace; one instance hosted in `App.tsx`, opened by the Namespaces page row trash and the panel header trash |
+| `src/components/CustomResourcePanel.tsx` | The panel of one custom resource (v2.4.1; not a `SelectedResource`, hosted by `App.tsx` as `selectedCr`): Overview, Summary, Events, YAML (read and edit through `YamlSaveGate crd`), header trash. Hooks only. See `ui.md` → CRDs page and custom resource panel |
+| `src/components/DeleteCustomResourceConfirm.tsx` | The delete confirm for a custom resource; one instance hosted in `App.tsx` (`crToDelete`), opened by the objects list row trash and the panel header trash. Cluster-scoped objects require the name typed |
+| `src/utils/crds.ts` | Pure (with `crds.test.ts`): `crdReadVersion` (the one place that picks a CRD's version), `crdRef`, `crdInstancesReason` and its two reason strings, `loadCrdGrouping` / `saveCrdGrouping` (`localStorage["crds-grouped"]`), `crdKubectlNoun`, `crDeniedReason`, `sameCustomResource` |
 | `src/utils/namespaces.ts` | Pure (with `namespaces.test.ts`): `PROTECTED_NAMESPACES`, `namespaceDeleteReason` and the reason strings, `isTerminating`, `namespaceRows` (picker rows), `namespaceNames`, `chipLabels`, `deletingFor` |
 | `src/components/PodTable.tsx` | Pod list: sort (CPU and Memory by the displayed value), status filter with counts, restart pill, bulk ops (Copy names keeps the selection), CPU/MEM bars and sparklines; Labels and Sort are `Popover` menus |
 | `src/components/DetailPanel.tsx` | Pod panel (Summary / Containers / Events / Logs / Shell / YAML / Metrics / Forward; Summary is the merged Overview and holds Metadata, Conditions, Container States, Labels). Owns `useDebugSession` and `logView`. Content keyed `pod.name + "-" + tab` (remount on pod or tab change) |
-| `src/components/EventsTabContent.tsx` / `src/components/ConditionsTable.tsx` | Shared panel bodies: the Events tab (loading, error with Retry, empty, Warnings-only filter; used by `ResourceDetailPanel` and the Pod panel) and the Summary Conditions card (workloads and pods). See `pods-logs.md` → Pod panel and Pods table |
+| `src/components/EventsTabContent.tsx` / `src/components/ConditionsTable.tsx` | Shared panel bodies: the Events tab (loading, error with Retry, empty, Warnings-only filter; used by `ResourceDetailPanel`, the Pod panel and `CustomResourcePanel`; optional `childEventsNote`, default true, `false` drops the pods and ReplicaSets sentence) and the Summary Conditions card (workloads, pods and custom resources; optional `colourFor`, default every type, the custom resource panel passes only `Ready`). See `pods-logs.md` → Pod panel and Pods table |
 | `src/hooks/useCopyFeedback.ts` | `useCopyFeedback(ms = 1500)`: clipboard copy with an inline `idle` / `copied` / `failed` state; no toast (`ui.md`, X-6) |
 | `src/utils/podTableView.ts` | Pure Pod table and panel rules, tested in `podTableView.test.ts`: `barDenominator`, `displayedUsage`, `usageLabel`, `readyFraction`, `isNotReady`, `statusCounts`, `validPort` |
-| `src/components/ResourceDetailPanel.tsx` | Panel for every other kind; tabs from `tabsFor()`. Default Overview / Summary / Events / YAML; ArgoCD Overview / Resources / History / Events; Helm Overview / Values / History / Events; workloads add Pods, Logs, Relationships; TLS Secrets add TLS; `Timeline` (v2.2.0) is added for `deploy`, `sts`, `ds`, `helm`, `argocd`. Hosts the editor pencil and delete |
-| `src/components/ResourceViews.tsx` | Table views for non-pod kinds |
-| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them). Per-row `deleteReason` / function `deleteLabel` for the row trash; a forbidden list error renders the `ViewState` no-access card. A sortable header is a button inside the `<th>`; the sorted column's `<th>` carries `aria-sort` |
-| `src/utils/tableRows.ts` | Pure `searchRows`, `sortRows`, `shownRows`, `rangeSelect`, `SortState` (v2.3.1): the table's one search predicate and comparator, so `ArgoCDView` selects exactly the rows the table shows. See `argocd.md` |
+| `src/components/ResourceDetailPanel.tsx` | Panel for every other kind; tabs from `tabsFor()`. Default Overview / Summary / Events / YAML; ArgoCD Overview / Resources / History / Events; Helm Overview / Values / History / Events; workloads add Pods, Logs, Relationships; TLS Secrets add TLS; `Timeline` (v2.2.0) is added for `deploy`, `sts`, `ds`, `helm`, `argocd`. Hosts the editor pencil and delete. Exports `KV` (label and value row, optional `title` tooltip) and `resolveManagedBy`, which `CustomResourcePanel` reuses; the CRD Overview has the **Show instances** link (`onOpenCrdInstances`) |
+| `src/components/ResourceViews.tsx` | Table views for non-pod kinds. `CRDView` (grouped by API group, the Instances column) and `CRDInstanceView` (the objects of one CRD: row opens the custom resource panel, row trash, All CRDs) |
+| `src/components/GenericResourceTable.tsx` | Sortable table with loading/error/empty states; optional `groupBy` / `groupNoun` (v2.4.1; collapsible group header rows, only `CRDView` passes them); hidden columns in `localStorage["columns-<resourceType>"]`. Optional controlled `sort` / `onSortChange` props (v2.3.1; only `ArgoCDView` passes them). Per-row `deleteReason` / function `deleteLabel` for the row trash; a forbidden list error renders the `ViewState` no-access card. A sortable header is a button inside the `<th>`; the sorted column's `<th>` carries `aria-sort` |
+| `src/utils/tableRows.ts` | Pure `searchRows`, `sortRows`, `shownRows`, `rangeSelect`, `groupRows` (v2.4.1), `SortState` (v2.3.1): the table's one search predicate and comparator, so `ArgoCDView` selects exactly the rows the table shows. See `argocd.md` |
 | `src/components/ConfirmModal.tsx` | Shared confirm dialog + `ClusterBadge`. See Confirm-on-Destructive |
 | `src/components/NodeDrainDialog.tsx` | Drain dialog on `ConfirmModal` `lg`, Override band, nested force-delete dialog |
 | `src/hooks/useNodeDrain.ts` | Drain state machine, called from `NodeOverview`; hooks only, never `invoke` |
@@ -68,7 +71,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/components/ReadOnlyBadge.tsx` / `GuardrailGate.tsx` / `GuardedActionConfirm.tsx` | Read-only chip/strip/turn-off; guardrails for non-`ConfirmModal` dialogs; `useGuardedAction` |
 | `src/utils/kubectlEquiv.ts` / `src/components/KubectlEquivalent.tsx` | kubectl equivalents (slot 6) |
 | `src/utils/diffRows.ts` / `src/components/DiffRows.tsx` | The **one** diff helper and renderer |
-| `src/components/YamlSaveGate.tsx` / `HelmUpgradeGate.tsx` | PREVIEW-GATE dialogs |
+| `src/components/YamlSaveGate.tsx` / `HelmUpgradeGate.tsx` | PREVIEW-GATE dialogs. `YamlSaveGate` takes an optional `crd` (v2.4.1): the preview and save then use the custom resource commands and `resourceType` is ignored |
 | `src/utils/rolloutDiff.ts` | Rollout template diff for `RolloutHistory` |
 | `src/components/ResourceCompareDialog.tsx` / `src/utils/resourceCompare.ts` | Resource compare |
 | `src/components/FieldManagers.tsx` / `src/utils/managedFields.ts` | Field managers |
@@ -92,9 +95,9 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src/utils/capacity.ts` / `nodeLabels.ts` / `rightSizing.ts` / `constraints.ts` | Health helpers; `SizingHint.tsx`, `ConstraintsSection.tsx` render them |
 | `src/utils/expiry.ts` | The one certificate-expiry rule |
 | `src/hooks/useActiveContext.ts` | App-local active context, validated against `list_contexts()` |
-| `src/hooks/useResources.ts` | All React Query hooks, `invokeWrite`, `startLogStream`, `RBAC_RESOURCE` |
+| `src/hooks/useResources.ts` | All React Query hooks, `invokeWrite`, `startLogStream`, `RBAC_RESOURCE`; the custom resource hooks (`useCustomResource*`, `usePreviewCustomResourceYaml`, `useApplyCustomResource`, `useDeleteCustomResource`, `useCustomResourcePermissions`) |
 | `src/hooks/useResizablePanel.ts` | Shared panel width hook |
-| `src/types/k8s.ts` | TS types mirroring Rust structs |
+| `src/types/k8s.ts` | TS types mirroring Rust structs (`CRD.read_version`, `CustomResourceDetail`, `CustomResourceOwner`; `CustomResourceSelection` is frontend only) |
 | `vitest.config.ts` | Vitest (`node` env, `src/**/*.test.ts(x)`); `npm test` |
 
 ### Rust Backend
@@ -108,7 +111,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/cli.rs` | `get_cli_status`, `install_cli_command`; pure `decide_status`, `plan_install` |
 | `src-tauri/windows/hooks.nsh`, `path.wxs` | NSIS user-PATH hooks and the MSI system-PATH fragment (wired in `tauri.conf.json` `bundle.windows`) |
 | `site/scoop/garita.json` | Scoop manifest template; `pages.yml` renders it from the latest release |
-| `src-tauri/src/commands/pods.rs` | Pods (`containers_status`, `ephemeral_containers`, `default_container` annotation verbatim, `service_account` and `conditions` for the Pod Summary), `get_pod` (404 → `None`), logs and `stream_pod_logs`, `delete_resource`, `get_resource_yaml` / `_neat`, `apply_resource_yaml` / `preview_resource_yaml` via one `replace_resource_yaml`, `start_debug_container` (only `Patch::Strategic`), `list_pod_metrics` |
+| `src-tauri/src/commands/pods.rs` | Pods (`containers_status`, `ephemeral_containers`, `default_container` annotation verbatim, `service_account` and `conditions` for the Pod Summary), `get_pod` (404 → `None`), logs and `stream_pod_logs`, `delete_resource`, `get_resource_yaml` / `_neat`, `apply_resource_yaml` / `preview_resource_yaml` via one `replace_resource_yaml` (its `ReplaceTarget` is `Kind` or `Custom`; `preview_replace` / `apply_replace` are shared with `crds.rs`), `start_debug_container` (only `Patch::Strategic`), `list_pod_metrics` |
 | `src-tauri/src/commands/nodes.rs` | Nodes (CPU%/MEM% of allocatable), cordon/uncordon/delete/taints. No `drain_node` |
 | `src-tauri/src/commands/drain.rs` | `preview_node_drain`, `evict_pod` (Eviction API only) |
 | `src-tauri/src/commands/deployments.rs` | `list_deployments` only |
@@ -122,7 +125,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 | `src-tauri/src/commands/shell.rs` | Exec/attach shell sessions, `shell-output-{id}` / `shell-closed-{id}` |
 | `src-tauri/src/commands/portforward.rs` | Pod and Service port-forward (binds `127.0.0.1`) |
 | `src-tauri/src/commands/hpa.rs`, `pdb.rs`, `quotas.rs` | HPA; PDBs (`match_labels`); ResourceQuotas, LimitRanges, PriorityClasses |
-| `src-tauri/src/commands/crds.rs` | CRDs and `list_crd_resources` |
+| `src-tauri/src/commands/crds.rs` | CRDs (`list_crds`, with `read_version`) and `list_crd_resources`; the custom resource commands (`get_custom_resource`, `get_custom_resource_yaml`, `get_custom_resource_yaml_neat`, `preview_custom_resource_yaml`, `apply_custom_resource_yaml`, `delete_custom_resource`) behind `cr_request` |
 | `src-tauri/src/commands/context.rs` | `list_contexts`, `get_current_context` |
 | `src-tauri/src/commands/kubeconfig.rs` | App-local kubeconfig registry, `load_merged_kubeconfig()` |
 | `src-tauri/src/commands/apply_file.rs` | Merge from file; `split_yaml_documents`; plurals via discovery |

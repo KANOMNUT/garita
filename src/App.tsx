@@ -19,6 +19,8 @@ import { canCompare } from "./utils/resourceCompare";
 import { SettingsView, type SettingsSection } from "./components/SettingsView";
 import { ResourceCreator } from "./components/ResourceCreator";
 import { DeleteNamespaceConfirm } from "./components/DeleteNamespaceConfirm";
+import { CustomResourcePanel } from "./components/CustomResourcePanel";
+import { DeleteCustomResourceConfirm } from "./components/DeleteCustomResourceConfirm";
 import { MergeFromFileModal } from "./components/MergeFromFileModal";
 import { HelmInstallModal } from "./components/HelmInstallModal";
 import {
@@ -39,7 +41,8 @@ import {
   EndpointsView, EndpointSliceView, ReplicaSetView,
   MutatingWebhookView, ValidatingWebhookView, VolumeSnapshotView, CRDInstanceView, NamespacesView,
 } from "./components/ResourceViews";
-import type { ClusterAccess, MapKind, Pod, ResourceType, SelectedResource, CRD } from "./types/k8s";
+import type { ClusterAccess, CustomResourceSelection, MapKind, Pod, ResourceType, SelectedResource, CRD } from "./types/k8s";
+import { sameCustomResource } from "./utils/crds";
 import { RESOURCE_QUERY_KEY, HEALTH_QUERY_KEY, HEALTH_PAGES, type HealthPage, type MainView } from "./utils/resourceQueryKey";
 import { ProblemsPage } from "./components/health/ProblemsPage";
 import { savedSearchKey } from "./utils/savedSearches";
@@ -190,7 +193,7 @@ function AppInner() {
   // Bumped to focus the primary action of Settings → Updates (palette entry, Sidebar notice).
   const [focusUpdates, setFocusUpdates] = useState(0);
   const openUpdates = () => { setSettingsSection("updates"); setMainView("settings"); setFocusUpdates((n) => n + 1); };
-  // UXP-23: ONE navigation wrapper used by EVERY entry point (Sidebar, CRD tree, NodeStrip
+  // UXP-23: ONE navigation wrapper used by EVERY entry point (Sidebar, NodeStrip
   // "view all", both panels' onNavigate, the palette). It resets mainView directly: an effect
   // on activeResource would never fire when the user re-picks the resource already active.
   const setActiveResource = useCallback((r: ResourceType) => {
@@ -204,8 +207,21 @@ function AppInner() {
   const [selectedPod, setSelectedPod] = useState<Pod | null>(null);
   const [selectedResource, setSelectedResource] = useState<SelectedResource | null>(null);
   // §4.5 — which CRD kind the "crd-instances" view is currently showing.
-  // CRDResource has no detail panel, so this lives outside SelectedResource.
   const [crdTarget, setCrdTarget] = useState<CRD | null>(null);
+  // The object whose custom resource panel is open, with the CRD it was listed under. Not a SelectedResource member: a
+  // custom resource has a runtime group, version and kind, and the per-kind tables are keyed by a static kind (plan D2).
+  // The panel renders only while the CRD on screen is that CRD, so a stale selection never shows another CRD's panel.
+  const [selectedCr, setSelectedCr] = useState<CustomResourceSelection | null>(null);
+  // The custom resource the delete confirm is open for (the objects list's row trash, or the panel's header trash).
+  const [crToDelete, setCrToDelete] = useState<CustomResourceSelection | null>(null);
+  // The two ways into a CRD's objects: the CRDs page's Instances button and the CRD panel's "Show instances" link.
+  // The panel closes (the CRD panel would otherwise stay over the list); crdTarget is set before activeResource changes,
+  // so the [namespace, activeResource] effect only ever keeps it.
+  const openCrdInstances = useCallback((crd: CRD) => {
+    setSelectedResource(null);
+    setCrdTarget(crd);
+    setActiveResource("crd-instances");
+  }, [setActiveResource]);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [creatorOpen, setCreatorOpen] = useState(false);
@@ -314,8 +330,9 @@ function AppInner() {
   useEffect(() => {
     setSelectedPod(null);
     setSelectedResource(null);
+    setSelectedCr(null);
     // §4.5: cleared when activeResource changes away from "crd-instances" —
-    // set *before* this effect runs (see Sidebar's onSelectCrdInstance), so
+    // set *before* this effect runs (see openCrdInstances), so
     // this only ever clears it, never races the set.
     if (activeResource !== "crd-instances") setCrdTarget(null);
     if (navigateSearchRef.current !== null) {
@@ -336,6 +353,9 @@ function AppInner() {
       if (pending?.ns && pending.ctx === currentContext) setNamespace(pending.ns);
       setSelectedPod(null);
       setSelectedResource(null);
+      setSelectedCr(null);
+      // A delete confirm names a context-bound object: a switch while it is open must not aim it at the new cluster.
+      setCrToDelete(null);
       setCrdTarget(null);
       setSearch("");
     }
@@ -555,6 +575,7 @@ function AppInner() {
           if (isEditableTarget(e.target)) return;
           setSelectedPod(null);
           setSelectedResource(null);
+          setSelectedCr(null);
         }
       }
       // Single-letter shortcuts ignore anything the user types into (input,
@@ -603,8 +624,6 @@ function AppInner() {
           journalActive={mainView === "journal"}
           currentContext={currentContext}
           onOpenSwitcher={() => setSwitcherOpen(true)}
-          crdTarget={crdTarget}
-          onSelectCrdInstance={(crd) => { setCrdTarget(crd); setActiveResource("crd-instances"); }}
         />
 
         <main tabIndex={-1} className="flex-1 min-w-0 flex flex-col">
@@ -812,7 +831,8 @@ function AppInner() {
               {activeResource === "crd" && (
                 <CRDView context={currentContext} search={search}
                   selectedKey={selectedResource?.kind === "crd" ? selectedResource.item.name : null}
-                  onSelect={(item) => setSelectedResource({ kind: "crd", item })} />
+                  onSelect={(item) => setSelectedResource({ kind: "crd", item })}
+                  onOpenInstances={openCrdInstances} />
               )}
               {activeResource === "netpol" && (
                 <NetworkPolicyView context={currentContext} namespace={namespace} search={search}
@@ -939,15 +959,26 @@ function AppInner() {
               )}
               {activeResource === "crd-instances" && (
                 crdTarget ? (
-                  <CRDInstanceView context={currentContext} crd={crdTarget} namespace={namespace} search={search} />
+                  <CRDInstanceView context={currentContext} crd={crdTarget} namespace={namespace} search={search}
+                    onBack={() => setActiveResource("crd")}
+                    selectedKey={selectedCr ? `${selectedCr.item.namespace}/${selectedCr.item.name}` : null}
+                    onSelect={(item) => setSelectedCr({ crd: crdTarget, item })}
+                    onRequestDelete={(item) => setCrToDelete({ crd: crdTarget, item })} />
                 ) : (
                   // Reachable after a context switch clears crdTarget while
                   // activeResource stays "crd-instances" (that effect doesn't
                   // touch activeResource) — without this branch the content
-                  // area renders nothing with no way out but the sidebar.
+                  // area renders nothing.
                   <div className="py-16 flex flex-col items-center gap-3">
                     <Boxes size={32} className="text-dim" />
-                    <p className="text-[13px] text-mute">Select a custom resource from the sidebar</p>
+                    <p className="text-[13px] text-mute">Pick a CRD on the CRDs page to see its objects.</p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveResource("crd")}
+                      className="h-8 px-4 rounded-md bg-accent/15 ring-1 ring-accent/30 text-accent text-[12px] hover:bg-accent/25 outline-hidden focus-visible:ring-2 focus-visible:ring-accent/70"
+                    >
+                      Open CRDs
+                    </button>
                   </div>
                 )
               )}
@@ -980,6 +1011,7 @@ function AppInner() {
                 problemsVisible={mainView === "resources"}
                 onOpenMap={openMap}
                 onRequestNamespaceDelete={setNsToDelete}
+                onOpenCrdInstances={openCrdInstances}
                 context={currentContext}
                 onClose={() => setSelectedResource(null)}
                 onNavigate={(kind, ns, name) => {
@@ -987,6 +1019,22 @@ function AppInner() {
                   setActiveResource(kind);
                   if (ns) setNamespace(ns);
                   setSelectedResource(null);
+                }}
+              />
+            )}
+            {selectedCr && crdTarget && activeResource === "crd-instances" && selectedCr.crd.name === crdTarget.name && (
+              <CustomResourcePanel
+                key={`${selectedCr.crd.name}/${selectedCr.item.namespace}/${selectedCr.item.name}`}
+                context={currentContext}
+                crd={selectedCr.crd}
+                item={selectedCr.item}
+                onClose={() => setSelectedCr(null)}
+                onRequestDelete={() => setCrToDelete(selectedCr)}
+                onNavigate={(kind, ns, name) => {
+                  navigateSearchRef.current = name;
+                  setActiveResource(kind);
+                  if (ns) setNamespace(ns);
+                  setSelectedCr(null);
                 }}
               />
             )}
@@ -1013,6 +1061,12 @@ function AppInner() {
         name={nsToDelete}
         onClose={() => setNsToDelete(null)}
         onDeleted={(n) => { if (n === namespace) setNamespace("all"); }}
+      />
+      <DeleteCustomResourceConfirm
+        context={currentContext}
+        target={crToDelete}
+        onClose={() => setCrToDelete(null)}
+        onDeleted={(t) => { if (selectedCr && sameCustomResource(selectedCr, t)) setSelectedCr(null); }}
       />
       <CommandPalette
         actions={paletteActions}

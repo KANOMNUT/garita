@@ -29,6 +29,7 @@ use k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomRe
 use kube::{api::{ApiResource, AttachParams, DeleteParams, DynamicObject, ListParams, LogParams, Patch, PatchParams, PostParams}, Api};
 use tokio::io::AsyncReadExt as _;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use tauri::ipc::Channel;
 
@@ -645,7 +646,7 @@ pub async fn get_pod(context: String, namespace: String, name: String) -> Result
 }
 
 /// `[a-z0-9]([-a-z0-9]*[a-z0-9])?`, at most 63 characters.
-fn is_dns1123_label(s: &str) -> bool {
+pub(crate) fn is_dns1123_label(s: &str) -> bool {
     let b = s.as_bytes();
     if b.is_empty() || b.len() > 63 {
         return false;
@@ -1092,7 +1093,7 @@ fn neat_value(v: &mut serde_json::Value) -> Vec<String> {
 
 /// Serialise a fetched object. `neat == false` is byte-identical to the
 /// original `get_resource_yaml` output (typed field order preserved).
-fn render_obj<T: Serialize>(obj: &T, neat: bool) -> Result<(String, Vec<String>), String> {
+pub(crate) fn render_obj<T: Serialize>(obj: &T, neat: bool) -> Result<(String, Vec<String>), String> {
     if !neat {
         let yaml = serde_yaml::to_string(obj).map_err(|e| e.to_string())?;
         return Ok((yaml, Vec::new()));
@@ -1470,7 +1471,8 @@ pub async fn list_pod_metrics(
 enum ReplaceError {
     /// The YAML did not deserialise into the kind (serde error text only).
     Invalid(String),
-    Kube { label: &'static str, source: kube::Error },
+    /// `label` is a literal for the per-kind arms and the CRD's kind for a custom resource.
+    Kube { label: Cow<'static, str>, source: kube::Error },
     Unsupported(String),
 }
 
@@ -1502,13 +1504,22 @@ fn classify_replace_error(code: u16) -> &'static str {
     }
 }
 
-/// The ONE replace path. `apply_resource_yaml` (real) and `preview_resource_yaml` (`dry_run`) both
-/// call this, so the per-kind arms exist exactly once and a preview can never validate something
+/// What a YAML replace writes to: a Garita kind string (the per-kind arms below, unchanged) or a
+/// custom resource, written as a `DynamicObject` at the CRD's group, version and plural (from
+/// `crds::cr_request`, never `kind_to_plural`).
+pub(crate) enum ReplaceTarget<'a> {
+    Kind(&'a str),
+    Custom { ar: &'a ApiResource, namespaced: bool },
+}
+
+/// The ONE replace path. `apply_resource_yaml` and `apply_custom_resource_yaml` (real) and
+/// `preview_resource_yaml` and `preview_custom_resource_yaml` (`dry_run`) all call this, so the
+/// per-kind arms and the custom arm exist exactly once and a preview can never validate something
 /// the save would not do.
 async fn replace_resource_yaml(
     client: kube::Client,
     namespace: &str,
-    resource_type: &str,
+    target: &ReplaceTarget<'_>,
     name: &str,
     yaml: &str,
     dry_run: bool,
@@ -1532,7 +1543,7 @@ async fn replace_resource_yaml(
             let api: Api<$T> = Api::namespaced(client, namespace);
             let obj: $T = serde_yaml::from_str(yaml).map_err(|e| ReplaceError::Invalid(e.to_string()))?;
             let replaced = api.replace(name, &pp, &obj).await
-                .map_err(|source| ReplaceError::Kube { label: $label, source })?;
+                .map_err(|source| ReplaceError::Kube { label: Cow::Borrowed($label), source })?;
             finish_typed!($T, replaced)
         }};
     }
@@ -1541,7 +1552,7 @@ async fn replace_resource_yaml(
             let api: Api<$T> = Api::all(client);
             let obj: $T = serde_yaml::from_str(yaml).map_err(|e| ReplaceError::Invalid(e.to_string()))?;
             let replaced = api.replace(name, &pp, &obj).await
-                .map_err(|source| ReplaceError::Kube { label: $label, source })?;
+                .map_err(|source| ReplaceError::Kube { label: Cow::Borrowed($label), source })?;
             finish_typed!($T, replaced)
         }};
     }
@@ -1557,13 +1568,34 @@ async fn replace_resource_yaml(
             let api: Api<DynamicObject> = Api::namespaced_with(client, namespace, &ar);
             let obj: DynamicObject = serde_yaml::from_str(yaml).map_err(|e| ReplaceError::Invalid(e.to_string()))?;
             let replaced = api.replace(name, &pp, &obj).await
-                .map_err(|source| ReplaceError::Kube { label: $label, source })?;
+                .map_err(|source| ReplaceError::Kube { label: Cow::Borrowed($label), source })?;
             Ok(ReplaceOutput {
                 result: serde_json::to_value(&replaced).unwrap_or(serde_json::Value::Null),
                 typed_live: None,
             })
         }};
     }
+
+    let resource_type = match target {
+        ReplaceTarget::Kind(kind) => *kind,
+        ReplaceTarget::Custom { ar, namespaced } => {
+            let ar: &ApiResource = ar;
+            let api: Api<DynamicObject> = if *namespaced {
+                Api::namespaced_with(client, namespace, ar)
+            } else {
+                Api::all_with(client, ar)
+            };
+            // One document, never the multi-document iterator (it hangs past an error).
+            let obj: DynamicObject = serde_yaml::from_str(yaml).map_err(|e| ReplaceError::Invalid(e.to_string()))?;
+            let replaced = api.replace(name, &pp, &obj).await
+                .map_err(|source| ReplaceError::Kube { label: Cow::Owned(ar.kind.clone()), source })?;
+            // A DynamicObject keeps every field, so there is no typed round-trip and nothing to drop.
+            return Ok(ReplaceOutput {
+                result: serde_json::to_value(&replaced).unwrap_or(serde_json::Value::Null),
+                typed_live: None,
+            });
+        }
+    };
 
     match resource_type {
         "pods" | "pod" => replace_ns!(K8sPod, "pod"),
@@ -1626,6 +1658,17 @@ async fn replace_resource_yaml(
     }
 }
 
+/// `apply_resource_yaml`'s body: the real replace through `replace_resource_yaml`, mapped with
+/// `ReplaceError::apply_message`. The caller connects and logs.
+pub(crate) async fn apply_replace(
+    client: kube::Client, namespace: &str, target: &ReplaceTarget<'_>, name: &str, yaml: &str,
+) -> Result<(), String> {
+    replace_resource_yaml(client, namespace, target, name, yaml, false, None)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.apply_message())
+}
+
 #[tauri::command]
 pub async fn apply_resource_yaml(
     context: String, namespace: String, resource_type: String, name: String, yaml: String,
@@ -1633,10 +1676,7 @@ pub async fn apply_resource_yaml(
     let result: Result<(), String> = async {
         let client = client_for_context(&context).await
             .map_err(|e| format!("Failed to connect: {}", e))?;
-        replace_resource_yaml(client, &namespace, &resource_type, &name, &yaml, false, None)
-            .await
-            .map(|_| ())
-            .map_err(|e| e.apply_message())
+        apply_replace(client, &namespace, &ReplaceTarget::Kind(&resource_type), &name, &yaml).await
     }
     .await;
     crate::app_log::log_write(&context, "apply", &resource_type, &namespace, &name,
@@ -1745,30 +1785,34 @@ fn live_api_resource(resource_type: &str) -> Result<(ApiResource, bool), String>
     }
 }
 
-/// Dry-run a YAML save without writing anything: reads the raw live object, then runs the same
-/// replace `apply_resource_yaml` does with `dryRun=All`. API refusals are outcomes
-/// (`rejected` / `conflict`), not errors; `Err` is reserved for "preview unavailable" (client
-/// construction, a non-API kube error, an unsupported kind).
-#[tauri::command]
-pub async fn preview_resource_yaml(
-    context: String, namespace: String, resource_type: String, name: String, yaml: String,
-) -> Result<YamlSavePreview, String> {
-    crate::app_log::log_read("preview_resource_yaml", &context);
-    // A YAML that does not even parse needs no cluster. Single-document parse only: the
-    // multi-document iterator is the serde_yaml hang (see apply_file.rs).
-    if let Err(e) = serde_yaml::from_str::<serde_json::Value>(&yaml) {
-        return Ok(invalid_preview(format!("Invalid YAML: {}", e)));
-    }
-    let (ar, namespaced) = live_api_resource(&resource_type)?;
-    let client = client_for_context(&context).await
-        .map_err(|e| format!("Failed to connect: {}", e))?;
+/// `Some(invalid preview)` when `yaml` fails the single-document parse, which needs no cluster.
+/// Single-document parse only: the multi-document iterator is the serde_yaml hang (see
+/// apply_file.rs). Both preview commands call it before they connect.
+pub(crate) fn invalid_yaml_preview(yaml: &str) -> Option<YamlSavePreview> {
+    serde_yaml::from_str::<serde_json::Value>(yaml)
+        .err()
+        .map(|e| invalid_preview(format!("Invalid YAML: {}", e)))
+}
 
+/// `preview_resource_yaml`'s body once the kind is resolved: reads the raw live object (scoped by
+/// `namespaced`), then runs the same replace the save does with `dryRun=All`. API refusals are
+/// outcomes (`rejected` / `conflict`), not errors; `Err` is reserved for "preview unavailable"
+/// (a non-API kube error, an unsupported kind).
+pub(crate) async fn preview_replace(
+    client: kube::Client,
+    namespace: &str,
+    target: &ReplaceTarget<'_>,
+    ar: &ApiResource,
+    namespaced: bool,
+    name: &str,
+    yaml: &str,
+) -> Result<YamlSavePreview, String> {
     let api: Api<DynamicObject> = if namespaced {
-        Api::namespaced_with(client.clone(), &namespace, &ar)
+        Api::namespaced_with(client.clone(), namespace, ar)
     } else {
-        Api::all_with(client.clone(), &ar)
+        Api::all_with(client.clone(), ar)
     };
-    let live = match api.get(&name).await {
+    let live = match api.get(name).await {
         Ok(obj) => serde_json::to_value(&obj).map_err(|e| format!("Failed to preview: {}", e))?,
         Err(kube::Error::Api(ae)) => {
             return Ok(YamlSavePreview {
@@ -1782,7 +1826,7 @@ pub async fn preview_resource_yaml(
         Err(e) => return Err(format!("Failed to preview: {}", e)),
     };
 
-    match replace_resource_yaml(client, &namespace, &resource_type, &name, &yaml, true, Some(&live)).await {
+    match replace_resource_yaml(client, namespace, target, name, yaml, true, Some(&live)).await {
         Ok(out) => {
             let dropped = out.typed_live.as_ref().map(|t| dropped_paths(&live, t)).unwrap_or_default();
             Ok(YamlSavePreview {
@@ -1804,6 +1848,24 @@ pub async fn preview_resource_yaml(
         Err(ReplaceError::Kube { source, .. }) => Err(format!("Failed to preview: {}", source)),
         Err(ReplaceError::Unsupported(k)) => Err(format!("Failed to preview: unsupported resource type '{}'", k)),
     }
+}
+
+/// Dry-run a YAML save without writing anything: reads the raw live object, then runs the same
+/// replace `apply_resource_yaml` does with `dryRun=All`. API refusals are outcomes
+/// (`rejected` / `conflict`), not errors; `Err` is reserved for "preview unavailable" (client
+/// construction, a non-API kube error, an unsupported kind).
+#[tauri::command]
+pub async fn preview_resource_yaml(
+    context: String, namespace: String, resource_type: String, name: String, yaml: String,
+) -> Result<YamlSavePreview, String> {
+    crate::app_log::log_read("preview_resource_yaml", &context);
+    if let Some(p) = invalid_yaml_preview(&yaml) {
+        return Ok(p);
+    }
+    let (ar, namespaced) = live_api_resource(&resource_type)?;
+    let client = client_for_context(&context).await
+        .map_err(|e| format!("Failed to connect: {}", e))?;
+    preview_replace(client, &namespace, &ReplaceTarget::Kind(&resource_type), &ar, namespaced, &name, &yaml).await
 }
 
 #[cfg(test)]
@@ -2302,6 +2364,42 @@ mod tests {
             ReplaceError::Unsupported("zzz".into()).apply_message(),
             "Unsupported resource type: zzz"
         );
+    }
+
+    fn api_error(code: u16, message: &str) -> kube::Error {
+        kube::Error::Api(kube::core::ErrorResponse {
+            status: "Failure".into(),
+            message: message.into(),
+            reason: "Test".into(),
+            code,
+        })
+    }
+
+    #[test]
+    fn replace_error_apply_text_keeps_the_kind_label_and_takes_a_custom_one() {
+        // `kube::Error::Api` displays as "ApiError: {message}: {reason} ({debug})".
+        let builtin = ReplaceError::Kube { label: Cow::Borrowed("deployment"), source: api_error(409, "stale") };
+        assert!(
+            builtin.apply_message().starts_with("Failed to apply deployment: ApiError: stale: Test ("),
+            "{}",
+            builtin.apply_message()
+        );
+        let custom = ReplaceError::Kube { label: Cow::Owned("Widget".to_string()), source: api_error(422, "bad spec") };
+        assert!(
+            custom.apply_message().starts_with("Failed to apply Widget: ApiError: bad spec: Test ("),
+            "{}",
+            custom.apply_message()
+        );
+    }
+
+    #[test]
+    fn invalid_yaml_preview_is_some_only_for_unparseable_yaml() {
+        let p = invalid_yaml_preview("a: [").expect("invalid");
+        assert_eq!(p.outcome, "invalid");
+        assert!(p.message.starts_with("Invalid YAML: "), "{}", p.message);
+        assert!(p.live.is_null() && p.result.is_null() && p.dropped_paths.is_empty());
+        assert!(invalid_yaml_preview("a: 1").is_none());
+        assert!(invalid_yaml_preview("").is_none());
     }
 
     #[test]

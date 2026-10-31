@@ -19,12 +19,13 @@ import type {
   EndpointsRow, EndpointSliceRow, ReplicaSetRow, WebhookConfigRow, VolumeSnapshotRow,
   DrainPreview, EvictionResult, LogStreamEvent, NeatYaml, PropagationPolicy,
   LaunchArgs, CliStatus, YamlSavePreview, HelmUpgradePreview, LogSettings, AppLogLevel, JournalEntry, WhoCanResult, RuleGrant, UnusedReport, DeprecationReport, ResourceMap, NetpolModel,
-  NamespaceRow, ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
+  NamespaceRow, CustomResourceDetail, ServiceTarget, LogsTarget, MetricTemplate, MetricRangeId, MetricRange, ObservabilityDiscovery, ObservabilityKind, BackendProbe, BackendLogs,
 } from "../types/k8s";
 import { METRIC_RANGES, rangeWindow, samePlotExceptRange, targetKey } from "../utils/observability";
 import { newUsageHistory, recordUsage, type UsageHistory } from "../utils/rightSizing";
 import { RESOURCE_QUERY_KEY } from "../utils/resourceQueryKey";
 import { isTerminating, namespaceNames } from "../utils/namespaces";
+import { crdReadVersion, crdRef } from "../utils/crds";
 import { assertWritable, READ_ONLY_BLOCKS_SHELL } from "../utils/guardrails";
 import {
   canCheck, DEFAULT_PREFS, parsePrefs, reduce, UPDATES_KEY, updateMode,
@@ -472,7 +473,7 @@ export function useCRDResources(
   // CRD detail-panel caller, which deliberately lists cluster-wide.
   namespace?: string,
 ) {
-  const version = crd?.versions.split(",")[0].trim() ?? "";
+  const version = crdReadVersion(crd);
   return useQuery<CRDResource[], Error>({
     queryKey: ["crd-resources", context, crd?.name, version, namespace ?? ""],
     queryFn: () => invoke<CRDResource[]>("list_crd_resources", {
@@ -487,6 +488,124 @@ export function useCRDResources(
     enabled: enabled && !!context && !!crd && !!version,
     refetchInterval: 30_000,
   });
+}
+
+// ─── Custom resource panel (v2.4.1, reads) ───────────────────────────────────
+// A custom resource is addressed by its CRD (crdRef: group, version, kind, plural, scope, all flat) plus namespace and
+// name; the scope comes from the CRD, never from the namespace value. `namespace` is "" for a cluster-scoped object.
+// The version is crdReadVersion(crd), the same one useCRDResources lists with. `enabled` also gates the polling.
+
+/** One object, display shape. Data is null when the object is gone (the command answers null on a 404). */
+export function useCustomResource(
+  context: string, crd: CRD | null, namespace: string, name: string, enabled: boolean,
+) {
+  const version = crdReadVersion(crd);
+  return useQuery<CustomResourceDetail | null, Error>({
+    queryKey: ["custom-resource", context, crd?.name, version, namespace, name],
+    queryFn: () => invoke<CustomResourceDetail | null>("get_custom_resource", { context, ...crdRef(crd!), namespace, name }),
+    enabled: enabled && !!context && !!crd && !!version && !!name,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+  });
+}
+
+/**
+ * The full YAML of one object. No kind is named "cr", so this key cannot collide with ["resource-yaml", kind, ...], and
+ * every existing "resource-yaml" prefix invalidation refreshes it. The editor seed (F3) must read this, never the neat text.
+ */
+export function useCustomResourceYaml(
+  context: string, crd: CRD | null, namespace: string, name: string, enabled: boolean,
+) {
+  const version = crdReadVersion(crd);
+  return useQuery<string, Error>({
+    queryKey: ["resource-yaml", "cr", context, crd?.name, version, namespace, name],
+    queryFn: () => invoke<string>("get_custom_resource_yaml", { context, ...crdRef(crd!), namespace, name }),
+    enabled: enabled && !!context && !!crd && !!version && !!name,
+    staleTime: 30_000,
+  });
+}
+
+/** The neat YAML of one object: DISPLAY ONLY, like useResourceYamlNeat. It never reaches an editor or a save. */
+export function useCustomResourceYamlNeat(
+  context: string, crd: CRD | null, namespace: string, name: string, enabled: boolean,
+) {
+  const version = crdReadVersion(crd);
+  return useQuery<NeatYaml, Error>({
+    queryKey: ["resource-yaml", "neat", "cr", context, crd?.name, version, namespace, name],
+    queryFn: () => invoke<NeatYaml>("get_custom_resource_yaml_neat", { context, ...crdRef(crd!), namespace, name }),
+    enabled: enabled && !!context && !!crd && !!version && !!name,
+    staleTime: 30_000,
+  });
+}
+
+// ─── Custom resource panel (v2.4.1, writes and permissions) ──────────────────
+// Same addressing as the reads: crdRef(crd) plus namespace and name. The two writes go through invokeWrite (the
+// read-only backstop; writeBackstop.test.ts scans for it). The preview is a read, like preview_resource_yaml.
+
+/** PREVIEW-GATE dry run of a YAML save. A one-shot snapshot for one dialog open: a mutation, never cached, never retried. */
+export function usePreviewCustomResourceYaml() {
+  return useMutation<
+    YamlSavePreview,
+    Error,
+    { context: string; crd: CRD; namespace: string; name: string; yaml: string }
+  >({
+    mutationFn: ({ context, crd, namespace, name, yaml }) =>
+      invoke<YamlSavePreview>("preview_custom_resource_yaml", { context, ...crdRef(crd), namespace, name, yaml }),
+    retry: false,
+  });
+}
+
+/** The YAML save of one custom resource (a replace, behind the PREVIEW-GATE). `yaml` is the editor text, never the neat text. */
+export function useApplyCustomResource() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, { context: string; crd: CRD; namespace: string; name: string; yaml: string }>({
+    mutationFn: ({ context, crd, namespace, name, yaml }) =>
+      invokeWrite<void>("apply_custom_resource_yaml", { context, ...crdRef(crd), namespace, name, yaml }),
+    onSuccess: (_d, { context }) => {
+      qc.invalidateQueries({ queryKey: ["crd-resources", context] });
+      qc.invalidateQueries({ queryKey: ["custom-resource", context] });
+      qc.invalidateQueries({ queryKey: ["resource-yaml"] });
+    },
+  });
+}
+
+/** Delete one custom resource. The backend sends the Background propagation policy; there is no parameter for it. */
+export function useDeleteCustomResource() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, { context: string; crd: CRD; namespace: string; name: string }>({
+    mutationFn: ({ context, crd, namespace, name }) =>
+      invokeWrite<void>("delete_custom_resource", { context, ...crdRef(crd), namespace, name }),
+    onSuccess: (_d, { context }) => { qc.invalidateQueries({ queryKey: ["crd-resources", context] }); },
+  });
+}
+
+/**
+ * RBAC hints for the custom resource writes: `delete` and `update` (a YAML save is a PUT) on the CRD's group and plural.
+ * usePermissions' rules, which this cannot reuse (it is keyed by ResourceType): "all" namespaces asks nothing, and an
+ * error, a missing answer or no CRD allows. Only an explicit `allowed: false` denies. A cluster-scoped CRD asks with
+ * namespace "" whatever `namespace` says.
+ */
+export function useCustomResourcePermissions(
+  context: string, crd: CRD | null, namespace: string,
+): { canDelete: boolean; canUpdate: boolean } {
+  const allNamespaces = namespace === "all" && crd?.scope !== "Cluster";
+  const ns = !crd || crd.scope === "Cluster" || allNamespaces ? "" : namespace;
+  const checks: AccessCheck[] = crd
+    ? [
+        { group: crd.group, resource: crd.plural, verb: "delete", namespace: ns },
+        { group: crd.group, resource: crd.plural, verb: "update", namespace: ns },
+      ]
+    : [];
+  const { data, isError } = useQuery<AccessResult[], Error>({
+    queryKey: ["can-i-cr", context, crd?.name, ns],
+    queryFn: () => invoke<AccessResult[]>("can_i", { context, checks }),
+    enabled: !!context && !!crd && !allNamespaces,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  if (allNamespaces || !crd || isError || !data) return { canDelete: true, canUpdate: true };
+  // `!== false` fails open on a missing or malformed index too.
+  return { canDelete: data[0]?.allowed !== false, canUpdate: data[1]?.allowed !== false };
 }
 
 export function usePodMetrics(context: string, namespace: string, pod: string, enabled: boolean) {

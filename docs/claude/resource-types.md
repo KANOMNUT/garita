@@ -4,7 +4,7 @@ Section names are grep targets (`CLAUDE.md`, Detailed docs).
 
 ## Resource Types
 
-Every listable kind is a row below. `ResourceType` (`src/types/k8s.ts`) has one more member, `crd-instances`: a *view* (Custom Resources sidebar tree), absent from `SelectedResource` and every per-kind table. **Scoped** = how Kubernetes scopes the object, not how Garita lists it.
+Every listable kind is a row below. `ResourceType` (`src/types/k8s.ts`) has one more member, `crd-instances`: a *view* (the objects of one CRD, opened from the CRDs page), absent from `SelectedResource` and every per-kind table. **Scoped** = how Kubernetes scopes the object, not how Garita lists it.
 
 | kind | Resource | Scoped |
 |------|----------|--------|
@@ -149,7 +149,7 @@ CRD-backed views get Not installed / No access / Nothing here from `list_api_pre
 
 `quotas.rs`, typed. PriorityClass is cluster-scoped (`Api::all()`). `LimitRange.spec.limits` is `Vec<LimitRangeItem>`, not `Option`. Sidebar: RQ/LR under Config & Storage, PC under Cluster.
 
-## Coverage — six kinds + the CRD instance tree (v1.2.0)
+## Coverage — six kinds (v1.2.0) and CRD instances (v2.4.1)
 
 | kind | Rust file | API | Delete arm | cluster-scoped |
 |---|---|---|---|---|
@@ -166,8 +166,27 @@ CRD-backed views get Not installed / No access / Nothing here from `list_api_pre
 - `rs` gets Pods/Logs (`workload_pods.rs` has an `rs` arm) but **not** Relationships: `graph.rs` has no `rs` arm, so the tab would poll an error every 30 s. `rs` is in `WORKLOAD_KINDS` and filtered out by `hasRelationships`; both places must agree.
 - Leases were cut: hundreds of kubelet/controller rows nobody browses.
 
-### CRD instance tree
+### CRD instances and the custom resource panel
 
-`crd-instances` is a `ResourceType` member, **not** a `SelectedResource` member (`CRDResource` is `{ name, namespace, age }`, no detail panel). Only `RESOURCE_QUERY_KEY` has it (`"crd-resources"`). The Sidebar's Custom Resources section uses `useCRDs(context)` grouped by `crd.group`; selecting sets `crdTarget` and `activeResource = "crd-instances"`.
+`crd-instances` is a `ResourceType` member, **not** a `SelectedResource` member. Only `RESOURCE_QUERY_KEY` has it (`"crd-resources"`). **A custom resource is not a `SelectedResource` member either** (plan D2): it has a runtime group, version and kind, while the five silent tables and the `Record<SelectedResource["kind"], …>` tables (`kindLabel`, `EVENT_INVOLVED_KIND`, `isHealthy`) are keyed by a static kind, and `get_resource_yaml` / `delete_resource` have no dynamic arm. So no per-kind table has a row for a custom resource, and "Adding a New Resource Type" does not apply to one. Its panel is its own component, `CustomResourcePanel.tsx` (the Pod panel is the precedent), and `CRDResource` stays `{ name, namespace, age }`: identity only.
+
+**Entry.** There is no Sidebar tree. The only ways in are the **Instances** button on a CRDs page row and the **Show instances** link in the CRD panel's Overview; both call `openCrdInstances` in `App.tsx`, which sets `crdTarget` and `activeResource = "crd-instances"`. The Sidebar's **CRDs** row is active on both `crd` and `crd-instances`, and the Sidebar no longer observes `useCRDs`. A context switch clears `crdTarget` while `activeResource` stays, so the view shows "Pick a CRD on the CRDs page to see its objects." with an **Open CRDs** button.
+
+**Panel host rule (plan D3).** `selectedCr` (a `CustomResourceSelection`: the CRD plus the listed object) lives in `App.tsx`, apart from `selectedResource` and `selectedPod`. The panel renders only while `activeResource === "crd-instances"` and `selectedCr.crd.name === crdTarget.name`, so a stale selection never shows a panel for another CRD. `setSelectedCr(null)` runs in the `[namespace, activeResource]` effect, the context-switch effect, the Esc branch, the panel's `onClose` and `onNavigate`, and after its object is deleted.
+
+**Commands** (`commands/crds.rs`), reached only through hooks in `useResources.ts`: `get_custom_resource`, `get_custom_resource_yaml`, `get_custom_resource_yaml_neat`, `preview_custom_resource_yaml`, `apply_custom_resource_yaml`, `delete_custom_resource`. `apply_custom_resource_yaml` and `delete_custom_resource` are writes; `preview_custom_resource_yaml` is their dry run, a read like `preview_resource_yaml` (`writes.md` → Custom resources). All take the CRD's `group, version, kind, plural, scope` **flat** (`crdRef(crd)` in `src/utils/crds.ts`, spread into the arguments, so the names cannot drift between commands) plus `namespace` and `name` (and `yaml` for preview and apply). The scope comes from the CRD, never from the namespace value; `namespace` is `""` for a cluster-scoped object. `get_custom_resource` returns an `Option`: a 404 is `Ok(None)` so the panel can say the object is gone instead of showing an error box. The YAML reads answer a missing object with an `Err`. The new commands' parameters are required (new commands with one caller each), and no existing command gained a parameter.
+
+**One read version.** `CRD.read_version` is the storage version when it is served, else the first served version, and `""` when none is served (`read_version` in `crds.rs`); `list_crds` sends it beside `versions`. `crdReadVersion(crd)` (`src/utils/crds.ts`) is the one place the frontend picks the version: `useCRDResources` and the `useCustomResource*` read hooks use it, and `crdRef` sends it. It falls back to the first served entry of `versions` when `read_version` is missing, so a backend that does not send it keeps working. No other code splits `versions`. The row's **Instances** button and the **Show instances** link are disabled, with a reason, when the CRD is not established or has no served version (`crdInstancesReason`).
+
+**`cr_request` runs first in every one of these commands**, before `client_for_context`. kube-core pastes group, version, namespace, plural and name into the request path without encoding them, and these commands take them from the webview, so `cr_request` is **defense in depth**, not the Secret mechanism: the webview is not a security boundary (it can already call `get_resource_yaml`, which reads Secrets by design behind the UI gates). It does two things.
+- It refuses an empty API group. A CRD always has a group; without the refusal, `group: ""` with `plural: "secrets"` would read, replace or delete a core Secret with no reveal, no masking and none of the Secret rules.
+- It keeps every value inside its URL segment, so a malformed or hostile call cannot steer the path (for example `group: "x/../../api"`). Values that came from the cluster always pass. `kind` never enters the URL and gets no format check.
+
+The checks run in this order, and the first failure wins: an empty group; an empty version, kind, plural or name; an invalid group, version, plural or name; the scope; `require_namespace`; an invalid namespace (namespaced only, a cluster-scoped request ignores its namespace). The group must be a DNS subdomain of at least two labels (at most 253 bytes); the version, plural and namespace must be DNS-1123 labels (`is_dns1123_label`, `pods.rs`); the name is 1 to 253 characters, not `.` or `..`, with none of `/ % ? #` and no control or whitespace character. The name rule is wider than DNS on purpose: the API server owns the exact naming rules (an RBAC name may contain `:`), the check only keeps the name inside its segment. The messages describe a bad request, not a failed read or write, so the write commands return them too, with `{Kind}` (or "custom resource" when the kind is empty):
+- `Failed to get {Kind}: a custom resource needs an API group`
+- `Failed to get {Kind}: missing {version|kind|plural|name}`
+- `Failed to get {Kind}: invalid API group '…'`, `invalid version '…'`, `invalid plural '…'`, `invalid name '…'`, `invalid namespace '…'`
+- `Failed to get {Kind}: unknown scope '…'`
+- `{Kind} is namespace-scoped and requires a namespace` (the `require_namespace` message)
 
 `list_crd_resources` takes `namespace: Option<String>` and the pure `crd_list_namespace()` decides the scope (the old two arms were identical, so namespaced CRDs ignored the picker). It is `Option`, not `String`, because the existing caller did not send it: a bare `String` errors `missing required key namespace` at runtime. **Every additive or optional Tauri parameter is `Option<T>`.**
