@@ -1,6 +1,7 @@
 cask "garita" do
   version "2.4.1"
-  # Bumped by hand at release: set version, then sha256 from the release's SHA256SUMS.txt.
+  # Bumped by .github/workflows/homebrew.yml through a pull request once a release is
+  # published; by hand only as the fallback in docs/homebrew-tap-setup.md.
   sha256 "3e51d0bcb413363a7c609306936f676e473a61050d551961f881173a5e642f4b"
 
   url "https://github.com/KANOMNUT/garita/releases/download/v#{version}/Garita-macOS-arm64.dmg"

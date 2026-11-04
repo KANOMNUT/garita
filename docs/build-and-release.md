@@ -181,6 +181,7 @@ For GKE/EKS/AKS integration testing in CI, ensure the appropriate auth plugin bi
 | `labeler.yml` | Pull request | Area labels from `.github/labeler.yml` |
 | `release.yml` | `vX.Y.Z` tag, manual | Installers, updater tarball and signatures, `latest.json`, `SHA256SUMS.txt`, SPDX SBOM, build provenance, draft release (publish job runs in Environment `release`) |
 | `pages.yml` | Release published, push to `main` touching `index.html` or `site/**`, manual | Landing page to GitHub Pages. The artifact is the root `index.html`, exactly the same-site files it loads (the PNGs under `site/`; a missing one fails the job) and `scoop/garita.json` rendered from the latest release (see Scoop below); nothing else in the repository is published. Then a 1-byte GET check of the 5 unique `releases/latest/download/` links in `index.html` (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
+| `homebrew.yml` | Release published (`released`: stable only, including a pre-release changed to a release), manual with a `tag` input | Bumps `version` and `sha256` in `Casks/garita.rb` on the branch `bot/cask-vX.Y.Z` and opens a pull request into `main`. The sha256 is computed from the release's `Garita-macOS-arm64.dmg` and must equal its `SHA256SUMS.txt` line. No checkout and no actions, only `gh`; the job gets `contents: write` and `pull-requests: write`. See Homebrew Distribution |
 
 What blocks and what only reports:
 
@@ -196,7 +197,7 @@ What blocks and what only reports:
 3. `release.yml` checks that the three versions match the tag and that the changelog section exists, then builds on macOS 14 (arm64 `.dmg`, ad-hoc signed and DMG rebuilt as in `make mac`; plus the updater tarball) and Ubuntu 22.04 (`.deb`, `.rpm`; no AppImage, see `docs/claude/open-items.md`; the oldest runner, for the widest glibc range). Windows x64 on `windows-2022` (`.msi` and NSIS `-setup.exe`). Files get the README names (`Garita-macOS-arm64.dmg`, `Garita-windows-amd64.msi`, `Garita-windows-amd64-setup.exe`, ...).
 4. The publish job waits for approval in Environment `release`. It creates a **draft** release with the changelog section as notes, the installers, the updater files, `SHA256SUMS.txt` and `Garita-sbom.spdx.json` (14 assets, see In-app updater). Before publishing, check the asset list and the provenance of one installer: `gh release download vX.Y.Z -R KANOMNUT/garita -p Garita-linux-amd64.deb && gh attestation verify Garita-linux-amd64.deb -R KANOMNUT/garita`. Publish it by hand, with "Set as the latest release" ticked. Re-running for the same tag replaces the files of a draft, never of a published release.
 5. Publishing starts `pages.yml`: it renders the Scoop manifest from the new release and checks the five download links before it deploys. A failed run leaves the previous site in place; fix the cause and run it again (`gh workflow run pages.yml -R KANOMNUT/garita`).
-6. Bump the Homebrew cask (Homebrew Distribution below), and check that `https://github.com/KANOMNUT/garita/releases/latest/download/latest.json` names the new version.
+6. Publishing also starts `homebrew.yml`, which opens a pull request that bumps the Homebrew cask (Homebrew Distribution below): review and merge it. Check that `https://github.com/KANOMNUT/garita/releases/latest/download/latest.json` names the new version.
 
 Release jobs use no caches, so nothing a pull request writes to the Actions cache can reach a shipped binary.
 
@@ -206,7 +207,7 @@ The workflows assume these settings; none can be set from a file:
 
 - Branch protection or a ruleset on `main`: require pull requests, require the `CI OK` status check (add `Security` jobs as wanted), block force pushes. Do not require `Build` jobs: that workflow is path-filtered, so a pull request that does not touch those paths would wait for them forever. While commits carry `[skip ci]`, require no status check at all: a skipped run never reports, so the pull request would wait forever.
 - Settings > Code security: enable Dependabot alerts and security updates, secret scanning and push protection, and private vulnerability reporting (`SECURITY.md` points reporters there).
-- Settings > Actions > General: workflow permissions "Read repository contents", and require approval for workflows from outside collaborators.
+- Settings > Actions > General: workflow permissions "Read repository contents", require approval for workflows from outside collaborators, and "Allow GitHub Actions to create and approve pull requests" on, for the `homebrew.yml` bump pull request. That setting also lets a job with `pull-requests: write` approve a pull request; only `homebrew.yml` and `labeler.yml` have that permission, and neither approves.
 - Settings > Pages: source "GitHub Actions". "Deploy from a branch" would publish every file of the branch (run through Jekyll) and skip the `pages.yml` checks, and its root would not serve `/scoop/garita.json`. `pages.yml` deploys a release-published run from the release's tag ref, so Settings > Environments > `github-pages` needs the tag rule `v*` next to `main`.
 - A new repository starts from defaults: re-create the Environment `release` with its rules and both secrets (Key custody below) before the first tag.
 
@@ -268,9 +269,13 @@ brew tap KANOMNUT/garita https://github.com/KANOMNUT/garita
 brew install --cask kanomnut/garita/garita
 ```
 
-The cask is **bumped by hand** after each release is published: set `version` and
-`sha256` (from `SHA256SUMS.txt` on the release) in `Casks/garita.rb`, check it on a Mac
-from a local test tap, and merge it to `main`. No workflow does this. Check after each
-release that the bump landed. Users then `brew upgrade --cask garita`.
+The cask is bumped through a pull request after each release is published:
+`homebrew.yml` sets `version` and `sha256` in `Casks/garita.rb` (the sha256 computed
+from the release's DMG and checked against its `SHA256SUMS.txt`) on the branch
+`bot/cask-vX.Y.Z`, and a maintainer reviews and merges the pull request into `main`.
+`GITHUB_TOKEN` opens it, so no workflow runs on it, and the repository setting "Allow
+GitHub Actions to create and approve pull requests" must be on (Repository settings
+above). The bump by hand stays as the fallback. Check after each release that the bump
+landed. Users then `brew upgrade --cask garita`.
 
-Details and the manual bump steps: **[`homebrew-tap-setup.md`](./homebrew-tap-setup.md)**.
+Details, the limits and the manual bump steps: **[`homebrew-tap-setup.md`](./homebrew-tap-setup.md)**.
