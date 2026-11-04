@@ -4,6 +4,8 @@ Garita (gah-REE-tah) is the Spanish word for a fortress sentry box.
 
 A cross-platform desktop GUI for managing Kubernetes clusters, built with Tauri v2, React 18 and Rust. Every Kubernetes call goes from the Rust backend through kube-rs; there is no `kubectl` binary dependency.
 
+Website: [kanomnut.github.io/garita](https://kanomnut.github.io/garita/)
+
 ![Garita's Pods view with sample data: summary cards, three node cards with CPU and memory bars, and a table of eleven pods with status, CPU and memory.](site/demo.png)
 
 *The Pods view, with sample data.*
@@ -36,11 +38,18 @@ Direct downloads from the latest GitHub release; the links always point at the n
 | Linux (Fedora/RHEL) | [`Garita-linux-amd64.rpm`](https://github.com/KANOMNUT/garita/releases/latest/download/Garita-linux-amd64.rpm) |
 | Windows (x86_64) | [`Garita-windows-amd64-setup.exe`](https://github.com/KANOMNUT/garita/releases/latest/download/Garita-windows-amd64-setup.exe) or [`Garita-windows-amd64.msi`](https://github.com/KANOMNUT/garita/releases/latest/download/Garita-windows-amd64.msi) |
 
-macOS is ARM64 only; Linux and Windows are x86_64 only.
+macOS is ARM64 only; Linux and Windows are x86_64 only. On an Intel Mac, build from source with `make mac-universal` (see [Development](#development)).
 
 Needs a current system webview: macOS 13.3 or later (on macOS 12, install the latest Safari; untested), Ubuntu 22.04 or later with updates, Fedora/RHEL (rpm) with current webkit2gtk, Windows 10 or later.
 
-Unsigned: Windows SmartScreen will warn. Choose "More info", then "Run anyway". After installing, open a new terminal window to use the `garita` command. Or with Scoop:
+**Linux:**
+
+```bash
+sudo apt install ./Garita-linux-amd64.deb     # Debian/Ubuntu
+sudo dnf install ./Garita-linux-amd64.rpm     # Fedora/RHEL
+```
+
+**Windows:** the installers are unsigned, so SmartScreen warns: choose "More info", then "Run anyway". Or install with Scoop:
 
 ```powershell
 scoop install https://kanomnut.github.io/garita/scoop/garita.json
@@ -51,11 +60,10 @@ scoop install https://kanomnut.github.io/garita/scoop/garita.json
 ```bash
 brew tap KANOMNUT/garita https://github.com/KANOMNUT/garita
 brew install --cask kanomnut/garita/garita
+brew uninstall --zap --cask garita            # later, to remove the app and its data
 ```
 
-`brew upgrade` also updates Garita: Homebrew upgrades a self-updating cask when the installed app is older than the cask.
-
-**macOS without an administrator password:** on a standard account, copying into `/Applications` asks for an administrator. Put Garita in the `Applications` folder inside your home folder instead (`mkdir -p ~/Applications` if it is missing, then drag `Garita.app` from the DMG there); in-app updates then need no password either. With Homebrew, add `export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"` to `~/.zshenv` before installing. Homebrew itself needs a prefix your account can write, which an administrator sets up once ([Homebrew: Installation](https://docs.brew.sh/Installation)).
+**macOS without an administrator password:** drag `Garita.app` into `~/Applications` (create it if it is missing) instead of `/Applications`; in-app updates then need no password either. For Homebrew on a standard account, see [`docs/homebrew-tap-setup.md`](docs/homebrew-tap-setup.md).
 
 **macOS first launch:** Garita is ad-hoc signed, not notarized, so Gatekeeper blocks a downloaded copy until you run (the Homebrew cask does this for you):
 
@@ -63,11 +71,16 @@ brew install --cask kanomnut/garita/garita
 xattr -rd com.apple.quarantine /Applications/Garita.app      # or ~/Applications/Garita.app
 ```
 
-**The `garita` command.** `garita [--context <name>] [-n <namespace>] [kind]` opens the app (`garita --help` lists the options).
-- macOS: the Homebrew cask adds it; otherwise use Settings → Command line → Install. It links the command into `/usr/local/bin`, or into `~/.local/bin` or `~/bin` when Garita can't write `/usr/local/bin` and that folder is on your `PATH`. If neither works it shows a command to run: with `sudo` for an administrator, and without `sudo` (into `~/.local/bin`, plus the `PATH` line for your `~/.zprofile`) on a standard account.
-- Linux `.deb`/`.rpm`: it is on your `PATH` after installing.
-- Windows: the installer adds its folder to your `PATH` (the `.exe` for your user, the `.msi` for all users); open a new terminal window. If your user `PATH` is too long to extend safely, Settings → Command line shows the folder to add.
-- A self-built AppImage adds no command; Settings → Command line shows a link command to copy.
+**Verify a download** against the release's [`SHA256SUMS.txt`](https://github.com/KANOMNUT/garita/releases/latest/download/SHA256SUMS.txt) and its build provenance:
+
+```bash
+sha256sum --ignore-missing -c SHA256SUMS.txt                  # Linux; on macOS: shasum -a 256 <file>
+gh attestation verify Garita-linux-amd64.deb -R KANOMNUT/garita
+```
+
+**Updating.** On macOS the app installs a new version after you confirm (Settings → Updates); with Homebrew, `brew upgrade --cask garita`. On Linux and Windows the app shows a notice and opens the release page; install the new package over the old one, or run `scoop update garita`.
+
+**The `garita` command.** `garita [--context <name>] [-n <namespace>] [kind]` opens the app (`garita --help` lists the options). The `.deb`, `.rpm`, the Windows installers and the Homebrew cask put it on your `PATH`; on Windows, open a new terminal window first. Otherwise, Settings → Command line installs it or shows the command to run.
 
 To build from source, see [Development](#development).
 
@@ -75,15 +88,15 @@ To build from source, see [Development](#development).
 
 Per-release detail is in [`CHANGELOG.md`](CHANGELOG.md).
 
-### 43 resource kinds
+### Resource kinds
 
 - **Workloads**: Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, CronJobs, HPAs, PodDisruptionBudgets
 - **Networking**: Services, Ingresses, NetworkPolicies, Gateways, HTTPRoutes (Gateway API), Endpoints, EndpointSlices
 - **Config & Storage**: ConfigMaps, Secrets, PersistentVolumeClaims, PersistentVolumes, StorageClasses, ResourceQuotas, LimitRanges, VolumeSnapshots, cert-manager Certificates
 - **RBAC**: ServiceAccounts, Roles, ClusterRoles, RoleBindings, ClusterRoleBindings
-- **Cluster**: Nodes, CRDs, PriorityClasses, Events, Mutating/ValidatingWebhookConfigurations
+- **Cluster**: Nodes, Namespaces (a Terminating namespace shows what blocks its deletion), CRDs, PriorityClasses, Events, Mutating/ValidatingWebhookConfigurations
 - **Custom Resources**: the CRDs page groups every installed CRD by API group; open a CRD's objects to view, edit (checked by a server dry run first) or delete them
-- **Helm** releases, **ArgoCD** Applications, **Flux v2** Kustomizations and HelmReleases
+- **Helm** releases; **ArgoCD** Applications, ApplicationSets, AppProjects and Repositories; **Flux v2** Kustomizations and HelmReleases
 
 ### Clusters and access
 
@@ -92,16 +105,20 @@ Per-release detail is in [`CHANGELOG.md`](CHANGELOG.md).
 - **Cluster trust states**: each cluster is classified reachable / unreachable / expired auth / forbidden, with install hints for the GKE, EKS and AKS auth plugins, instead of an empty table.
 - **Cluster identity guard**: a colour and label per cluster, shown on the sidebar chip, in the top bar and inside every destructive confirmation.
 - **Permission-aware UI**: actions you lack RBAC for are disabled with the reason. Batched `SelfSubjectAccessReview`; fails open, so a cluster that cannot answer keeps every action enabled. Accurate once a specific namespace is selected.
+- **Who can…**: which subjects can do a verb on a resource, from Roles, ClusterRoles and their bindings.
 
 ### Browsing
 
 - **Tables** sort by name, namespace, status, restarts and age, with per-type column visibility. Pods filter by Running, Pending, CrashLoopBackOff, ImagePullBackOff, Terminating and Succeeded.
 - **Command palette** (⌘K) with cluster-wide fuzzy search across every type and namespace.
 - **Refresh**: views poll on an interval; ⟳ in the top bar (or `r`) refreshes now.
-- **Summary tab** on every resource: conditions, status fields, owner references, labels and annotations. Secret values decode in-app.
+- **Summary tab** on every resource: conditions, status fields, owner references, labels and annotations. A Secret value shows only after you reveal that object, and is dropped again on Hide, on close or when you select something else.
 - **Workloads** list their owned pods (resolved through ReplicaSets / Jobs), an ownership tree (Deployment → ReplicaSets → Pods, CronJob → Jobs → Pods) and their pod template with requests and limits.
 - **Pod containers**: env vars (ConfigMap/Secret sources link to their page), volume mounts, probes, declared ports, init containers under an `[init]` badge, and restart history with colour-coded exit codes (OOMKilled flagged).
 - **Metrics** from `metrics.k8s.io` (needs metrics-server): CPU/MEM bars against request and limit, and sparklines in the node strip and pod rows.
+- **Metric and log history** (optional): name a Prometheus and a Loki or VictoriaLogs service per cluster for CPU and memory charts and pod logs up to 7 days back. Garita reaches them only through the API server's service proxy, with fixed queries.
+- **Find in YAML**: Ctrl+F (⌘F on macOS) in any YAML view.
+- **Light and dark themes**: Settings → Appearance (System, Light or Dark).
 
 ### Pods and logs
 
@@ -113,21 +130,26 @@ Per-release detail is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ### Editing
 
-- **Create**: `+New` / ⌘N opens a form for the kind you are viewing (23 kinds), or a pre-filled YAML example for anything else, with a server-side dry run before you commit.
-- **Guided edit**: a form for 19 kinds that previews the exact JSON merge patch and warns when ArgoCD or Flux manages the resource. Fields the form does not model are never touched; immutable fields are shown disabled with the reason.
+- **Create**: `+New` / ⌘N opens a form for the kind you are viewing when it has one, or a pre-filled YAML example for anything else, with a server-side dry run before you commit.
+- **Guided edit**: a form for the common kinds that previews the exact JSON merge patch and warns when ArgoCD or Flux manages the resource. Fields the form does not model are never touched; immutable fields are shown disabled with the reason.
 - **YAML** view and edit for any resource. Save and Helm upgrade show a server-side dry-run diff first.
 - **Compare** an object with the same kind in another namespace or cluster, and see which field manager last wrote each field.
 - **Merge from file**: a multi-document YAML file, previewed key by key against the live object, dry-run, then merged with per-document results. It is a JSON merge patch, not `kubectl apply`, and never prunes.
 - **Workload actions**: scale, restart, pause/resume, rollout history, rollback.
 - **Delete** from any table row or detail panel (Helm releases show "Uninstall").
-- **Confirmations** on destructive actions (delete, scale-to-zero, rollback, ArgoCD sync/prune, Helm uninstall) name the cluster you are about to act on. Deleting more than 10 pods requires typing the namespace; cluster-scoped deletes require typing the resource name.
+- **Confirmations** on destructive actions (delete, scale-to-zero, rollback, ArgoCD sync/prune, Helm uninstall) name the cluster you are about to act on. Deleting more than 10 pods requires typing the namespace (the cluster label when they span namespaces); cluster-scoped deletes require typing the resource name.
 - **Read-only mode and guardrails** per cluster: disable every write control, require typing the cluster label to confirm writes, or cap bulk actions. Every write dialog shows the kubectl equivalent.
+- **Journal**: what Garita sent from this machine (writes, shell sessions, port-forwards), newest first, with the result of each. Secret values are never recorded.
+- **Timeline tab** on Deployment, StatefulSet, DaemonSet, Helm release and ArgoCD application panels: events, rollout revisions, Helm and ArgoCD history and your own actions in one list.
 
 ### Health
 
 - **Problems**: fixed, explainable rules (crash loops, OOM kills, image pulls, unschedulable pods, unavailable workloads, failed Jobs, Services without endpoints, pending PVCs, nodes not ready, expiring certificates, missing readiness probes) with evidence. No scores.
 - **Node capacity**: requests, limits and usage against allocatable per node.
 - **Hints**: right-sizing per container and the quotas, limit ranges, PDBs, priority class and webhooks that apply or may apply to a workload.
+- **Map**: one namespace as a graph of what connects to what (owners, selectors, routes, volumes, references), with a kind filter, a List view and "Show only this" for one object's chain.
+- **Network policies (approximation)**: which pod groups the standard NetworkPolicy objects let talk to which, and "Who can reach this pod" in the Pod panel. Not a connectivity test.
+- **Possibly unused** objects that nothing in the cluster references, and **Deprecated APIs** in Helm manifests and last-applied annotations.
 - **Diagnostics**: a local, scrubbed, rotating log file (Settings). Nothing is uploaded.
 
 ### Helm and GitOps
@@ -144,7 +166,7 @@ These are choices, not gaps. Each one trades a convenience for a property you ca
 - **No server-side apply.** Edits are JSON merge patches built from a diff against the live object. Server-side apply conflicts with ArgoCD and Flux, which own fields on the resources you most want to edit.
 - **No node shell and no privileged pods.** Garita never schedules a pod on your behalf to get a shell on a node.
 - **No built-in AI, no telemetry, no analytics, no crash upload.** Nothing about your clusters leaves your machine.
-- **Checks GitHub for new versions.** Garita looks for a new release shortly after launch and once a day. It sends no cluster data. On macOS it installs an update only after you confirm; on Linux and Windows it shows a notice and opens the release page. Turn it off in Settings -> Updates -> "Check for updates automatically".
+- **Checks GitHub for new versions.** Garita looks for a new release shortly after launch and once a day. It sends no cluster data. On macOS it installs an update only after you confirm; on Linux and Windows it shows a notice and opens the release page. Turn it off in Settings → Updates → "Check for updates automatically".
 - **No ArgoCD REST API.** ArgoCD is driven through its CRDs, and resource health is computed from Kubernetes status fields, so no ArgoCD login is needed.
 - **No Helm repo add, remove or update.** Garita lists the repos you already configured; changing them is a one-time `helm repo` step in a terminal.
 - **No in-cluster agent.** There is nothing to install in, or leave running on, your clusters.
@@ -186,18 +208,7 @@ cargo test --lib --manifest-path src-tauri/Cargo.toml   # Rust unit tests, no cl
 
 ### Build
 
-Tauri cannot cross-compile, so each platform builds on its own OS. `make help` lists every target and its output path under `src-tauri/target/<triple>/release/bundle/`.
-
-```bash
-make build            # current OS, auto-detected
-make mac              # macOS ARM64 .dmg
-make mac-install      # macOS ARM64 .app, copied to ~/Applications (no administrator password)
-make mac-universal    # macOS Universal .dmg (ARM64 + x86_64)
-make windows          # Windows x86_64 .msi + NSIS .exe
-make linux            # Linux x86_64 .deb + .rpm + .AppImage
-make linux-deb        # .deb only   (also linux-rpm, linux-appimage, linux-pacman)
-make clean            # wipe dist/ and Rust build artifacts
-```
+Tauri cannot cross-compile, so each platform builds on its own OS. `make build` builds for the current OS; `make help` lists the per-platform targets (`make mac`, `make mac-universal`, `make windows`, `make linux`, …) and where the bundles land. Signing and releases: [`docs/build-and-release.md`](docs/build-and-release.md).
 
 ### Layout
 
@@ -208,33 +219,9 @@ make clean            # wipe dist/ and Rust build artifacts
 | `docs/` | Architecture overview, auth, build and release guides; per-feature contracts in `docs/claude/`; release plans and UX specs |
 | `index.html` | Download landing page (GitHub Pages; the app entry is `app.html`) |
 
-### Tech stack
-
-| Layer | Technology | Version |
-|---|---|---|
-| Desktop shell | Tauri | v2 |
-| Frontend framework | React | 18.3 |
-| Language (frontend) | TypeScript | 5.4 |
-| Build tool | Vite | 6 |
-| Styling | Tailwind CSS | 4 |
-| Icons | lucide-react | 1 |
-| Data fetching / caching | @tanstack/react-query | v5 |
-| Terminal emulator | @xterm/xterm + @xterm/addon-fit | 6.0 / 0.11 |
-| Language (backend) | Rust | stable >= 1.90 |
-| Kubernetes client | kube-rs | 0.95 |
-| Kubernetes types | k8s-openapi | 0.23 (v1_31) |
-| Async runtime | Tokio | 1 |
-| Serialization | serde / serde_json / serde_yaml | 1 / 1 / 0.9 |
-
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, the checks CI runs and pull request conventions. Report vulnerabilities privately as described in [`SECURITY.md`](SECURITY.md).
-
-1. Create a feature branch from `main`, then run `make deps` and `make dev`.
-2. Keep Kubernetes calls and business logic in Rust commands and UI logic in React. Add a TypeScript type for every Rust struct returned via `invoke()`.
-3. Run `npm test` and the Rust unit tests, and test on your native platform.
-4. Note user-facing changes under `## [Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md).
-5. Open a pull request describing the change and the resource or feature it affects.
 
 ## License
 
