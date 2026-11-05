@@ -31,11 +31,30 @@ The cask needs no change for this: `app`, `binary` and `postflight` all go throu
 
 The cask also has a `binary` stanza (`#{appdir}/Garita.app/Contents/MacOS/garita`), so Homebrew links a `garita` command into its own prefix (`/opt/homebrew/bin` on Apple Silicon); Settings → Command line reads that link as installed. The stanza has no `target:` because the binary is already named `garita`, and it needs no change on a version bump.
 
-The cask sets `auto_updates true`: the app updates itself (Settings → Updates). A bare `brew upgrade` still upgrades it when the installed app is older than the cask, and `brew upgrade --cask garita` names it explicitly. The cask `version` and `sha256` are bumped by hand, as described below.
+The cask sets `auto_updates true`: the app updates itself (Settings → Updates). A bare `brew upgrade` still upgrades it when the installed app is older than the cask, and `brew upgrade --cask garita` names it explicitly. The cask `version` and `sha256` are bumped through a pull request after each release, as described below.
 
-## Bump after a release (by hand)
+## Bump after a release
 
-No workflow updates the cask. After the draft release is **published**:
+`.github/workflows/homebrew.yml` opens the bump as a pull request. It runs when a release is published (`release: released`: a pre-release never runs it, one changed to a release does) and:
+
+1. checks that the tag is `vX.Y.Z` and that the release is neither a draft nor a pre-release;
+2. downloads `Garita-macOS-arm64.dmg` and `SHA256SUMS.txt` from the release, computes the DMG's sha256 and fails unless it equals the DMG's line in `SHA256SUMS.txt` (a missing file fails too);
+3. stops without a change when the cask on `main` already has that version and sha256, and stops with a warning when the cask's version is newer than the release (a release for an older line never downgrades the cask);
+4. commits the new `version` and `sha256` to the branch `bot/cask-vX.Y.Z`, created from `main`, and opens a pull request into `main` titled `chore: update cask to vX.Y.Z`.
+
+It uses no checkout and no actions, only `gh` on the runner, and its job alone gets `contents: write` and `pull-requests: write`. Re-running it is safe: a bump branch that already has the change and an open pull request from it are reused, and the branch is never reset or force-pushed.
+
+Review the pull request and merge it. To test the cask on a Mac first, check the branch out (`git fetch origin && git switch bot/cask-vX.Y.Z`) and run the `brew tap` to `brew untap` lines of step 3 under By hand (fallback).
+
+What `GITHUB_TOKEN`, which opens the pull request, cannot do:
+
+- **No workflow runs on the bump pull request.** GitHub starts no workflow for events that `GITHUB_TOKEN` causes, so CI, PR title and Labeler do not run on it. That is fine while `main` requires no status check. Once `CI OK` is required, close and reopen the pull request (or push a commit to its branch) so that CI runs, or give the workflow a GitHub App token instead.
+- **It needs a repository setting.** Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests" must be on. Without it the run fails when it opens the pull request. The branch already holds the bump commit at that point, so open the pull request from it by hand, or turn the setting on and re-run.
+- **A release event runs the workflow file as it is at the release's tag.** Releases tagged before `homebrew.yml` reached `main` are not bumped on their own. For one of those, or to retry a failed run: `gh workflow run homebrew.yml -R KANOMNUT/garita -f tag=vX.Y.Z`.
+
+### By hand (fallback)
+
+When the workflow cannot run, after the draft release is **published**:
 
 1. Take the sha256 of `Garita-macOS-arm64.dmg` from `SHA256SUMS.txt` on the release, or compute it:
 
@@ -61,8 +80,8 @@ No workflow updates the cask. After the draft release is **published**:
 
 4. Push the branch and merge it to `main` through a pull request (the `main` ruleset requires one).
 
-Check after every release that the bump landed: compare the cask `version` with the
-newest tag.
+Check after every release that the bump landed (the bump pull request is merged): compare
+the cask `version` on `main` with the newest tag.
 
 ```bash
 brew info --cask kanomnut/garita/garita

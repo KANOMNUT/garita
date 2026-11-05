@@ -6,7 +6,7 @@
 |------|---------|---------|
 | Rust toolchain | stable >= 1.90 (`rust-version` in `Cargo.toml`) | `rustup install stable` |
 | tauri-cli | ^2.0 | `cargo install tauri-cli --version "^2.0"` |
-| Node.js | >= 18 | via nvm or official installer |
+| Node.js | >= 22.6 | via nvm or official installer |
 | npm | bundled with Node | — |
 
 Platform-specific requirements are listed in the sections below.
@@ -152,17 +152,15 @@ The app's HTML entry is `app.html` (`build.rollupOptions.input` in `vite.config.
 
 ## CI/CD Notes
 
-Tauri cannot cross-compile — each platform's installer must be built natively on that platform. A typical multi-platform CI setup uses three parallel jobs:
+Tauri cannot cross-compile — each platform's installer must be built natively on that platform. `release.yml` runs three parallel build jobs. They call `npx tauri build` directly, not `make`:
 
 ```
-macOS runner    → make mac         → upload DMG artifact
-Windows runner  → make windows     → upload MSI/NSIS artifacts
-Linux runner    → make linux       → upload DEB/RPM artifacts
+macOS runner    → npx tauri build --bundles app,dmg   → ad-hoc sign, updater tarball, DMG rebuilt
+Windows runner  → npx tauri build --bundles msi,nsis  → MSI + NSIS .exe
+Linux runner    → npx tauri build --bundles deb,rpm   → DEB + RPM
 ```
 
-`release.yml` follows this pattern for macOS (arm64), Linux (x86_64) and Windows (x86_64, `windows-2022`, bundles `msi,nsis`, **unsigned**: no Authenticode). It runs only on a version tag or by hand, so the Windows leg adds no per-merge minutes (`build.yml` keeps its own path-filtered Windows debug leg). The macOS job ad-hoc signs the `.app` (`codesign --sign - --deep --force`), makes the updater tarball from it and recreates the DMG, with no signing secrets (the updater key exists only in the publish job, see In-app updater).
-
-For GKE/EKS/AKS integration testing in CI, ensure the appropriate auth plugin binary is installed on the CI runner and available on PATH before running `cargo tauri dev` or any test that invokes the Kubernetes client.
+`release.yml` does this for macOS (arm64), Linux (x86_64) and Windows (x86_64, `windows-2022`, bundles `msi,nsis`, **unsigned**: no Authenticode). It runs only on a version tag or by hand, so the Windows leg adds no per-merge minutes (`build.yml` keeps its own path-filtered Windows debug leg). The macOS job ad-hoc signs the `.app` (`codesign --sign - --deep --force`), makes the updater tarball from it and recreates the DMG, with no signing secrets (the updater key exists only in the publish job, see In-app updater).
 
 ---
 
@@ -172,15 +170,16 @@ For GKE/EKS/AKS integration testing in CI, ensure the appropriate auth plugin bi
 
 | Workflow | Trigger | Jobs |
 |---|---|---|
-| `ci.yml` | Pull request, push to `main`, merge queue | `npm run build`, `npm test`, `check-emit.ts`; `cargo clippy --all-targets` and `cargo test --lib` on Ubuntu; exactly one `Patch::Strategic` in `src-tauri/src`; `CI OK` aggregates them |
-| `build.yml` | Pull request or push touching `src-tauri/**` or npm manifests | `tauri build --debug --no-bundle` on macOS arm64, Windows x64, Linux x64 |
-| `security.yml` | Pull request, push to `main`, weekly | TruffleHog secret scan; `cargo deny check` (policy `src-tauri/deny.toml`); `npm audit`; dependency review; actionlint and zizmor on the workflows |
-| `codeql.yml` | Pull request, push to `main`, weekly | CodeQL `security-extended` for `actions`, `javascript-typescript`, `rust` |
-| `scorecard.yml` | Push to `main`, weekly | OpenSSF Scorecard |
-| `pr-title.yml` | Pull request | Conventional Commits title |
-| `labeler.yml` | Pull request | Area labels from `.github/labeler.yml` |
+| `ci.yml` | Pull request, push to `main`, merge queue, manual | `npm run build`, `npm test`, `check-emit.ts`; `cargo clippy --all-targets` and `cargo test --lib` on Ubuntu; exactly one `Patch::Strategic` in `src-tauri/src`; `CI OK` aggregates them |
+| `build.yml` | Pull request, or push to `main`, touching `src-tauri/**`, the npm manifests or the workflow; manual | `tauri build --debug --no-bundle` on macOS arm64 (`macos-latest`, as in `release.yml`), Windows x64, Linux x64 (Ubuntu 22.04: links the whole app on the release runner, which `ci.yml`'s `cargo test --lib` on 24.04 does not) |
+| `security.yml` | Pull request, push to `main`, weekly, manual | TruffleHog secret scan; `cargo deny check` (policy `src-tauri/deny.toml`); `npm audit`; dependency review (no checkout: it reads the dependency graph API); actionlint and zizmor on the workflows |
+| `codeql.yml` | Pull request and push to `main`, both skipped when only `docs/**` or `*.md` change; weekly; manual | CodeQL `security-extended` for `actions`, `javascript-typescript`, `rust` |
+| `scorecard.yml` | Branch protection rule change, weekly, manual | OpenSSF Scorecard |
+| `pr-title.yml` | Pull request opened, edited, reopened or pushed to | Conventional Commits title: a bash regex on the title, no action and no token |
+| `labeler.yml` | `pull_request_target` (opened, reopened, pushed to), so fork pull requests get labels; it never checks out or runs pull request code | Area labels from `.github/labeler.yml` |
 | `release.yml` | `vX.Y.Z` tag, manual | Installers, updater tarball and signatures, `latest.json`, `SHA256SUMS.txt`, SPDX SBOM, build provenance, draft release (publish job runs in Environment `release`) |
-| `pages.yml` | Release published, push to `main` touching `index.html` or `site/**`, manual | Landing page to GitHub Pages. The artifact is the root `index.html`, exactly the same-site files it loads (the PNGs under `site/`; a missing one fails the job) and `scoop/garita.json` rendered from the latest release (see Scoop below); nothing else in the repository is published. Then a 1-byte GET check of the 5 unique `releases/latest/download/` links in `index.html` (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
+| `pages.yml` | Release published (`released`: stable only, including a pre-release changed to a release), push to `main` touching `index.html` or `site/**`, manual | Landing page to GitHub Pages, always checked out from `main` (a release run's own commit is the tag). The artifact is the root `index.html`, exactly the same-site files it loads (the PNGs under `site/`; a missing one fails the job) and `scoop/garita.json` rendered from the latest release (see Scoop below); nothing else in the repository is published. Then a 1-byte GET check of the 5 unique `releases/latest/download/` links in `index.html` (dmg, deb, rpm, msi, setup exe; the count is asserted, so adding or removing a link on the page changes it deliberately). Pages source must be "GitHub Actions" |
+| `homebrew.yml` | Release published (`released`: stable only, including a pre-release changed to a release), manual with a `tag` input | Bumps `version` and `sha256` in `Casks/garita.rb` on the branch `bot/cask-vX.Y.Z` and opens a pull request into `main`. The sha256 is computed from the release's `Garita-macOS-arm64.dmg` and must equal its `SHA256SUMS.txt` line. No checkout and no actions, only `gh`; the job gets `contents: write` and `pull-requests: write`. See Homebrew Distribution |
 
 What blocks and what only reports:
 
@@ -193,10 +192,10 @@ What blocks and what only reports:
 
 1. Bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, and rename `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD`. Merge to `main`.
 2. Tag the merged `main` commit and push the tag: `git tag -s vX.Y.Z -m "Garita vX.Y.Z" && git push origin vX.Y.Z`. If that commit's message carries `[skip ci]`, GitHub may start no run; then dispatch it from the tag ref (Rules below).
-3. `release.yml` checks that the three versions match the tag and that the changelog section exists, then builds on macOS 14 (arm64 `.dmg`, ad-hoc signed and DMG rebuilt as in `make mac`; plus the updater tarball) and Ubuntu 22.04 (`.deb`, `.rpm`; no AppImage, see `docs/claude/open-items.md`; the oldest runner, for the widest glibc range). Windows x64 on `windows-2022` (`.msi` and NSIS `-setup.exe`). Files get the README names (`Garita-macOS-arm64.dmg`, `Garita-windows-amd64.msi`, `Garita-windows-amd64-setup.exe`, ...).
+3. `release.yml` checks that the three versions match the tag and that the changelog section exists, then builds on `macos-latest` (arm64 `.dmg`, ad-hoc signed and DMG rebuilt as in `make mac`; plus the updater tarball) and Ubuntu 22.04 (`.deb`, `.rpm`; no AppImage, see `docs/claude/open-items.md`; the oldest runner, for the widest glibc range). Windows x64 on `windows-2022` (`.msi` and NSIS `-setup.exe`). Files get the README names (`Garita-macOS-arm64.dmg`, `Garita-windows-amd64.msi`, `Garita-windows-amd64-setup.exe`, ...).
 4. The publish job waits for approval in Environment `release`. It creates a **draft** release with the changelog section as notes, the installers, the updater files, `SHA256SUMS.txt` and `Garita-sbom.spdx.json` (14 assets, see In-app updater). Before publishing, check the asset list and the provenance of one installer: `gh release download vX.Y.Z -R KANOMNUT/garita -p Garita-linux-amd64.deb && gh attestation verify Garita-linux-amd64.deb -R KANOMNUT/garita`. Publish it by hand, with "Set as the latest release" ticked. Re-running for the same tag replaces the files of a draft, never of a published release.
 5. Publishing starts `pages.yml`: it renders the Scoop manifest from the new release and checks the five download links before it deploys. A failed run leaves the previous site in place; fix the cause and run it again (`gh workflow run pages.yml -R KANOMNUT/garita`).
-6. Bump the Homebrew cask (Homebrew Distribution below), and check that `https://github.com/KANOMNUT/garita/releases/latest/download/latest.json` names the new version.
+6. Publishing also starts `homebrew.yml`, which opens a pull request that bumps the Homebrew cask (Homebrew Distribution below): review and merge it. Check that `https://github.com/KANOMNUT/garita/releases/latest/download/latest.json` names the new version.
 
 Release jobs use no caches, so nothing a pull request writes to the Actions cache can reach a shipped binary.
 
@@ -206,8 +205,8 @@ The workflows assume these settings; none can be set from a file:
 
 - Branch protection or a ruleset on `main`: require pull requests, require the `CI OK` status check (add `Security` jobs as wanted), block force pushes. Do not require `Build` jobs: that workflow is path-filtered, so a pull request that does not touch those paths would wait for them forever. While commits carry `[skip ci]`, require no status check at all: a skipped run never reports, so the pull request would wait forever.
 - Settings > Code security: enable Dependabot alerts and security updates, secret scanning and push protection, and private vulnerability reporting (`SECURITY.md` points reporters there).
-- Settings > Actions > General: workflow permissions "Read repository contents", and require approval for workflows from outside collaborators.
-- Settings > Pages: source "GitHub Actions". "Deploy from a branch" would publish every file of the branch (run through Jekyll) and skip the `pages.yml` checks, and its root would not serve `/scoop/garita.json`. `pages.yml` deploys a release-published run from the release's tag ref, so Settings > Environments > `github-pages` needs the tag rule `v*` next to `main`.
+- Settings > Actions > General: workflow permissions "Read repository contents", require approval for workflows from outside collaborators, and "Allow GitHub Actions to create and approve pull requests" on, for the `homebrew.yml` bump pull request. That setting also lets a job with `pull-requests: write` approve a pull request; only `homebrew.yml` and `labeler.yml` have that permission, and neither approves.
+- Settings > Pages: source "GitHub Actions". "Deploy from a branch" would publish every file of the branch (run through Jekyll) and skip the `pages.yml` checks, and its root would not serve `/scoop/garita.json`. A release run of `pages.yml` has the release's tag as its ref (it still checks out `main`), so Settings > Environments > `github-pages` needs the tag rule `v*` next to `main`.
 - A new repository starts from defaults: re-create the Environment `release` with its rules and both secrets (Key custody below) before the first tag.
 
 ### In-app updater
@@ -268,9 +267,13 @@ brew tap KANOMNUT/garita https://github.com/KANOMNUT/garita
 brew install --cask kanomnut/garita/garita
 ```
 
-The cask is **bumped by hand** after each release is published: set `version` and
-`sha256` (from `SHA256SUMS.txt` on the release) in `Casks/garita.rb`, check it on a Mac
-from a local test tap, and merge it to `main`. No workflow does this. Check after each
-release that the bump landed. Users then `brew upgrade --cask garita`.
+The cask is bumped through a pull request after each release is published:
+`homebrew.yml` sets `version` and `sha256` in `Casks/garita.rb` (the sha256 computed
+from the release's DMG and checked against its `SHA256SUMS.txt`) on the branch
+`bot/cask-vX.Y.Z`, and a maintainer reviews and merges the pull request into `main`.
+`GITHUB_TOKEN` opens it, so no workflow runs on it, and the repository setting "Allow
+GitHub Actions to create and approve pull requests" must be on (Repository settings
+above). The bump by hand stays as the fallback. Check after each release that the bump
+landed. Users then `brew upgrade --cask garita`.
 
-Details and the manual bump steps: **[`homebrew-tap-setup.md`](./homebrew-tap-setup.md)**.
+Details, the limits and the manual bump steps: **[`homebrew-tap-setup.md`](./homebrew-tap-setup.md)**.

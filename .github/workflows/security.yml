@@ -97,12 +97,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       # Fails when the pull request adds a dependency with a known high or
-      # critical vulnerability.
+      # critical vulnerability. Reads the diff through the dependency graph
+      # API, so no checkout (add one only for a local config-file).
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high

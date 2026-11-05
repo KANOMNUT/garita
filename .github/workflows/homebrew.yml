@@ -1,0 +1,168 @@
+# Bumps the Homebrew cask (Casks/garita.rb: version and sha256) after a release
+# is published, and opens a pull request with the change. The main ruleset
+# requires a pull request, so nothing here pushes to main.
+#
+# The sha256 is computed from the release's Garita-macOS-arm64.dmg and must
+# equal that file's line in the release's SHA256SUMS.txt; a missing file or a
+# mismatch fails the job. Safe to re-run: nothing happens when main already has
+# the version and sha256, and an existing bump branch or pull request is reused
+# (never reset or force-pushed). A release older than the cask's version is
+# skipped. No checkout and no actions: the gh CLI on the runner does it all.
+#
+# A release event runs this file as it is at the release tag, so the first
+# release tagged after this file is on main is the first one bumped on its own.
+# For any other published release, or after a failed run:
+#
+#   gh workflow run homebrew.yml -R KANOMNUT/garita -f tag=vX.Y.Z
+#
+# GITHUB_TOKEN opens the pull request, so no workflow runs on it (CI, PR title,
+# labeler). Needs Settings > Actions > General > "Allow GitHub Actions to create
+# and approve pull requests". See docs/homebrew-tap-setup.md.
+name: Homebrew cask
+
+on:
+  release:
+    # Stable releases only: a published release, or a pre-release changed to a
+    # release. Pre-releases never run this.
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag, e.g. v2.4.2
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-cask
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump cask
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the bump branch and commit to it
+      pull-requests: write # open the pull request
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BASE: main
+      CASK: Casks/garita.rb
+      DMG: Garita-macOS-arm64.dmg
+    steps:
+      - name: Check the release and its DMG checksum
+        id: release
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag '$TAG' is not vX.Y.Z"
+            exit 1
+          fi
+          state=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')
+          if [ "$state" != "false false" ]; then
+            echo "::error::release $TAG is a draft or a pre-release (isDraft isPrerelease: $state)"
+            exit 1
+          fi
+          dir=$(mktemp -d)
+          gh release download "$TAG" --pattern "$DMG" --pattern SHA256SUMS.txt --dir "$dir"
+          if [ ! -s "$dir/$DMG" ] || [ ! -s "$dir/SHA256SUMS.txt" ]; then
+            echo "::error::release $TAG lacks $DMG or SHA256SUMS.txt"
+            exit 1
+          fi
+          actual=$(sha256sum "$dir/$DMG" | cut -d ' ' -f 1)
+          listed=$(awk -v f="$DMG" '$2 == f || $2 == "*" f { print $1 }' "$dir/SHA256SUMS.txt")
+          if [[ ! "$listed" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::no single SHA-256 for $DMG in SHA256SUMS.txt of $TAG"
+            exit 1
+          fi
+          if [ "$actual" != "$listed" ]; then
+            echo "::error::$DMG of $TAG hashes to $actual, but SHA256SUMS.txt lists $listed"
+            exit 1
+          fi
+          echo "$DMG of $TAG: $actual (matches SHA256SUMS.txt)"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$actual" >> "$GITHUB_OUTPUT"
+
+      - name: Commit the bump and open a pull request
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          SHA256: ${{ steps.release.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          shopt -s inherit_errexit # a failing gh call inside $(...) stops the job too
+          branch="bot/cask-v$VERSION"
+          title="chore: update cask to v$VERSION"
+          tmp=$(mktemp -d)
+
+          # field <file> <name>: the value of the one `<name> "..."` line, else nothing.
+          field() {
+            awk -v k="$2" '$1 == k && NF == 2 && $2 ~ /^".*"$/ { n++; v = substr($2, 2, length($2) - 2) }
+              END { if (n == 1) print v }' "$1"
+          }
+          # fetch <ref> <file>: writes the cask at <ref> to <file>, prints its blob sha.
+          fetch() {
+            gh api "repos/$GH_REPO/contents/$CASK?ref=$1" > "$tmp/meta.json"
+            jq -er .content "$tmp/meta.json" | base64 -d > "$2"
+            jq -er .sha "$tmp/meta.json"
+          }
+
+          fetch "$BASE" "$tmp/base.rb" > /dev/null
+          cur_version=$(field "$tmp/base.rb" version)
+          cur_sha=$(field "$tmp/base.rb" sha256)
+          if [ -z "$cur_version" ] || [ -z "$cur_sha" ]; then
+            echo "::error file=$CASK::no single version or sha256 line on $BASE"
+            exit 1
+          fi
+          if [ "$cur_version" = "$VERSION" ] && [ "$cur_sha" = "$SHA256" ]; then
+            echo "::notice::$CASK on $BASE is already at $VERSION with this sha256; nothing to do"
+            exit 0
+          fi
+          if [ "$(printf '%s\n' "$VERSION" "$cur_version" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "::warning::$CASK on $BASE has $cur_version, newer than $VERSION; not downgrading"
+            exit 0
+          fi
+
+          # The branch starts at the head of main and is never reset: resetting
+          # it to main could mark its open pull request as merged.
+          if ! gh api "repos/$GH_REPO/git/ref/heads/$branch" > /dev/null 2>&1; then
+            base_sha=$(gh api "repos/$GH_REPO/git/ref/heads/$BASE" --jq .object.sha)
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$base_sha" > /dev/null
+          fi
+
+          blob=$(fetch "$branch" "$tmp/garita.rb")
+          if [ "$(field "$tmp/garita.rb" version)" = "$VERSION" ] && [ "$(field "$tmp/garita.rb" sha256)" = "$SHA256" ]; then
+            echo "$branch already has the bump"
+          else
+            sed -E -i \
+              -e 's/^([[:space:]]*version )"[^"]*"$/\1"'"$VERSION"'"/' \
+              -e 's/^([[:space:]]*sha256 )"[^"]*"$/\1"'"$SHA256"'"/' "$tmp/garita.rb"
+            if [ "$(field "$tmp/garita.rb" version)" != "$VERSION" ] || [ "$(field "$tmp/garita.rb" sha256)" != "$SHA256" ]; then
+              echo "::error file=$CASK::could not set version and sha256 on $branch"
+              exit 1
+            fi
+            # The contents API commits as github-actions[bot]; no git credentials on disk.
+            gh api -X PUT "repos/$GH_REPO/contents/$CASK" -f message="$title" -f branch="$branch" \
+              -f sha="$blob" -f content="$(base64 -w 0 "$tmp/garita.rb")" > /dev/null
+          fi
+
+          open=$(gh api "repos/$GH_REPO/pulls?state=open&base=$BASE&head=${GH_REPO%%/*}:$branch" --jq length)
+          if [ "$open" -gt 0 ]; then
+            echo "::notice::a pull request from $branch is already open"
+            exit 0
+          fi
+          body="Sets \`version\` to $VERSION and \`sha256\` to $SHA256 in \`$CASK\` for release $TAG.
+
+          The sha256 was computed from the release's \`$DMG\` and matches its line in the release's \`SHA256SUMS.txt\`.
+
+          Opened by \`.github/workflows/homebrew.yml\` with \`GITHUB_TOKEN\`, so no workflow ran on this pull request. To test the cask on a Mac before merging, see \`docs/homebrew-tap-setup.md\`."
+          if ! url=$(gh api -X POST "repos/$GH_REPO/pulls" -f title="$title" -f head="$branch" -f base="$BASE" \
+                -f body="$body" --jq .html_url); then
+            echo "::error::could not open the pull request. Turn on Settings > Actions > General > \"Allow GitHub Actions to create and approve pull requests\", re-run, or open it by hand from $branch"
+            exit 1
+          fi
+          echo "::notice::opened $url"

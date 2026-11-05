@@ -8,13 +8,17 @@
 # Repository settings: Pages > Build and deployment > Source = GitHub Actions (a
 # branch build would publish the whole repository and skip these checks), and
 # Environments > github-pages > deployment branches and tags: `main` and the tag
-# rule `v*` (a release-published run deploys from the release's tag ref). Until
+# rule `v*` (a release run's ref is the release's tag, though it checks out
+# main). Until
 # a release is published the Scoop step fails, so nothing is deployed.
 name: Pages
 
 on:
   release:
-    types: [published]
+    # Stable releases only: a published release, or a pre-release changed to a
+    # release. The Scoop manifest reads the latest release, which a pre-release
+    # never is.
+    types: [released]
   push:
     branches: [main]
     paths: [index.html, "site/**", .github/workflows/pages.yml]
@@ -40,8 +44,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      # Always the page on main: a release run's own commit is the tag, which
+      # would undo landing-page changes merged after the tag was cut.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           persist-credentials: false
 
       # Copies index.html and every same-site src/href it names (no scheme, no
